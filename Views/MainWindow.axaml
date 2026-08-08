@@ -1,0 +1,65 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Hugoer.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1180" d:DesignHeight="760"
+        x:Class="Hugoer.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Width="1180" Height="760"
+        MinWidth="960" MinHeight="640"
+        Title="Hugoer — Hugo 一站式工作台"
+        TransparencyLevelHint="None">
+
+    <Design.DataContext>
+        <vm:MainViewModel />
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*">
+        <Border Grid.Row="0" Classes="topBar" Padding="16,12">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <TextBlock Text="Hugoer" Classes="appTitle" VerticalAlignment="Center"/>
+                    <Border Classes="pill" Padding="10,4" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding SiteBanner}" Classes="muted" TextWrapping="NoWrap"/>
+                    </Border>
+                </StackPanel>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding AppStatus}"
+                           Classes="muted"
+                           VerticalAlignment="Center"
+                           Margin="12,0,0,0"/>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" ColumnDefinitions="220,*">
+            <Border Grid.Column="0" Classes="sidebar" Padding="12,8">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Margin="4,12,4,8" Spacing="4">
+                        <TextBlock Text="Hugo · Themes · Pages" Classes="caption"/>
+                        <TextBlock Text="Local tool · Traditional Chinese UI" Classes="caption"/>
+                    </StackPanel>
+
+                    <ListBox ItemsSource="{Binding NavItems}"
+                             SelectedItem="{Binding SelectedNav}"
+                             Classes="navList"
+                             Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:NavItem">
+                                <StackPanel Spacing="2" Margin="4,8">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="15"/>
+                                    <TextBlock Text="{Binding Description}" Classes="caption" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Column="1" Classes="contentHost" Padding="0">
+                <ContentControl Content="{Binding CurrentPage}" Margin="0"/>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

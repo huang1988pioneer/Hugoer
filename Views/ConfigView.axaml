@@ -1,0 +1,134 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hugoer.ViewModels"
+             xmlns:svc="using:Hugoer.Services"
+             x:Class="Hugoer.Views.ConfigView"
+             x:DataType="vm:ConfigViewModel">
+
+    <Grid RowDefinitions="Auto,*" Margin="24">
+        <StackPanel Spacing="8" Margin="0,0,0,12">
+            <TextBlock Text="設定檔" Classes="pageTitle"/>
+            <TextBlock Text="網站基本設定、圖形化 params 表單，以及原始 TOML 編輯。"
+                       Classes="muted" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <Grid Grid.Row="1" ColumnDefinitions="240,*">
+            <Border Classes="card" Margin="0,0,12,0" Padding="12">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,8">
+                        <TextBlock Text="設定檔列表" Classes="sectionTitle"/>
+                        <Button Content="重新整理" Command="{Binding RefreshFilesCommand}" HorizontalAlignment="Stretch"/>
+                        <Button Content="建立 hugo.toml" Command="{Binding CreateDefaultConfigCommand}" HorizontalAlignment="Stretch"/>
+                    </StackPanel>
+                    <ListBox ItemsSource="{Binding ConfigFiles}"
+                             SelectedItem="{Binding SelectedFile}"/>
+                </DockPanel>
+            </Border>
+
+            <Grid Grid.Column="1" RowDefinitions="*,Auto">
+                <TabControl SelectedIndex="{Binding SelectedTabIndex}">
+                    <!-- Tab 1: Site basics -->
+                    <TabItem Header="網站基本">
+                        <ScrollViewer Padding="4" HorizontalScrollBarVisibility="Disabled">
+                            <Border Classes="card" Margin="4">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="網站基本欄位" Classes="sectionTitle"/>
+                                    <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                                        <TextBlock Text="baseURL" VerticalAlignment="Center" Margin="0,0,0,8"/>
+                                        <TextBox Grid.Column="1" Text="{Binding BaseUrl}"
+                                                 PlaceholderText="https://username.github.io/repo/" Margin="0,0,0,8"/>
+                                        <TextBlock Grid.Row="1" Text="title" VerticalAlignment="Center" Margin="0,0,0,8"/>
+                                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SiteTitle}" Margin="0,0,0,8"/>
+                                        <TextBlock Grid.Row="2" Text="language" VerticalAlignment="Center" Margin="0,0,0,8"/>
+                                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding LanguageCode}" Margin="0,0,0,8"/>
+                                        <TextBlock Grid.Row="3" Text="theme" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding ThemeName}" PlaceholderText="Stack"/>
+                                    </Grid>
+                                    <Button Content="套用到編輯器" Command="{Binding ApplyQuickFieldsCommand}"
+                                            Classes="accent" HorizontalAlignment="Left"/>
+                                </StackPanel>
+                            </Border>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <!-- Tab 2: Graphical params -->
+                    <TabItem Header="Params 表單">
+                        <DockPanel Margin="4">
+                            <Border DockPanel.Dock="Top" Classes="card" Margin="0,0,0,8" Padding="12">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="圖形化 [params]" Classes="sectionTitle"/>
+                                    <TextBlock Classes="caption" TextWrapping="Wrap"
+                                               Text="含 Hugo / Stack 常用參數。修改後按「套用 params 表單」寫入編輯器，再按「儲存」。"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Content="從編輯器重新載入" Command="{Binding ReloadParamsFormCommand}"/>
+                                        <Button Content="套用 params 表單" Classes="accent" Command="{Binding ApplyParamsFormCommand}"/>
+                                    </StackPanel>
+                                    <Grid ColumnDefinitions="*,*,Auto">
+                                        <TextBox PlaceholderText="新參數 path（如 sidebar.subtitle）" Text="{Binding NewParamKey}" Margin="0,0,6,0"/>
+                                        <TextBox Grid.Column="1" PlaceholderText="值" Text="{Binding NewParamValue}" Margin="0,0,6,0"/>
+                                        <Button Grid.Column="2" Content="新增" Command="{Binding AddCustomParamCommand}"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="card" Padding="0">
+                                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                                    <ItemsControl ItemsSource="{Binding ParamFields}" Margin="12">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="svc:ParamFieldItem">
+                                                <Border Margin="0,0,0,10" Padding="10"
+                                                        Background="#121820" CornerRadius="8"
+                                                        BorderBrush="#2A3648" BorderThickness="1">
+                                                    <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto">
+                                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                                                                   VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding Path}"
+                                                                   Classes="mono muted" VerticalAlignment="Center"
+                                                                   HorizontalAlignment="Right"/>
+
+                                                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2"
+                                                                   Text="{Binding Description}"
+                                                                   Classes="caption" Margin="0,2,0,6"/>
+
+                                                        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Spacing="6">
+                                                            <TextBlock Text="{Binding KindLabel}" Classes="caption"/>
+                                                            <CheckBox Content="啟用 / 是"
+                                                                      IsChecked="{Binding BoolValue}"
+                                                                      IsVisible="{Binding IsBool}"/>
+                                                            <TextBox Text="{Binding StringValue}"
+                                                                     PlaceholderText="字串 / 數字 / 逗號分隔陣列"
+                                                                     IsVisible="{Binding IsText}"/>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Border>
+                        </DockPanel>
+                    </TabItem>
+
+                    <!-- Tab 3: Raw editor -->
+                    <TabItem Header="原始 TOML">
+                        <Border Classes="card" Padding="0" Margin="4">
+                            <TextBox Text="{Binding EditorText}"
+                                     AcceptsReturn="True"
+                                     TextWrapping="NoWrap"
+                                     FontFamily="Consolas, Cascadia Mono, monospace"
+                                     Classes="codeEditor"/>
+                        </Border>
+                    </TabItem>
+                </TabControl>
+
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
+                    <Button Content="儲存" Classes="accent" Command="{Binding SaveCommand}"/>
+                    <Button Content="重新載入檔案" Command="{Binding LoadSelectedCommand}"/>
+                    <TextBlock Text="{Binding StatusMessage}" Classes="muted" VerticalAlignment="Center"/>
+                    <TextBlock Text="● 未儲存" Foreground="#E6A23C" VerticalAlignment="Center"
+                               IsVisible="{Binding IsDirty}"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>
