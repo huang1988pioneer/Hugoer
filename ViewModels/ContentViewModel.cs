@@ -67,6 +67,9 @@ public partial class ContentViewModel : PageViewModelBase
     [ObservableProperty]
     public partial string PreviewModeLabel { get; set; } = "即時預覽：開";
 
+    [ObservableProperty]
+    public partial string EditorStatistics { get; set; } = "正文 0 字元 · 1 行";
+
     private bool _loading;
     private bool _syncingFrontMatter;
     private List<ContentItem> _all = [];
@@ -86,6 +89,7 @@ public partial class ContentViewModel : PageViewModelBase
 
     partial void OnEditorTextChanged(string value)
     {
+        UpdateEditorStatistics(value);
         if (!_loading)
             IsDirty = true;
 
@@ -93,6 +97,14 @@ public partial class ContentViewModel : PageViewModelBase
             PopulateFrontMatter(value);
 
         SchedulePreviewUpdate(value);
+    }
+
+    private void UpdateEditorStatistics(string markdown)
+    {
+        var body = MarkdownPreviewService.StripFrontMatter(markdown);
+        var characters = body.Count(character => !char.IsWhiteSpace(character));
+        var lines = string.IsNullOrEmpty(body) ? 1 : body.Count(character => character == '\n') + 1;
+        EditorStatistics = $"正文 {characters:N0} 字元 · {lines:N0} 行";
     }
 
     partial void OnFrontMatterTitleChanged(string value) => UpdateEditorFromFrontMatter();
