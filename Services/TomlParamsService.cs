@@ -25,6 +25,8 @@ public sealed class ParamFieldItem
     public bool BoolValue { get; set; }
     public string Section { get; init; } = "params";
     public bool IsKnown { get; init; }
+    public bool IsConfigured { get; set; }
+    public bool IsEditable => Kind != ParamFieldKind.Nested;
 
     public bool IsBool => Kind == ParamFieldKind.Bool;
     public bool IsText => Kind != ParamFieldKind.Bool;
@@ -47,23 +49,61 @@ public sealed class TomlParamsService
         ("mainSections", "主要區塊", "例如 post（逗號分隔）", ParamFieldKind.Array),
         ("colorScheme.default", "色彩模式", "auto / light / dark", ParamFieldKind.String),
         ("colorScheme.toggle", "允許切換色彩模式", "顯示明暗模式切換", ParamFieldKind.Bool),
-        ("defaultTheme", "預設主題色", "Stack: auto / light / dark", ParamFieldKind.String),
-        ("image", "預設圖片", "社群分享預設圖", ParamFieldKind.String),
-        ("dateFormat", "日期格式", "例如 2006-01-02", ParamFieldKind.String),
-        ("displayTitle", "顯示標題", "是否顯示文章標題", ParamFieldKind.Bool),
-        ("displayDescription", "顯示描述", "是否顯示描述", ParamFieldKind.Bool),
-        ("displayTags", "顯示標籤", "是否顯示標籤", ParamFieldKind.Bool),
-        ("displayCategories", "顯示分類", "是否顯示分類", ParamFieldKind.Bool),
-        ("fullWidth", "全寬版面", "內容區是否全寬", ParamFieldKind.Bool),
-        ("footer.since", "Footer 起始年", "版權起始年份", ParamFieldKind.String),
+        ("rssFullContent", "RSS 顯示全文", "Stack v4 RSS 是否輸出全文", ParamFieldKind.Bool),
+        ("favicon", "網站圖示", "Stack v4 assets 路徑，例如 img/favicon.png", ParamFieldKind.String),
+        ("SortBy", "文章排序", "Stack v4：default / lastmod（保留大寫 S）", ParamFieldKind.String),
+        ("footer.since", "Footer 起始年", "版權起始年份", ParamFieldKind.Number),
         ("footer.customText", "Footer 文字", "自訂頁尾文字", ParamFieldKind.String),
+        ("dateFormat.published", "發佈日期格式", "Stack v4，例如 :date_full", ParamFieldKind.String),
+        ("dateFormat.lastUpdated", "更新日期格式", "Stack v4，例如 :date_full", ParamFieldKind.String),
+        ("sidebar.compact", "緊湊側欄", "Stack v4 緊湊側欄模式", ParamFieldKind.Bool),
         ("sidebar.emoji", "側欄 Emoji", "Stack 側欄圖示", ParamFieldKind.String),
         ("sidebar.subtitle", "側欄副標", "個人簡介副標", ParamFieldKind.String),
-        ("article.showTitle", "文章顯示標題", "Stack article", ParamFieldKind.Bool),
-        ("article.showDate", "文章顯示日期", "Stack article", ParamFieldKind.Bool),
-        ("article.showTableOfContents", "顯示目錄", "TOC", ParamFieldKind.Bool),
-        ("widgets.homepage", "首頁 widgets", "逗號分隔，如 search,archives,tag-cloud", ParamFieldKind.Array),
-        ("widgets.page", "內頁 widgets", "逗號分隔", ParamFieldKind.Array),
+        ("sidebar.avatar", "側欄頭像", "Stack v4 單一 assets 路徑；空白代表停用", ParamFieldKind.String),
+        ("article.headingAnchor", "標題錨點", "Stack v4 顯示 heading anchor", ParamFieldKind.Bool),
+        ("article.math", "數學排版", "Stack v4 數學功能；亦需 Goldmark passthrough", ParamFieldKind.Bool),
+        ("article.toc", "文章目錄", "Stack v4 顯示目錄", ParamFieldKind.Bool),
+        ("article.readingTime", "閱讀時間", "Stack v4 顯示預估閱讀時間", ParamFieldKind.Bool),
+        ("article.list.showTags", "列表顯示標籤", "Stack v4 文章列表顯示 tags", ParamFieldKind.Bool),
+        ("article.license.enabled", "顯示文章授權", "Stack v4 文章授權區塊", ParamFieldKind.Bool),
+        ("article.license.default", "預設授權文字", "Stack v4 預設文章授權", ParamFieldKind.String),
+        ("article.mermaid.look", "Mermaid 外觀", "classic / handDrawn", ParamFieldKind.String),
+        ("article.mermaid.lightTheme", "Mermaid 淺色主題", "default / neutral / forest / base", ParamFieldKind.String),
+        ("article.mermaid.darkTheme", "Mermaid 深色主題", "dark / neutral / forest / base", ParamFieldKind.String),
+        ("article.mermaid.securityLevel", "Mermaid 安全層級", "strict / loose / antiscript / sandbox", ParamFieldKind.String),
+        ("article.mermaid.htmlLabels", "Mermaid HTML 標籤", "需搭配 loose 安全層級", ParamFieldKind.Bool),
+        ("article.mermaid.transparentBackground", "Mermaid 透明背景", "圖表使用透明背景", ParamFieldKind.Bool),
+        ("article.alertIcon.note", "Note 圖示", "Stack v4 alert icon", ParamFieldKind.String),
+        ("article.alertIcon.tip", "Tip 圖示", "Stack v4 alert icon", ParamFieldKind.String),
+        ("article.alertIcon.important", "Important 圖示", "Stack v4 alert icon", ParamFieldKind.String),
+        ("article.alertIcon.warning", "Warning 圖示", "Stack v4 alert icon", ParamFieldKind.String),
+        ("article.alertIcon.caution", "Caution 圖示", "Stack v4 alert icon", ParamFieldKind.String),
+        ("opengraph.twitter.site", "X/Twitter 帳號", "Stack v4 Open Graph site", ParamFieldKind.String),
+        ("opengraph.twitter.card", "X/Twitter 卡片", "summary / summary_large_image", ParamFieldKind.String),
+        ("imageProcessing.autoOrient", "自動旋轉圖片", "依 EXIF 方向自動旋轉", ParamFieldKind.Bool),
+        ("imageProcessing.external.timeout", "外部圖片逾時", "Go duration，例如 5s", ParamFieldKind.String),
+        ("imageProcessing.content.enabled", "處理內容圖片", "Stack v4 響應式內容圖片", ParamFieldKind.Bool),
+        ("imageProcessing.content.widths", "內容圖片寬度", "遞增正整數，例如 800, 1600, 2400", ParamFieldKind.Array),
+        ("imageProcessing.thumbnail.enabled", "處理縮圖", "Stack v4；取代舊 cover.enabled", ParamFieldKind.Bool),
+        ("cookies.enabled", "Cookie 同意介面", "Stack v4 cookie consent", ParamFieldKind.Bool),
+        ("cookies.showSettings", "Cookie 設定按鈕", "允許訪客調整 cookie 類別", ParamFieldKind.Bool),
+        ("cookies.categories.analytics", "分析 Cookie", "Stack v4 analytics 類別", ParamFieldKind.Bool),
+        ("cookies.categories.functional", "功能 Cookie", "Stack v4 functional 類別", ParamFieldKind.Bool),
+        ("comments.enabled", "啟用留言", "Stack v4 留言總開關", ParamFieldKind.Bool),
+        ("comments.provider", "留言服務", "giscus / utterances / waline 等", ParamFieldKind.String),
+        ("comments.giscus.repo", "Giscus 儲存庫", "owner/repo", ParamFieldKind.String),
+        ("comments.giscus.repoID", "Giscus Repo ID", "Giscus 產生的 repo ID", ParamFieldKind.String),
+        ("comments.giscus.category", "Giscus 分類", "Discussion category 名稱", ParamFieldKind.String),
+        ("comments.giscus.categoryID", "Giscus Category ID", "Giscus 產生的 category ID", ParamFieldKind.String),
+        ("comments.giscus.mapping", "Giscus 對應方式", "title / pathname / url 等", ParamFieldKind.String),
+        ("comments.giscus.lightTheme", "Giscus 淺色主題", "例如 light", ParamFieldKind.String),
+        ("comments.giscus.darkTheme", "Giscus 深色主題", "例如 dark_dimmed", ParamFieldKind.String),
+        ("comments.giscus.reactionsEnabled", "Giscus 表情回應", "0 / 1", ParamFieldKind.Number),
+        ("comments.giscus.emitMetadata", "Giscus metadata", "0 / 1", ParamFieldKind.Number),
+        ("comments.giscus.inputPosition", "Giscus 輸入位置", "top / bottom", ParamFieldKind.String),
+        ("comments.giscus.lang", "Giscus 語言", "例如 zh-TW", ParamFieldKind.String),
+        ("comments.giscus.strict", "Giscus 嚴格對應", "0 / 1", ParamFieldKind.Number),
+        ("comments.giscus.loading", "Giscus 載入方式", "lazy / eager", ParamFieldKind.String),
     ];
 
     public ObservableCollection<ParamFieldItem> LoadParamsForm(string tomlText)
@@ -94,6 +134,7 @@ public sealed class TomlParamsService
                 Kind = kind,
                 StringValue = existing.Value ?? string.Empty,
                 BoolValue = existing.Bool,
+                IsConfigured = flat.ContainsKey(key),
                 IsKnown = true
             });
         }
@@ -110,6 +151,7 @@ public sealed class TomlParamsService
                 Kind = val.Kind,
                 StringValue = val.Value,
                 BoolValue = val.Bool,
+                IsConfigured = true,
                 IsKnown = false
             });
         }
@@ -131,6 +173,17 @@ public sealed class TomlParamsService
         {
             if (string.IsNullOrWhiteSpace(field.Path))
                 continue;
+
+            // Arrays of tables and other complex theme structures are shown for
+            // awareness, but must remain untouched by the scalar form editor.
+            if (!field.IsEditable)
+                continue;
+
+            if (!field.IsConfigured)
+            {
+                RemovePath(paramsTable, field.Path);
+                continue;
+            }
 
             if (!field.IsKnown && field.Kind != ParamFieldKind.Bool
                 && string.IsNullOrWhiteSpace(field.StringValue))
@@ -202,8 +255,11 @@ public sealed class TomlParamsService
                 case double d:
                     flat[path] = (ParamFieldKind.Number, d.ToString(CultureInfo.InvariantCulture), false);
                     break;
-                case TomlArray arr:
+                case TomlArray arr when arr.All(item => item is not TomlTable):
                     flat[path] = (ParamFieldKind.Array, string.Join(", ", arr.Select(FormatScalar)), false);
+                    break;
+                case TomlArray:
+                    flat[path] = (ParamFieldKind.Nested, "複雜物件陣列；請使用原始 TOML 編輯", false);
                     break;
                 case TomlTable nested:
                     FlattenTable(nested, path, flat);
@@ -250,6 +306,30 @@ public sealed class TomlParamsService
             ParamFieldKind.Array => ParseArray(field.StringValue),
             _ => field.StringValue
         };
+    }
+
+    private static void RemovePath(TomlTable root, string path)
+    {
+        var parts = path.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0) return;
+        var parents = new List<(TomlTable Parent, string Key)>();
+        var current = root;
+        for (var index = 0; index < parts.Length - 1; index++)
+        {
+            if (!current.TryGetValue(parts[index], out var value) || value is not TomlTable nested) return;
+            parents.Add((current, parts[index]));
+            current = nested;
+        }
+
+        current.Remove(parts[^1]);
+        for (var index = parents.Count - 1; index >= 0; index--)
+        {
+            var (parent, key) = parents[index];
+            if (parent[key] is TomlTable table && table.Count == 0)
+                parent.Remove(key);
+            else
+                break;
+        }
     }
 
     private static TomlArray ParseArray(string value)
