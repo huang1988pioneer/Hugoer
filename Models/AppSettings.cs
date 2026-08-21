@@ -78,3 +78,14 @@ public sealed class GitRemoteInfo
     public bool GhAuthenticated { get; set; }
     public string? GhUser { get; set; }
 }
+
+public sealed class GitHubRepositoryTarget
+{
+    public bool IsValid { get; init; }
+    public string? Owner { get; init; }
+    public string? Repository { get; init; }
+    public string? CanonicalUrl { get; init; }
+    public string? PagesUrl { get; init; }
+    public bool IsUserOrOrganizationSite { get; init; }
+    public string ErrorMessage { get; init; } = string.Empty;
+}
