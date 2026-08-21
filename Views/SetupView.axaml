@@ -1,0 +1,85 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hugoer.ViewModels"
+             x:Class="Hugoer.Views.SetupView"
+             x:DataType="vm:SetupViewModel">
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="24">
+        <StackPanel Spacing="16" MaxWidth="980">
+            <TextBlock Text="環境設定" Classes="pageTitle"/>
+            <TextBlock Text="一鍵安裝 Hugo、建立新站或開啟既有網站，並可本機預覽與建置。"
+                       Classes="muted" TextWrapping="Wrap"/>
+
+            <Border Classes="card">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Hugo 引擎" Classes="sectionTitle"/>
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="{Binding HugoStatus}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding HugoPath}" Classes="mono muted" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <Button Content="重新偵測" Command="{Binding RefreshHugoCommand}"/>
+                            <Button Content="一鍵安裝 Hugo Extended" Classes="accent"
+                                    Command="{Binding InstallHugoCommand}"
+                                    IsEnabled="{Binding !IsBusy}"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="開啟既有網站" Classes="sectionTitle"/>
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                        <TextBox PlaceholderText="網站路徑" Text="{Binding SitePath}" IsReadOnly="True"/>
+                        <Button Grid.Column="1" Content="瀏覽…" Margin="8,0,0,0"
+                                Command="{Binding BrowseSiteCommand}"/>
+                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0"
+                                   Text="{Binding SiteSummary}" Classes="muted" TextWrapping="Wrap"/>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="本機預覽 (hugo server)" Command="{Binding StartPreviewCommand}"
+                                IsEnabled="{Binding !IsBusy}"/>
+                        <Button Content="在瀏覽器開啟" Command="{Binding OpenPreviewInBrowserCommand}"
+                                IsEnabled="{Binding PreviewReady}"
+                                ToolTip.Tip="開啟 http://127.0.0.1:1313/"/>
+                        <Button Content="建置 (hugo build)" Command="{Binding BuildSiteCommand}"
+                                IsEnabled="{Binding !IsBusy}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="一鍵建立新網站" Classes="sectionTitle"/>
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                        <TextBox PlaceholderText="父資料夾" Text="{Binding NewSiteParent}"/>
+                        <Button Grid.Column="1" Content="選擇…" Margin="8,0,0,0"
+                                Command="{Binding BrowseParentCommand}"/>
+                        <TextBox Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0"
+                                 PlaceholderText="網站資料夾名稱" Text="{Binding NewSiteName}"/>
+                        <Button Grid.Row="2" Grid.ColumnSpan="2" Margin="0,12,0,0"
+                                Content="建立 Hugo 網站" Classes="accent"
+                                HorizontalAlignment="Left"
+                                Command="{Binding CreateSiteCommand}"
+                                IsEnabled="{Binding !IsBusy}"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="操作日誌" Classes="sectionTitle"/>
+                    <TextBox Text="{Binding Log}"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             Classes="logBox"
+                             MinHeight="140"
+                             FontFamily="Consolas, Cascadia Mono, monospace"/>
+                    <TextBlock Text="{Binding StatusMessage}" Classes="muted"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -1,0 +1,77 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hugoer.ViewModels"
+             xmlns:models="using:Hugoer.Models"
+             x:Class="Hugoer.Views.ThemesView"
+             x:DataType="vm:ThemesViewModel">
+
+    <Grid RowDefinitions="Auto,*" Margin="24">
+        <StackPanel Spacing="8" Margin="0,0,0,12">
+            <TextBlock Text="主題 Themes" Classes="pageTitle"/>
+            <TextBlock Text="一鍵安裝熱門主題（推薦 Stack），並編輯主題／站點設定。"
+                       Classes="muted" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,*" RowDefinitions="Auto,*,Auto">
+            <Border Classes="card" Grid.ColumnSpan="2" Margin="0,0,0,12">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="預設主題庫" Classes="sectionTitle"/>
+                    <ListBox ItemsSource="{Binding Presets}"
+                             SelectedItem="{Binding SelectedPreset}"
+                             MaxHeight="180">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="models:ThemePreset">
+                                <StackPanel Spacing="2" Margin="4,6">
+                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding Description}" Classes="caption" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding ConfigHint}" Classes="mono muted"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <CheckBox Content="優先使用 git submodule" IsChecked="{Binding InstallAsSubmodule}"/>
+                        <Button Content="一鍵安裝 Stack" Classes="accent" Command="{Binding InstallStackCommand}"
+                                IsEnabled="{Binding !IsBusy}"/>
+                        <Button Content="安裝所選主題" Command="{Binding InstallSelectedCommand}"
+                                IsEnabled="{Binding !IsBusy}"/>
+                        <Button Content="主題文件" Command="{Binding OpenDocsCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card" Grid.Row="1" Margin="0,0,6,0">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,8">
+                        <TextBlock Text="已安裝主題" Classes="sectionTitle"/>
+                        <Button Content="重新整理" Command="{Binding RefreshInstalledCommand}"/>
+                        <Button Content="設為目前 theme" Command="{Binding ActivateThemeCommand}"/>
+                    </StackPanel>
+                    <ListBox ItemsSource="{Binding InstalledThemes}"
+                             SelectedItem="{Binding SelectedInstalled}"/>
+                </DockPanel>
+            </Border>
+
+            <Border Classes="card" Grid.Row="1" Grid.Column="1" Margin="6,0,0,0">
+                <Grid RowDefinitions="Auto,Auto,*">
+                    <TextBlock Text="主題／站點設定檔" Classes="sectionTitle" Margin="0,0,0,8"/>
+                    <ComboBox Grid.Row="1"
+                              ItemsSource="{Binding ThemeConfigFiles}"
+                              SelectedItem="{Binding SelectedConfigFile}"
+                              Margin="0,0,0,8"
+                              HorizontalAlignment="Stretch"/>
+                    <TextBox Grid.Row="2"
+                             Text="{Binding ThemeConfigText}"
+                             AcceptsReturn="True"
+                             FontFamily="Consolas, Cascadia Mono, monospace"
+                             Classes="codeEditor"/>
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
+                <Button Content="儲存設定檔" Classes="accent" Command="{Binding SaveThemeConfigCommand}"/>
+                <TextBlock Text="{Binding StatusMessage}" Classes="muted" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

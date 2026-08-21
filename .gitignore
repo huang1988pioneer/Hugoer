@@ -1,0 +1,11 @@
+bin/
+obj/
+dist/
+artifacts/
+.vs/
+.idea/
+*.user
+*.suo
+*.DotSettings.user
+.DS_Store
+Thumbs.db

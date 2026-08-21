@@ -1,0 +1,124 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Hugoer.App"
+             xmlns:local="using:Hugoer"
+             RequestedThemeVariant="Dark">
+
+    <Application.DataTemplates>
+        <local:ViewLocator />
+    </Application.DataTemplates>
+
+    <Application.Styles>
+        <FluentTheme />
+
+        <Style Selector="TextBlock.appTitle">
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#7CDAF9"/>
+        </Style>
+
+        <Style Selector="TextBlock.pageTitle">
+            <Setter Property="FontSize" Value="26"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+
+        <Style Selector="TextBlock.sectionTitle">
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Opacity" Value="0.78"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+
+        <Style Selector="TextBlock.caption">
+            <Setter Property="Opacity" Value="0.55"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+
+        <Style Selector="TextBlock.mono">
+            <Setter Property="FontFamily" Value="Consolas, Cascadia Mono, monospace"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+
+        <Style Selector="Border.topBar">
+            <Setter Property="Background" Value="#141A22"/>
+            <Setter Property="BorderBrush" Value="#243041"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+        </Style>
+
+        <Style Selector="Border.sidebar">
+            <Setter Property="Background" Value="#10151C"/>
+            <Setter Property="BorderBrush" Value="#243041"/>
+            <Setter Property="BorderThickness" Value="0,0,1,0"/>
+        </Style>
+
+        <Style Selector="Border.contentHost">
+            <Setter Property="Background" Value="#0B0F14"/>
+        </Style>
+
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="#151C26"/>
+            <Setter Property="BorderBrush" Value="#2A3648"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="16"/>
+        </Style>
+
+        <Style Selector="Border.deploymentMonitor">
+            <Setter Property="Background" Value="#102029"/>
+            <Setter Property="BorderBrush" Value="#28677A"/>
+        </Style>
+
+        <Style Selector="Border.pill">
+            <Setter Property="Background" Value="#1C2736"/>
+            <Setter Property="CornerRadius" Value="999"/>
+        </Style>
+
+        <Style Selector="ListBox.navList ListBoxItem">
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="CornerRadius" Value="8"/>
+        </Style>
+
+        <Style Selector="ListBox.navList ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="#1E3A4F"/>
+        </Style>
+
+        <Style Selector="ListBox.navList ListBoxItem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#1A2838"/>
+        </Style>
+
+        <Style Selector="Button">
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="CornerRadius" Value="8"/>
+        </Style>
+
+        <Style Selector="Button.accent">
+            <Setter Property="Background" Value="#0E7490"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#0891B2"/>
+        </Style>
+
+        <Style Selector="TextBox">
+            <Setter Property="CornerRadius" Value="8"/>
+        </Style>
+
+        <Style Selector="TextBox.codeEditor">
+            <Setter Property="AcceptsReturn" Value="True"/>
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="Background" Value="#0D1218"/>
+        </Style>
+
+        <Style Selector="TextBox.logBox">
+            <Setter Property="Background" Value="#0D1218"/>
+            <Setter Property="Padding" Value="10"/>
+        </Style>
+    </Application.Styles>
+</Application>
