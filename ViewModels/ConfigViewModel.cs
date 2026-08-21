@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Hugoer.Helpers;
@@ -9,6 +10,8 @@ namespace Hugoer.ViewModels;
 public partial class ConfigViewModel : PageViewModelBase
 {
     private readonly TomlParamsService _paramsService = new();
+    private readonly HugoConfigService _configService = new();
+    private List<ConfigFieldItem> _allConfigFields = [];
 
     public ConfigViewModel()
     {
@@ -17,6 +20,8 @@ public partial class ConfigViewModel : PageViewModelBase
 
     public ObservableCollection<string> ConfigFiles { get; } = [];
     public ObservableCollection<ParamFieldItem> ParamFields { get; } = [];
+    public ObservableCollection<ConfigFieldItem> ConfigFields { get; } = [];
+    public ObservableCollection<string> ConfigGroups { get; } = ["全部"];
 
     [ObservableProperty]
     public partial string? SelectedFile { get; set; }
@@ -48,6 +53,15 @@ public partial class ConfigViewModel : PageViewModelBase
     [ObservableProperty]
     public partial string NewParamValue { get; set; } = string.Empty;
 
+    [ObservableProperty]
+    public partial string ConfigSearch { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string SelectedConfigGroup { get; set; } = "全部";
+
+    [ObservableProperty]
+    public partial string ConfigCatalogSummary { get; set; } = string.Empty;
+
     private bool _loading;
 
     public override async Task OnNavigatedToAsync()
@@ -66,6 +80,9 @@ public partial class ConfigViewModel : PageViewModelBase
         if (!_loading)
             IsDirty = true;
     }
+
+    partial void OnConfigSearchChanged(string value) => ApplyConfigFilter();
+    partial void OnSelectedConfigGroupChanged(string value) => ApplyConfigFilter();
 
     [RelayCommand]
     private async Task RefreshFilesAsync()
@@ -106,6 +123,7 @@ public partial class ConfigViewModel : PageViewModelBase
             IsDirty = false;
             ParseQuickFields(EditorText);
             ReloadParamsForm();
+            ReloadAdvancedForm();
             StatusMessage = $"已載入：{SelectedFile}";
         }
         finally
@@ -137,12 +155,13 @@ public partial class ConfigViewModel : PageViewModelBase
             {
                 ["baseURL"] = BaseUrl,
                 ["title"] = SiteTitle,
-                ["languageCode"] = LanguageCode,
+                ["locale"] = LanguageCode,
                 ["theme"] = ThemeName
             });
             StatusMessage = "已套用網站基本欄位（記得按儲存）";
             IsDirty = true;
             ReloadParamsForm();
+            ReloadAdvancedForm();
         }
         catch (Exception ex)
         {
@@ -150,11 +169,12 @@ public partial class ConfigViewModel : PageViewModelBase
             var text = EditorText;
             text = UpsertTomlLine(text, "baseURL", BaseUrl);
             text = UpsertTomlLine(text, "title", SiteTitle);
-            text = UpsertTomlLine(text, "languageCode", LanguageCode);
+            text = UpsertTomlLine(text, "locale", LanguageCode);
             if (!string.IsNullOrWhiteSpace(ThemeName))
                 text = UpsertTomlLine(text, "theme", ThemeName);
             EditorText = text;
             StatusMessage = $"已套用快速欄位（簡易模式）：{ex.Message}";
+            ReloadAdvancedForm();
         }
     }
 
@@ -184,6 +204,76 @@ public partial class ConfigViewModel : PageViewModelBase
     }
 
     [RelayCommand]
+    private void ReloadAdvancedForm()
+    {
+        try
+        {
+            _allConfigFields = _configService.LoadForm(EditorText).ToList();
+            ConfigGroups.Clear();
+            ConfigGroups.Add("全部");
+            foreach (var group in _allConfigFields.Select(field => field.Group).Distinct().OrderBy(group => group))
+                ConfigGroups.Add(group);
+            if (!ConfigGroups.Contains(SelectedConfigGroup))
+                SelectedConfigGroup = "全部";
+            ApplyConfigFilter();
+            ConfigCatalogSummary = $"官方欄位 {HugoConfigService.Definitions.Count} 項；目前設定 {_allConfigFields.Count(field => field.IsConfigured)} 項";
+        }
+        catch (Exception ex)
+        {
+            ConfigFields.Clear();
+            ConfigCatalogSummary = "無法載入進階設定";
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private void ApplyAdvancedForm()
+    {
+        try
+        {
+            EditorText = _configService.ApplyToToml(EditorText, _allConfigFields);
+            ParseQuickFields(EditorText);
+            ReloadParamsForm();
+            ReloadAdvancedForm();
+            IsDirty = true;
+            StatusMessage = "已將 Hugo 進階設定套用到編輯器（記得按儲存）";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private void OpenOfficialConfigDocs()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "https://gohugo.io/configuration/",
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"無法開啟官方文檔：{ex.Message}";
+        }
+    }
+
+    private void ApplyConfigFilter()
+    {
+        ConfigFields.Clear();
+        IEnumerable<ConfigFieldItem> fields = _allConfigFields;
+        if (!string.IsNullOrWhiteSpace(SelectedConfigGroup) && SelectedConfigGroup != "全部")
+            fields = fields.Where(field => field.Group.Equals(SelectedConfigGroup, StringComparison.Ordinal));
+        if (!string.IsNullOrWhiteSpace(ConfigSearch))
+            fields = fields.Where(field => field.SearchText.Contains(ConfigSearch.Trim(), StringComparison.OrdinalIgnoreCase));
+        foreach (var field in fields)
+            ConfigFields.Add(field);
+    }
+
+    [RelayCommand]
     private void AddCustomParam()
     {
         if (string.IsNullOrWhiteSpace(NewParamKey))
@@ -207,6 +297,7 @@ public partial class ConfigViewModel : PageViewModelBase
             Description = "自訂參數",
             Kind = ParamFieldKind.String,
             StringValue = NewParamValue,
+            IsConfigured = true,
             IsKnown = false
         });
         NewParamKey = string.Empty;
@@ -223,14 +314,17 @@ public partial class ConfigViewModel : PageViewModelBase
         {
             var content = """
 baseURL = 'https://example.org/'
-languageCode = 'zh-tw'
+locale = 'zh-tw'
 title = 'My Hugo Site'
 theme = ''
 
 [params]
   description = 'A site managed by Hugoer'
-  colorScheme = 'auto'
   mainSections = ['post']
+
+[params.colorScheme]
+  toggle = true
+  default = 'auto'
 """;
             await File.WriteAllTextAsync(path, content);
         }
@@ -244,7 +338,7 @@ theme = ''
     {
         BaseUrl = ReadTomlLine(text, "baseURL") ?? ReadTomlLine(text, "baseurl") ?? string.Empty;
         SiteTitle = ReadTomlLine(text, "title") ?? string.Empty;
-        LanguageCode = ReadTomlLine(text, "languageCode") ?? "zh-tw";
+        LanguageCode = ReadTomlLine(text, "locale") ?? ReadTomlLine(text, "languageCode") ?? "zh-tw";
         ThemeName = ReadTomlLine(text, "theme") ?? string.Empty;
     }
 

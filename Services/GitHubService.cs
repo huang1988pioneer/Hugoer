@@ -1,11 +1,99 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Hugoer.Helpers;
 using Hugoer.Models;
 
 namespace Hugoer.Services;
 
 public sealed partial class GitHubService
 {
+    public static GitHubRepositoryTarget ParseRepositoryTarget(string? input)
+    {
+        var value = input?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+            return InvalidTarget("請貼上 GitHub repository 網址。");
+
+        if (!value.Contains("://", StringComparison.Ordinal))
+            value = value.StartsWith("github.com/", StringComparison.OrdinalIgnoreCase)
+                ? $"https://{value}"
+                : $"https://github.com/{value.TrimStart('/')}";
+
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            || !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return InvalidTarget("僅支援 https://github.com/owner/repository 網址。");
+        }
+
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length != 2)
+            return InvalidTarget("網址必須指向 repository 首頁，不可包含 issues、settings 等子路徑。");
+
+        var owner = Uri.UnescapeDataString(segments[0]);
+        var repository = Uri.UnescapeDataString(segments[1]);
+        if (repository.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+            repository = repository[..^4];
+
+        if (!GitHubOwnerRegex().IsMatch(owner) || !GitHubRepositoryRegex().IsMatch(repository))
+            return InvalidTarget("GitHub owner 或 repository 名稱格式無效。");
+
+        var userSite = repository.Equals($"{owner}.github.io", StringComparison.OrdinalIgnoreCase);
+        var pagesUrl = userSite
+            ? $"https://{owner.ToLowerInvariant()}.github.io/"
+            : $"https://{owner.ToLowerInvariant()}.github.io/{repository}/";
+
+        return new GitHubRepositoryTarget
+        {
+            IsValid = true,
+            Owner = owner,
+            Repository = repository,
+            CanonicalUrl = $"https://github.com/{owner}/{repository}.git",
+            PagesUrl = pagesUrl,
+            IsUserOrOrganizationSite = userSite
+        };
+    }
+
+    public async Task UpdateBaseUrlAsync(
+        string sitePath,
+        string baseUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var config = PathHelper.FindConfigFile(sitePath)
+                     ?? Path.Combine(sitePath, "hugo.toml");
+        var original = File.Exists(config)
+            ? await File.ReadAllTextAsync(config, cancellationToken).ConfigureAwait(false)
+            : string.Empty;
+        var updated = new TomlParamsService().UpsertSimpleRootKeys(original, new Dictionary<string, string>
+        {
+            ["baseURL"] = baseUrl
+        });
+        await File.WriteAllTextAsync(config, updated, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<(bool HasAccess, string Message)> CheckPushAccessAsync(
+        GitHubRepositoryTarget target,
+        CancellationToken cancellationToken = default)
+    {
+        if (!target.IsValid || string.IsNullOrWhiteSpace(target.Owner) || string.IsNullOrWhiteSpace(target.Repository))
+            return (false, target.ErrorMessage);
+
+        var result = await ProcessRunner.RunAsync(
+            "gh",
+            $"api repos/{target.Owner}/{target.Repository} --jq .permissions.push",
+            timeoutMs: 30_000,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!result.Succeeded)
+        {
+            return (false,
+                $"無法確認 repository 權限。請確認 gh 已登入，且 repository 存在或目前帳號可存取。\n{result.CombinedOutput}");
+        }
+
+        var canPush = result.StdOut.Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
+        return canPush
+            ? (true, $"已確認具有 {target.Owner}/{target.Repository} 的推送權限。")
+            : (false, $"目前 GitHub 登入帳號沒有 {target.Owner}/{target.Repository} 的推送權限。請由 owner 加入 collaborator，或改用有權限的帳號執行 gh auth login。");
+    }
+
     public async Task<bool> IsGitAvailableAsync(CancellationToken cancellationToken = default)
     {
         var r = await ProcessRunner.RunAsync("git", "--version", timeoutMs: 10_000, cancellationToken: cancellationToken)
@@ -191,6 +279,109 @@ Thumbs.db
         };
     }
 
+    public async Task<CommandResult> ConnectExistingRepositoryAndPushAsync(
+        string sitePath,
+        GitHubRepositoryTarget target,
+        string commitMessage,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!target.IsValid || string.IsNullOrWhiteSpace(target.CanonicalUrl))
+            return new CommandResult { ExitCode = -1, StdErr = target.ErrorMessage };
+
+        progress?.Report("初始化本機 Git repository…");
+        var init = await InitRepoAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        if (!init.Succeeded) return init;
+
+        var remote = await ProcessRunner.RunAsync(
+            "git", "remote get-url origin", sitePath, 10_000, cancellationToken).ConfigureAwait(false);
+        if (remote.Succeeded)
+        {
+            var (existingOwner, existingRepository) = ParseGitHubRemote(remote.StdOut.Trim());
+            if (string.IsNullOrWhiteSpace(existingOwner)
+                || string.IsNullOrWhiteSpace(existingRepository)
+                || !existingOwner.Equals(target.Owner, StringComparison.OrdinalIgnoreCase)
+                || !existingRepository.Equals(target.Repository, StringComparison.OrdinalIgnoreCase))
+            {
+                return new CommandResult
+                {
+                    ExitCode = -1,
+                    StdErr = $"本機 origin 已指向其他 repository：{remote.StdOut.Trim()}。為避免推錯位置，Hugoer 未修改 origin。"
+                };
+            }
+        }
+        else
+        {
+            progress?.Report($"連結 origin：{target.Owner}/{target.Repository}…");
+            var addRemote = await ProcessRunner.RunAsync(
+                "git", $"remote add origin \"{target.CanonicalUrl}\"", sitePath, 15_000, cancellationToken)
+                .ConfigureAwait(false);
+            if (!addRemote.Succeeded) return addRemote;
+        }
+
+        progress?.Report("抓取遠端預設分支…");
+        var fetch = await ProcessRunner.RunAsync(
+            "git", "fetch origin --prune", sitePath, 120_000, cancellationToken).ConfigureAwait(false);
+        if (!fetch.Succeeded) return fetch;
+
+        var remoteHead = await ProcessRunner.RunAsync(
+            "git", "ls-remote --symref origin HEAD", sitePath, 30_000, cancellationToken).ConfigureAwait(false);
+        var branchMatch = RemoteHeadRegex().Match(remoteHead.StdOut);
+        var remoteBranch = branchMatch.Success ? branchMatch.Groups["branch"].Value : "main";
+        if (!GitBranchRegex().IsMatch(remoteBranch))
+            return new CommandResult { ExitCode = -1, StdErr = "遠端預設分支名稱格式不安全，已停止操作。" };
+        var remoteHasCommit = RemoteHeadCommitRegex().IsMatch(remoteHead.StdOut);
+
+        var localHead = await ProcessRunner.RunAsync(
+            "git", "rev-parse --verify HEAD", sitePath, 10_000, cancellationToken).ConfigureAwait(false);
+        if (remoteHasCommit && !localHead.Succeeded)
+        {
+            progress?.Report($"以遠端 {remoteBranch} 為基準，保留本機未追蹤網站檔案…");
+            var checkout = await ProcessRunner.RunAsync(
+                "git", $"checkout -B \"{remoteBranch}\" --track \"origin/{remoteBranch}\"",
+                sitePath, 30_000, cancellationToken).ConfigureAwait(false);
+            if (!checkout.Succeeded)
+            {
+                return new CommandResult
+                {
+                    ExitCode = checkout.ExitCode,
+                    StdErr = $"遠端檔案與本機未追蹤檔案衝突，已停止連結；沒有強制覆蓋。\n{checkout.CombinedOutput}"
+                };
+            }
+        }
+        else if (remoteHasCommit && localHead.Succeeded)
+        {
+            progress?.Report($"合併遠端 {remoteBranch}（允許初始 README 歷史）…");
+            var merge = await ProcessRunner.RunAsync(
+                "git", $"merge \"origin/{remoteBranch}\" --allow-unrelated-histories --no-edit",
+                sitePath, 60_000, cancellationToken).ConfigureAwait(false);
+            if (!merge.Succeeded)
+            {
+                await ProcessRunner.RunAsync("git", "merge --abort", sitePath, 15_000, cancellationToken)
+                    .ConfigureAwait(false);
+                return new CommandResult
+                {
+                    ExitCode = merge.ExitCode,
+                    StdErr = $"遠端內容與本機內容發生合併衝突，已中止合併且未推送。\n{merge.CombinedOutput}"
+                };
+            }
+        }
+
+        progress?.Report("加入 GitHub Actions workflow 並提交網站…");
+        await EnsureGitHubActionsWorkflowAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        var commit = await CommitAllAsync(sitePath, commitMessage, cancellationToken).ConfigureAwait(false);
+        if (!commit.Succeeded) return commit;
+
+        progress?.Report($"推送到 {target.Owner}/{target.Repository}…");
+        var push = await ProcessRunner.RunAsync(
+            "git", $"push -u origin HEAD:\"{remoteBranch}\"", sitePath, 180_000, cancellationToken)
+            .ConfigureAwait(false);
+        if (!push.Succeeded) return push;
+
+        progress?.Report("啟用 GitHub Pages（Actions）…");
+        return await EnablePagesFromActionsAsync(sitePath, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<CommandResult> PushAsync(
         string sitePath,
         string commitMessage = "Update site via Hugoer",
@@ -355,6 +546,12 @@ Thumbs.db
         return (m.Groups["owner"].Value, m.Groups["repo"].Value);
     }
 
+    private static GitHubRepositoryTarget InvalidTarget(string message) => new()
+    {
+        IsValid = false,
+        ErrorMessage = message
+    };
+
     private const string DefaultHugoPagesWorkflow = """
 # Sample workflow for building and deploying a Hugo site to GitHub Pages
 name: Deploy Hugo site to Pages
@@ -381,7 +578,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      HUGO_VERSION: 0.147.8
+      HUGO_VERSION: 0.164.0
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -427,6 +624,21 @@ jobs:
         uses: actions/deploy-pages@v4
 """;
 
-    [GeneratedRegex(@"github\.com[:/](?<owner>[^/]+)/(?<repo>[^/.]+)(?:\.git)?", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"github\.com[:/](?<owner>[^/]+)/(?<repo>[^/\s]+?)(?:\.git)?/?$", RegexOptions.IgnoreCase)]
     private static partial Regex GitHubRemoteRegex();
+
+    [GeneratedRegex(@"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")]
+    private static partial Regex GitHubOwnerRegex();
+
+    [GeneratedRegex(@"^[A-Za-z0-9._-]{1,100}$")]
+    private static partial Regex GitHubRepositoryRegex();
+
+    [GeneratedRegex(@"ref:\s+refs/heads/(?<branch>[^\s]+)\s+HEAD")]
+    private static partial Regex RemoteHeadRegex();
+
+    [GeneratedRegex(@"(?m)^[0-9a-f]{40,64}\s+HEAD$")]
+    private static partial Regex RemoteHeadCommitRegex();
+
+    [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._/-]*$")]
+    private static partial Regex GitBranchRegex();
 }

@@ -8,7 +8,7 @@
     <Grid RowDefinitions="Auto,*" Margin="24">
         <StackPanel Spacing="8" Margin="0,0,0,12">
             <TextBlock Text="設定檔" Classes="pageTitle"/>
-            <TextBlock Text="網站基本設定、圖形化 params 表單，以及原始 TOML 編輯。"
+            <TextBlock Text="網站基本設定、Hugo 官方進階設定、圖形化主題 params，以及原始 TOML 編輯。"
                        Classes="muted" TextWrapping="Wrap"/>
         </StackPanel>
 
@@ -51,7 +51,90 @@
                         </ScrollViewer>
                     </TabItem>
 
-                    <!-- Tab 2: Graphical params -->
+                    <!-- Tab 2: Official Hugo configuration catalog -->
+                    <TabItem Header="Hugo 進階">
+                        <DockPanel Margin="4">
+                            <Border DockPanel.Dock="Top" Classes="card" Margin="0,0,0,8" Padding="12">
+                                <StackPanel Spacing="10">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Hugo 官方設定目錄" Classes="sectionTitle"/>
+                                            <TextBlock Text="{Binding ConfigCatalogSummary}" Classes="caption"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="開啟 Hugo 官方文檔"
+                                                Command="{Binding OpenOfficialConfigDocsCommand}"/>
+                                    </Grid>
+                                    <TextBlock Classes="caption" TextWrapping="Wrap"
+                                               Text="勾選「寫入設定」才會加入 TOML；取消勾選會移除該欄位。未收錄欄位與 [params] 內容會保留。修改後仍需按下方「儲存」。"/>
+                                    <Grid ColumnDefinitions="2*,*,Auto,Auto">
+                                        <TextBox Text="{Binding ConfigSearch}"
+                                                 PlaceholderText="搜尋名稱、TOML path、用途…" Margin="0,0,8,0"/>
+                                        <ComboBox Grid.Column="1" ItemsSource="{Binding ConfigGroups}"
+                                                  SelectedItem="{Binding SelectedConfigGroup}" Margin="0,0,8,0"/>
+                                        <Button Grid.Column="2" Content="重新載入"
+                                                Command="{Binding ReloadAdvancedFormCommand}" Margin="0,0,8,0"/>
+                                        <Button Grid.Column="3" Content="套用進階設定" Classes="accent"
+                                                Command="{Binding ApplyAdvancedFormCommand}"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="card" Padding="0">
+                                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                                    <ItemsControl ItemsSource="{Binding ConfigFields}" Margin="12">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="svc:ConfigFieldItem">
+                                                <Border Margin="0,0,0,10" Padding="12"
+                                                        Background="#121820" CornerRadius="8"
+                                                        BorderBrush="#2A3648" BorderThickness="1">
+                                                    <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto">
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <CheckBox Content="寫入設定" IsChecked="{Binding IsConfigured}"
+                                                                      VerticalAlignment="Center"/>
+                                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                                                                       FontSize="15" VerticalAlignment="Center"/>
+                                                            <Border Background="#1B2A3B" CornerRadius="10" Padding="8,2">
+                                                                <TextBlock Text="{Binding Group}" Classes="caption"/>
+                                                            </Border>
+                                                        </StackPanel>
+                                                        <Button Grid.Column="1" Content="官方說明"
+                                                                Command="{Binding OpenDocumentationCommand}"/>
+
+                                                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Path}"
+                                                                   Classes="mono" Foreground="#67D8FF" Margin="0,7,0,2"/>
+                                                        <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding Description}"
+                                                                   Classes="caption" TextWrapping="Wrap" Margin="0,0,0,8"/>
+
+                                                        <Grid Grid.Row="3" Grid.ColumnSpan="2" ColumnDefinitions="180,*" IsEnabled="{Binding IsConfigured}">
+                                                            <StackPanel Spacing="3" Margin="0,0,14,0">
+                                                                <TextBlock Text="{Binding KindLabel}" Classes="caption"/>
+                                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                                    <TextBlock Text="預設：" Classes="caption"/>
+                                                                    <TextBlock Text="{Binding DefaultLabel}" Classes="mono muted" TextWrapping="Wrap"/>
+                                                                </StackPanel>
+                                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                                    <TextBlock Text="範例：" Classes="caption"/>
+                                                                    <TextBlock Text="{Binding Example}" Classes="mono muted" TextWrapping="Wrap"/>
+                                                                </StackPanel>
+                                                            </StackPanel>
+                                                            <CheckBox Grid.Column="1" Content="啟用 / true"
+                                                                      IsChecked="{Binding BoolValue}"
+                                                                      IsVisible="{Binding IsBool}" VerticalAlignment="Center"/>
+                                                            <TextBox Grid.Column="1" Text="{Binding StringValue}"
+                                                                     PlaceholderText="輸入設定值；陣列以逗號分隔"
+                                                                     IsVisible="{Binding IsText}" VerticalAlignment="Center"/>
+                                                        </Grid>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Border>
+                        </DockPanel>
+                    </TabItem>
+
+                    <!-- Tab 3: Graphical params -->
                     <TabItem Header="Params 表單">
                         <DockPanel Margin="4">
                             <Border DockPanel.Dock="Top" Classes="card" Margin="0,0,0,8" Padding="12">
@@ -80,8 +163,12 @@
                                                         Background="#121820" CornerRadius="8"
                                                         BorderBrush="#2A3648" BorderThickness="1">
                                                     <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto">
-                                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
-                                                                   VerticalAlignment="Center"/>
+                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                            <CheckBox Content="寫入" IsChecked="{Binding IsConfigured}"
+                                                                      IsEnabled="{Binding IsEditable}"/>
+                                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                                                                       VerticalAlignment="Center"/>
+                                                        </StackPanel>
                                                         <TextBlock Grid.Column="1" Text="{Binding Path}"
                                                                    Classes="mono muted" VerticalAlignment="Center"
                                                                    HorizontalAlignment="Right"/>
@@ -90,7 +177,8 @@
                                                                    Text="{Binding Description}"
                                                                    Classes="caption" Margin="0,2,0,6"/>
 
-                                                        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Spacing="6">
+                                                        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Spacing="6"
+                                                                    IsEnabled="{Binding IsEditable}">
                                                             <TextBlock Text="{Binding KindLabel}" Classes="caption"/>
                                                             <CheckBox Content="啟用 / 是"
                                                                       IsChecked="{Binding BoolValue}"
@@ -109,7 +197,7 @@
                         </DockPanel>
                     </TabItem>
 
-                    <!-- Tab 3: Raw editor -->
+                    <!-- Tab 4: Raw editor -->
                     <TabItem Header="原始 TOML">
                         <Border Classes="card" Padding="0" Margin="4">
                             <TextBox Text="{Binding EditorText}"

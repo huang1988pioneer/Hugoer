@@ -29,6 +29,18 @@ public partial class GitHubViewModel : PageViewModelBase
     public partial string RepoName { get; set; } = string.Empty;
 
     [ObservableProperty]
+    public partial string RepositoryUrl { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string RepositoryTargetSummary { get; set; } = "貼上既有 GitHub repository 網址後，Hugoer 會先顯示目標與 Pages 網址。";
+
+    [ObservableProperty]
+    public partial bool CanConnectRepository { get; set; }
+
+    [ObservableProperty]
+    public partial bool SyncRecommendedBaseUrl { get; set; } = true;
+
+    [ObservableProperty]
     public partial bool IsPublicRepo { get; set; } = true;
 
     [ObservableProperty]
@@ -36,6 +48,25 @@ public partial class GitHubViewModel : PageViewModelBase
 
     [ObservableProperty]
     public partial string Log { get; set; } = string.Empty;
+
+    partial void OnRepositoryUrlChanged(string value)
+    {
+        var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(value);
+        CanConnectRepository = target.IsValid;
+        if (!target.IsValid)
+        {
+            RepositoryTargetSummary = string.IsNullOrWhiteSpace(value)
+                ? "貼上既有 GitHub repository 網址後，Hugoer 會先顯示目標與 Pages 網址。"
+                : target.ErrorMessage;
+            return;
+        }
+
+        RepoName = target.Repository!;
+        RepositoryTargetSummary =
+            $"Repository：{target.Owner}/{target.Repository}\n" +
+            $"網站類型：{(target.IsUserOrOrganizationSite ? "使用者／組織網站" : "專案網站")}\n" +
+            $"建議 Pages 網址：{target.PagesUrl}";
+    }
 
     public override async Task OnNavigatedToAsync()
     {
@@ -63,6 +94,8 @@ public partial class GitHubViewModel : PageViewModelBase
                 RepoName = Path.GetFileName(site.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
             var info = await Services.GitHub.GetInfoAsync(site);
+            if (string.IsNullOrWhiteSpace(RepositoryUrl) && !string.IsNullOrWhiteSpace(info.RemoteUrl))
+                RepositoryUrl = info.RemoteUrl;
             RemoteSummary =
                 $"使用者：{info.GhUser ?? "（未登入）"}\n" +
                 $"驗證：{(info.GhAuthenticated ? "已登入" : "未登入")}\n" +
@@ -71,6 +104,67 @@ public partial class GitHubViewModel : PageViewModelBase
                 $"Repo：{(info.Owner is null ? "—" : $"{info.Owner}/{info.Repo}")}";
 
             await RefreshPagesStatusAsync();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ConnectExistingRepositoryAsync()
+    {
+        if (!RequireSite(out var site)) return;
+        var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(RepositoryUrl);
+        if (!target.IsValid)
+        {
+            StatusMessage = target.ErrorMessage;
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            StatusMessage = "正在確認 GitHub repository 推送權限…";
+            var access = await Services.GitHub.CheckPushAccessAsync(target);
+            AppendLog(access.Message);
+            if (!access.HasAccess)
+            {
+                StatusMessage = access.Message;
+                return;
+            }
+
+            if (SyncRecommendedBaseUrl && !string.IsNullOrWhiteSpace(target.PagesUrl))
+            {
+                await Services.GitHub.UpdateBaseUrlAsync(site, target.PagesUrl);
+                AppendLog($"已將 baseURL 設為 {target.PagesUrl}");
+            }
+
+            StatusMessage = "正在以 production 設定驗證 Hugo 網站…";
+            AppendLog("hugo build…");
+            var build = await Services.Hugo.BuildAsync(site);
+            AppendLog(build.CombinedOutput);
+            if (!build.Succeeded)
+            {
+                StatusMessage = "建置失敗；尚未連結或推送 repository。";
+                return;
+            }
+
+            var progress = new Progress<string>(message =>
+            {
+                AppendLog(message);
+                StatusMessage = message;
+            });
+            var result = await Services.GitHub.ConnectExistingRepositoryAndPushAsync(
+                site,
+                target,
+                string.IsNullOrWhiteSpace(CommitMessage) ? "Publish site via Hugoer" : CommitMessage.Trim(),
+                progress);
+            AppendLog(result.CombinedOutput);
+            StatusMessage = result.Succeeded
+                ? "已連結 repository、推送網站並啟用 GitHub Pages"
+                : "連結或部署失敗；請查看操作日誌";
+            await RefreshAsync();
         }
         finally
         {
@@ -106,6 +200,24 @@ public partial class GitHubViewModel : PageViewModelBase
             return;
         }
 
+        var existingTarget = Hugoer.Services.GitHubService.ParseRepositoryTarget(RepoName);
+        if (existingTarget.IsValid)
+        {
+            RepositoryUrl = RepoName.Trim();
+            AppendLog($"偵測到既有 repository 網址，改用安全連結流程：{existingTarget.Owner}/{existingTarget.Repository}");
+            await ConnectExistingRepositoryAsync();
+            return;
+        }
+
+        if (RepoName.Contains("github.com", StringComparison.OrdinalIgnoreCase)
+            || RepoName.Contains('/')
+            || RepoName.Contains('\\'))
+        {
+            StatusMessage = $"Repository 網址格式無效：{existingTarget.ErrorMessage}";
+            AppendLog(StatusMessage);
+            return;
+        }
+
         IsBusy = true;
         try
         {
@@ -132,9 +244,38 @@ public partial class GitHubViewModel : PageViewModelBase
     private async Task PushAsync()
     {
         if (!RequireSite(out var site)) return;
+
+        var info = await Services.GitHub.GetInfoAsync(site);
+        if (string.IsNullOrWhiteSpace(info.RemoteUrl))
+        {
+            var candidate = !string.IsNullOrWhiteSpace(RepositoryUrl) ? RepositoryUrl : RepoName;
+            var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(candidate);
+            if (target.IsValid)
+            {
+                RepositoryUrl = candidate;
+                AppendLog($"尚未設定 origin；改用安全連結流程：{target.Owner}/{target.Repository}");
+                await ConnectExistingRepositoryAsync();
+                return;
+            }
+
+            StatusMessage = "尚未連結 GitHub repository。請先在上方貼上完整 Repository URL，再按「連結、推送並啟用 Pages」。";
+            AppendLog(StatusMessage);
+            return;
+        }
+
         IsBusy = true;
         try
         {
+            StatusMessage = "正在以 production 設定建置 Hugo 網站…";
+            AppendLog("hugo build…");
+            var build = await Services.Hugo.BuildAsync(site);
+            AppendLog(build.CombinedOutput);
+            if (!build.Succeeded)
+            {
+                StatusMessage = "建置失敗；已停止提交與推送。請依日誌修正網站內容。";
+                return;
+            }
+
             var progress = new Progress<string>(m =>
             {
                 AppendLog(m);

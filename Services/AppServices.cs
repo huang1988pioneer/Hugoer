@@ -9,6 +9,7 @@ public sealed class AppServices
     public HugoService Hugo { get; }
     public ThemeService Themes { get; } = new();
     public ContentService Content { get; } = new();
+    public FrontMatterService FrontMatter { get; } = new();
     public GitHubService GitHub { get; } = new();
 
     public string? CurrentSitePath { get; set; }

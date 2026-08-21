@@ -62,6 +62,17 @@ public sealed partial class HugoService
                 if (info.IsInstalled)
                     return info;
             }
+
+            // Winget normally creates a link under ...\WinGet\Links, but it is not
+            // guaranteed to be available to an already-running desktop process.
+            // Fall back to the package payload so Hugoer works immediately after install.
+            var wingetHugo = FindWingetHugoExecutable();
+            if (wingetHugo is not null)
+            {
+                var info = await ProbeHugoAsync(wingetHugo, cancellationToken).ConfigureAwait(false);
+                if (info.IsInstalled)
+                    return info;
+            }
         }
 
         return new HugoInfo
@@ -69,6 +80,32 @@ public sealed partial class HugoService
             IsInstalled = false,
             StatusMessage = "未偵測到 Hugo。可使用「一鍵安裝 Hugo Extended」。"
         };
+    }
+
+    private static string? FindWingetHugoExecutable()
+    {
+        try
+        {
+            var packages = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Microsoft", "WinGet", "Packages");
+            if (!Directory.Exists(packages)) return null;
+
+            var hugoPackage = Directory.EnumerateDirectories(packages, "Hugo.Hugo.*", SearchOption.TopDirectoryOnly)
+                .OrderByDescending(Directory.GetLastWriteTimeUtc)
+                .FirstOrDefault();
+            return hugoPackage is null
+                ? null
+                : Directory.EnumerateFiles(hugoPackage, "hugo.exe", SearchOption.AllDirectories).FirstOrDefault();
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private static async Task<HugoInfo> ProbeHugoAsync(string exe, CancellationToken cancellationToken)
@@ -245,20 +282,32 @@ public sealed partial class HugoService
             if (File.Exists(config))
             {
                 var content = await File.ReadAllTextAsync(config, cancellationToken).ConfigureAwait(false);
-                if (!content.Contains("languageCode", StringComparison.OrdinalIgnoreCase))
+                var seeded = AppendTomlStringIfMissing(content, "baseURL", "https://example.org/");
+                seeded = AppendTomlStringIfMissing(seeded, "locale", "zh-tw");
+                seeded = AppendTomlStringIfMissing(seeded, "title", "My New Hugo Site");
+                if (!string.Equals(content, seeded, StringComparison.Ordinal))
                 {
-                    content += """
-
-baseURL = 'https://example.org/'
-languageCode = 'zh-tw'
-title = 'My New Hugo Site'
-""";
-                    await File.WriteAllTextAsync(config, content, cancellationToken).ConfigureAwait(false);
+                    await File.WriteAllTextAsync(config, seeded, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
 
         return result;
+    }
+
+    private static string AppendTomlStringIfMissing(string content, string key, string value)
+    {
+        if (Regex.IsMatch(
+                content,
+                $@"(?im)^\s*{Regex.Escape(key)}\s*=",
+                RegexOptions.CultureInvariant))
+        {
+            return content;
+        }
+
+        var separator = content.EndsWith('\n') || content.Length == 0 ? string.Empty : Environment.NewLine;
+        var escaped = value.Replace("\\", "\\\\").Replace("'", "\\'");
+        return $"{content}{separator}{key} = '{escaped}'{Environment.NewLine}";
     }
 
     public async Task<CommandResult> NewContentAsync(
@@ -286,6 +335,11 @@ title = 'My New Hugo Site'
         string sitePath,
         CancellationToken cancellationToken = default)
     {
+        await RepairDuplicateRootTomlKeysAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await MigrateDeprecatedLanguageCodeAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await RepairLegacyStackColorSchemeAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await RepairLegacyStackSearchPageAsync(sitePath, cancellationToken).ConfigureAwait(false);
+
         var hugo = await DetectAsync(cancellationToken).ConfigureAwait(false);
         if (!hugo.IsInstalled || string.IsNullOrWhiteSpace(hugo.ExecutablePath))
             return new CommandResult { ExitCode = -1, StdErr = "請先安裝 Hugo。" };
@@ -298,11 +352,178 @@ title = 'My New Hugo Site'
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
+    private static async Task RepairDuplicateRootTomlKeysAsync(
+        string sitePath,
+        CancellationToken cancellationToken)
+    {
+        var config = Path.Combine(sitePath, "hugo.toml");
+        if (!File.Exists(config)) return;
+
+        var original = await File.ReadAllTextAsync(config, cancellationToken).ConfigureAwait(false);
+        var newline = original.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        var lines = original.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var repaired = new List<string>(lines.Length);
+        var insideTable = false;
+        var changed = false;
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.TrimStart();
+            if (trimmed.StartsWith("[", StringComparison.Ordinal))
+                insideTable = true;
+
+            if (!insideTable && !trimmed.StartsWith("#", StringComparison.Ordinal))
+            {
+                var match = SimpleTomlKeyRegex().Match(trimmed);
+                if (match.Success && !seen.Add(match.Groups["key"].Value))
+                {
+                    changed = true;
+                    continue;
+                }
+            }
+
+            repaired.Add(line);
+        }
+
+        if (!changed) return;
+
+        var backup = config + ".hugoer.bak";
+        if (!File.Exists(backup))
+            File.Copy(config, backup);
+        await File.WriteAllTextAsync(config, string.Join(newline, repaired), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task RepairLegacyStackColorSchemeAsync(
+        string sitePath,
+        CancellationToken cancellationToken)
+    {
+        var config = Path.Combine(sitePath, "hugo.toml");
+        if (!File.Exists(config)) return;
+
+        var original = await File.ReadAllTextAsync(config, cancellationToken).ConfigureAwait(false);
+        if (Regex.IsMatch(original, @"(?im)^\s*\[params\.colorScheme\]\s*$")) return;
+
+        var newline = original.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        var lines = original.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var repaired = new List<string>(lines.Length + 5);
+        var currentTable = string.Empty;
+        string? scheme = null;
+
+        foreach (var line in lines)
+        {
+            var table = TomlTableRegex().Match(line.Trim());
+            if (table.Success)
+                currentTable = table.Groups["table"].Value.Trim();
+
+            if (currentTable.Equals("params", StringComparison.OrdinalIgnoreCase))
+            {
+                var scalar = LegacyColorSchemeRegex().Match(line.Trim());
+                if (scalar.Success)
+                {
+                    scheme = scalar.Groups["value"].Value;
+                    continue;
+                }
+            }
+
+            repaired.Add(line);
+        }
+
+        if (scheme is null) return;
+
+        while (repaired.Count > 0 && string.IsNullOrWhiteSpace(repaired[^1]))
+            repaired.RemoveAt(repaired.Count - 1);
+        repaired.Add(string.Empty);
+        repaired.Add("[params.colorScheme]");
+        repaired.Add("  toggle = true");
+        repaired.Add($"  default = \"{scheme}\"");
+        repaired.Add(string.Empty);
+
+        var backup = config + ".hugoer.bak";
+        if (!File.Exists(backup))
+            File.Copy(config, backup);
+        await File.WriteAllTextAsync(config, string.Join(newline, repaired), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task MigrateDeprecatedLanguageCodeAsync(
+        string sitePath,
+        CancellationToken cancellationToken)
+    {
+        var config = Path.Combine(sitePath, "hugo.toml");
+        if (!File.Exists(config)) return;
+
+        var original = await File.ReadAllTextAsync(config, cancellationToken).ConfigureAwait(false);
+        var newline = original.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        var lines = original.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n').ToList();
+        var rootEnd = lines.FindIndex(line => line.TrimStart().StartsWith("[", StringComparison.Ordinal));
+        if (rootEnd < 0) rootEnd = lines.Count;
+
+        var languageIndex = -1;
+        var localeIndex = -1;
+        for (var index = 0; index < rootEnd; index++)
+        {
+            var key = SimpleTomlKeyRegex().Match(lines[index].TrimStart());
+            if (!key.Success) continue;
+            if (key.Groups["key"].Value.Equals("languageCode", StringComparison.OrdinalIgnoreCase))
+                languageIndex = index;
+            if (key.Groups["key"].Value.Equals("locale", StringComparison.OrdinalIgnoreCase))
+                localeIndex = index;
+        }
+
+        if (languageIndex < 0) return;
+
+        var equals = lines[languageIndex].IndexOf('=');
+        if (equals < 0) return;
+        var value = lines[languageIndex][(equals + 1)..].Trim();
+        var indent = new string(lines[languageIndex].TakeWhile(char.IsWhiteSpace).ToArray());
+
+        if (localeIndex >= 0)
+        {
+            var localeIndent = new string(lines[localeIndex].TakeWhile(char.IsWhiteSpace).ToArray());
+            lines[localeIndex] = $"{localeIndent}locale = {value}";
+            lines.RemoveAt(languageIndex);
+        }
+        else
+        {
+            lines[languageIndex] = $"{indent}locale = {value}";
+        }
+
+        var backup = config + ".hugoer.bak";
+        if (!File.Exists(backup))
+            File.Copy(config, backup);
+        await File.WriteAllTextAsync(config, string.Join(newline, lines), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task RepairLegacyStackSearchPageAsync(
+        string sitePath,
+        CancellationToken cancellationToken)
+    {
+        var legacy = Path.Combine(sitePath, "content", "search", "_index.md");
+        var current = Path.Combine(sitePath, "content", "search", "index.md");
+        if (!File.Exists(legacy) || File.Exists(current)) return;
+
+        var content = await File.ReadAllTextAsync(legacy, cancellationToken).ConfigureAwait(false);
+        if (!Regex.IsMatch(content, """(?im)^\s*layout\s*:\s*['"]?search['"]?\s*$""")) return;
+
+        var backup = legacy + ".hugoer.bak";
+        if (!File.Exists(backup))
+            File.Copy(legacy, backup);
+        File.Move(legacy, current);
+    }
+
     public async Task<(Process? Process, string Message)> StartServerAsync(
         string sitePath,
         int port = 1313,
         CancellationToken cancellationToken = default)
     {
+        await RepairDuplicateRootTomlKeysAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await MigrateDeprecatedLanguageCodeAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await RepairLegacyStackColorSchemeAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await RepairLegacyStackSearchPageAsync(sitePath, cancellationToken).ConfigureAwait(false);
+
         var hugo = await DetectAsync(cancellationToken).ConfigureAwait(false);
         if (!hugo.IsInstalled || string.IsNullOrWhiteSpace(hugo.ExecutablePath))
             return (null, "請先安裝 Hugo。");
@@ -310,16 +531,66 @@ title = 'My New Hugo Site'
         var psi = new ProcessStartInfo
         {
             FileName = hugo.ExecutablePath,
-            Arguments = $"server -D --port {port} --bind 127.0.0.1",
+            Arguments = $"server --buildDrafts --navigateToChanged --port {port} --bind 127.0.0.1",
             WorkingDirectory = sitePath,
-            UseShellExecute = true,
-            CreateNoWindow = false
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
         };
 
         try
         {
             var p = Process.Start(psi);
-            return (p, $"已啟動本機預覽：http://127.0.0.1:{port}/");
+            if (p is null)
+                return (null, "無法啟動 Hugo Server 程序。");
+
+            var stdout = p.StandardOutput.ReadToEndAsync(cancellationToken);
+            var stderr = p.StandardError.ReadToEndAsync(cancellationToken);
+            var url = $"http://127.0.0.1:{port}/";
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
+
+            for (var attempt = 0; attempt < 40; attempt++)
+            {
+                await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+                if (p.HasExited)
+                {
+                    var output = string.Join(
+                        Environment.NewLine,
+                        new[] { await stdout.ConfigureAwait(false), await stderr.ConfigureAwait(false) }
+                            .Where(value => !string.IsNullOrWhiteSpace(value)));
+                    p.Dispose();
+                    return (null, string.IsNullOrWhiteSpace(output)
+                        ? "Hugo Server 啟動後立即結束，請檢查網站設定。"
+                        : $"Hugo Server 啟動失敗：{output.Trim()}");
+                }
+
+                try
+                {
+                    using var response = await http.GetAsync(
+                        url,
+                        HttpCompletionOption.ResponseHeadersRead,
+                        cancellationToken).ConfigureAwait(false);
+                    if (response.IsSuccessStatusCode)
+                        return (p, $"本機預覽已就緒：{url}");
+                }
+                catch (HttpRequestException)
+                {
+                    // Hugo is still compiling; retry until the readiness deadline.
+                }
+                catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // Per-request timeout; the overall readiness loop continues.
+                }
+            }
+
+            if (!p.HasExited)
+            {
+                p.Kill(entireProcessTree: true);
+                await p.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            p.Dispose();
+            return (null, $"Hugo Server 在等待 8 秒後仍未就緒：{url}");
         }
         catch (Exception ex)
         {
@@ -372,4 +643,13 @@ title = 'My New Hugo Site'
 
     [GeneratedRegex(@"theme\s*=\s*[\[""']?([^\]""'\r\n]+)", RegexOptions.IgnoreCase)]
     private static partial Regex ThemeRegex();
+
+    [GeneratedRegex(@"^(?<key>[A-Za-z0-9_.-]+)\s*=")]
+    private static partial Regex SimpleTomlKeyRegex();
+
+    [GeneratedRegex(@"^\[(?<table>[^\]]+)\]$")]
+    private static partial Regex TomlTableRegex();
+
+    [GeneratedRegex("""^colorScheme\s*=\s*['"](?<value>auto|light|dark)['"]\s*$""", RegexOptions.IgnoreCase)]
+    private static partial Regex LegacyColorSchemeRegex();
 }

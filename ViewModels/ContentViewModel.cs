@@ -41,9 +41,37 @@ public partial class ContentViewModel : PageViewModelBase
     public partial string Filter { get; set; } = string.Empty;
 
     [ObservableProperty]
+    public partial string FrontMatterTitle { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string FrontMatterDate { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string FrontMatterSlug { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string FrontMatterCategories { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string FrontMatterTags { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string FrontMatterImage { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string FrontMatterDescription { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial bool IsDraft { get; set; } = true;
+
+    [ObservableProperty]
     public partial string PreviewModeLabel { get; set; } = "即時預覽：開";
 
+    [ObservableProperty]
+    public partial string EditorStatistics { get; set; } = "正文 0 字元 · 1 行";
+
     private bool _loading;
+    private bool _syncingFrontMatter;
     private List<ContentItem> _all = [];
     private CancellationTokenSource? _previewCts;
 
@@ -61,11 +89,32 @@ public partial class ContentViewModel : PageViewModelBase
 
     partial void OnEditorTextChanged(string value)
     {
+        UpdateEditorStatistics(value);
         if (!_loading)
             IsDirty = true;
 
+        if (!_syncingFrontMatter)
+            PopulateFrontMatter(value);
+
         SchedulePreviewUpdate(value);
     }
+
+    private void UpdateEditorStatistics(string markdown)
+    {
+        var body = MarkdownPreviewService.StripFrontMatter(markdown);
+        var characters = body.Count(character => !char.IsWhiteSpace(character));
+        var lines = string.IsNullOrEmpty(body) ? 1 : body.Count(character => character == '\n') + 1;
+        EditorStatistics = $"正文 {characters:N0} 字元 · {lines:N0} 行";
+    }
+
+    partial void OnFrontMatterTitleChanged(string value) => UpdateEditorFromFrontMatter();
+    partial void OnFrontMatterDateChanged(string value) => UpdateEditorFromFrontMatter();
+    partial void OnFrontMatterSlugChanged(string value) => UpdateEditorFromFrontMatter();
+    partial void OnFrontMatterCategoriesChanged(string value) => UpdateEditorFromFrontMatter();
+    partial void OnFrontMatterTagsChanged(string value) => UpdateEditorFromFrontMatter();
+    partial void OnFrontMatterImageChanged(string value) => UpdateEditorFromFrontMatter();
+    partial void OnFrontMatterDescriptionChanged(string value) => UpdateEditorFromFrontMatter();
+    partial void OnIsDraftChanged(bool value) => UpdateEditorFromFrontMatter();
 
     partial void OnShowPreviewChanged(bool value)
     {
@@ -141,6 +190,7 @@ public partial class ContentViewModel : PageViewModelBase
         {
             EditorText = await Services.Content.ReadAsync(item.FullPath);
             PreviewMarkdown = EditorText;
+            PopulateFrontMatter(EditorText);
             IsDirty = false;
             StatusMessage = item.RelativePath;
         }
@@ -252,5 +302,63 @@ public partial class ContentViewModel : PageViewModelBase
         s = System.Text.RegularExpressions.Regex.Replace(s, @"\s+", "-");
         s = System.Text.RegularExpressions.Regex.Replace(s, @"[^a-z0-9\u4e00-\u9fff\-_]", "");
         return string.IsNullOrWhiteSpace(s) ? $"post-{DateTime.Now:yyyyMMddHHmmss}" : s;
+    }
+
+    private void PopulateFrontMatter(string text)
+    {
+        var document = Services.FrontMatter.Parse(text);
+        _syncingFrontMatter = true;
+        try
+        {
+            FrontMatterTitle = GetField(document, "title");
+            FrontMatterDate = GetField(document, "date");
+            FrontMatterSlug = GetField(document, "slug");
+            FrontMatterCategories = GetField(document, "categories");
+            FrontMatterTags = GetField(document, "tags");
+            FrontMatterImage = GetField(document, "image");
+            FrontMatterDescription = GetField(document, "description");
+            IsDraft = !document.Fields.TryGetValue("draft", out var draft)
+                || !draft.Equals("false", StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            _syncingFrontMatter = false;
+        }
+    }
+
+    private void UpdateEditorFromFrontMatter()
+    {
+        if (_loading || _syncingFrontMatter) return;
+
+        var document = Services.FrontMatter.Parse(EditorText);
+        SetField(document, "title", FrontMatterTitle);
+        SetField(document, "date", FrontMatterDate);
+        SetField(document, "slug", FrontMatterSlug);
+        SetField(document, "categories", FrontMatterCategories);
+        SetField(document, "tags", FrontMatterTags);
+        SetField(document, "image", FrontMatterImage);
+        SetField(document, "description", FrontMatterDescription);
+        document.Fields["draft"] = IsDraft ? "true" : "false";
+
+        _syncingFrontMatter = true;
+        try
+        {
+            EditorText = Services.FrontMatter.Write(document);
+        }
+        finally
+        {
+            _syncingFrontMatter = false;
+        }
+    }
+
+    private static string GetField(FrontMatterDocument document, string key) =>
+        document.Fields.TryGetValue(key, out var value) ? value : string.Empty;
+
+    private static void SetField(FrontMatterDocument document, string key, string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            document.Fields.Remove(key);
+        else
+            document.Fields[key] = value.Trim();
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Hugoer.Helpers;
@@ -35,6 +36,12 @@ public partial class SetupViewModel : PageViewModelBase
 
     [ObservableProperty]
     public partial string Log { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial bool PreviewReady { get; set; }
+
+    private const string PreviewUrl = "http://127.0.0.1:1313/";
+    private Process? _previewProcess;
 
     public ObservableCollection<string> QuickTips { get; } =
     [
@@ -155,6 +162,14 @@ public partial class SetupViewModel : PageViewModelBase
     private async Task StartPreviewAsync()
     {
         if (!RequireSite(out var site)) return;
+        if (_previewProcess is { HasExited: false })
+        {
+            PreviewReady = true;
+            StatusMessage = $"本機預覽已就緒：{PreviewUrl}";
+            return;
+        }
+
+        PreviewReady = false;
         IsBusy = true;
         try
         {
@@ -163,21 +178,49 @@ public partial class SetupViewModel : PageViewModelBase
             StatusMessage = message;
             if (process is not null)
             {
-                try
+                _previewProcess = process;
+                _previewProcess.EnableRaisingEvents = true;
+                _previewProcess.Exited += (_, _) =>
                 {
-                    var psi = new System.Diagnostics.ProcessStartInfo
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                     {
-                        FileName = "http://127.0.0.1:1313/",
-                        UseShellExecute = true
-                    };
-                    System.Diagnostics.Process.Start(psi);
-                }
-                catch { /* ignore browser open failures */ }
+                        PreviewReady = false;
+                        StatusMessage = "本機預覽已停止；請重新啟動預覽。";
+                    });
+                };
+                PreviewReady = true;
             }
         }
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private void OpenPreviewInBrowser()
+    {
+        if (_previewProcess is null || _previewProcess.HasExited)
+        {
+            PreviewReady = false;
+            StatusMessage = "本機預覽尚未啟動，請先按「本機預覽」。";
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = PreviewUrl,
+                UseShellExecute = true
+            });
+            StatusMessage = $"已在瀏覽器開啟：{PreviewUrl}";
+            AppendLog(StatusMessage);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"無法開啟瀏覽器：{ex.Message}";
+            AppendLog(StatusMessage);
         }
     }
 
