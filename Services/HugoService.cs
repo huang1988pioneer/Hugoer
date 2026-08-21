@@ -501,6 +501,10 @@ public sealed partial class HugoService
         int port = 1313,
         CancellationToken cancellationToken = default)
     {
+        await RepairDuplicateRootTomlKeysAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await MigrateDeprecatedLanguageCodeAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await RepairLegacyStackColorSchemeAsync(sitePath, cancellationToken).ConfigureAwait(false);
+
         var hugo = await DetectAsync(cancellationToken).ConfigureAwait(false);
         if (!hugo.IsInstalled || string.IsNullOrWhiteSpace(hugo.ExecutablePath))
             return (null, "請先安裝 Hugo。");
@@ -508,16 +512,66 @@ public sealed partial class HugoService
         var psi = new ProcessStartInfo
         {
             FileName = hugo.ExecutablePath,
-            Arguments = $"server -D --port {port} --bind 127.0.0.1",
+            Arguments = $"server --buildDrafts --navigateToChanged --port {port} --bind 127.0.0.1",
             WorkingDirectory = sitePath,
-            UseShellExecute = true,
-            CreateNoWindow = false
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
         };
 
         try
         {
             var p = Process.Start(psi);
-            return (p, $"已啟動本機預覽：http://127.0.0.1:{port}/");
+            if (p is null)
+                return (null, "無法啟動 Hugo Server 程序。");
+
+            var stdout = p.StandardOutput.ReadToEndAsync(cancellationToken);
+            var stderr = p.StandardError.ReadToEndAsync(cancellationToken);
+            var url = $"http://127.0.0.1:{port}/";
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
+
+            for (var attempt = 0; attempt < 40; attempt++)
+            {
+                await Task.Delay(200, cancellationToken).ConfigureAwait(false);
+                if (p.HasExited)
+                {
+                    var output = string.Join(
+                        Environment.NewLine,
+                        new[] { await stdout.ConfigureAwait(false), await stderr.ConfigureAwait(false) }
+                            .Where(value => !string.IsNullOrWhiteSpace(value)));
+                    p.Dispose();
+                    return (null, string.IsNullOrWhiteSpace(output)
+                        ? "Hugo Server 啟動後立即結束，請檢查網站設定。"
+                        : $"Hugo Server 啟動失敗：{output.Trim()}");
+                }
+
+                try
+                {
+                    using var response = await http.GetAsync(
+                        url,
+                        HttpCompletionOption.ResponseHeadersRead,
+                        cancellationToken).ConfigureAwait(false);
+                    if (response.IsSuccessStatusCode)
+                        return (p, $"本機預覽已就緒：{url}");
+                }
+                catch (HttpRequestException)
+                {
+                    // Hugo is still compiling; retry until the readiness deadline.
+                }
+                catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // Per-request timeout; the overall readiness loop continues.
+                }
+            }
+
+            if (!p.HasExited)
+            {
+                p.Kill(entireProcessTree: true);
+                await p.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            p.Dispose();
+            return (null, $"Hugo Server 在等待 8 秒後仍未就緒：{url}");
         }
         catch (Exception ex)
         {
