@@ -45,6 +45,9 @@ public sealed class ContentItem
     public required string Name { get; init; }
     public bool IsDirectory { get; init; }
     public DateTime LastWriteTime { get; init; }
+    public string LastWriteTimeText => LastWriteTime.ToString("yyyy/MM/dd HH:mm");
+    public DateTimeOffset? ArticleDate { get; init; }
+    public string ArticleDateText => ArticleDate?.ToString("yyyy/MM/dd") ?? "未設定日期";
 }
 
 public sealed class CommandResult
@@ -67,6 +70,29 @@ public sealed class GitHubPagesStatus
     public string? BuildType { get; init; }
     public string Message { get; init; } = string.Empty;
     public string? Cname { get; init; }
+}
+
+public enum DeploymentVersionState
+{
+    NotConfigured,
+    Previous,
+    Latest,
+    Unavailable
+}
+
+public sealed class DeploymentMarker
+{
+    public string DeploymentId { get; init; } = string.Empty;
+    public DateTimeOffset CreatedAtUtc { get; init; }
+}
+
+public sealed class DeploymentCheckResult
+{
+    public DeploymentVersionState State { get; init; }
+    public string Message { get; init; } = string.Empty;
+    public string? ExpectedDeploymentId { get; init; }
+    public string? LiveDeploymentId { get; init; }
+    public DateTimeOffset CheckedAt { get; init; } = DateTimeOffset.Now;
 }
 
 public sealed class GitRemoteInfo

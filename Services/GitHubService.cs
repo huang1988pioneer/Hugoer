@@ -7,6 +7,13 @@ namespace Hugoer.Services;
 
 public sealed partial class GitHubService
 {
+    private readonly DeploymentMonitorService _deploymentMonitor;
+
+    public GitHubService(DeploymentMonitorService? deploymentMonitor = null)
+    {
+        _deploymentMonitor = deploymentMonitor ?? new DeploymentMonitorService();
+    }
+
     public static GitHubRepositoryTarget ParseRepositoryTarget(string? input)
     {
         var value = input?.Trim() ?? string.Empty;
@@ -239,6 +246,9 @@ Thumbs.db
         progress?.Report("加入 GitHub Actions 工作流程…");
         await EnsureGitHubActionsWorkflowAsync(sitePath, cancellationToken).ConfigureAwait(false);
 
+        var markerError = await PrepareDeploymentMarkerAsync(sitePath, progress, cancellationToken).ConfigureAwait(false);
+        if (markerError is not null) return markerError;
+
         progress?.Report("提交檔案…");
         await CommitAllAsync(sitePath, "Initial commit via Hugoer", cancellationToken).ConfigureAwait(false);
 
@@ -369,6 +379,8 @@ Thumbs.db
 
         progress?.Report("加入 GitHub Actions workflow 並提交網站…");
         await EnsureGitHubActionsWorkflowAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        var markerError = await PrepareDeploymentMarkerAsync(sitePath, progress, cancellationToken).ConfigureAwait(false);
+        if (markerError is not null) return markerError;
         var commit = await CommitAllAsync(sitePath, commitMessage, cancellationToken).ConfigureAwait(false);
         if (!commit.Succeeded) return commit;
 
@@ -390,12 +402,36 @@ Thumbs.db
     {
         progress?.Report("提交變更…");
         await EnsureGitHubActionsWorkflowAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        var markerError = await PrepareDeploymentMarkerAsync(sitePath, progress, cancellationToken).ConfigureAwait(false);
+        if (markerError is not null) return markerError;
         var commit = await CommitAllAsync(sitePath, commitMessage, cancellationToken).ConfigureAwait(false);
         progress?.Report(commit.CombinedOutput);
 
         progress?.Report("git push…");
         return await ProcessRunner.RunAsync(
             "git", "push", sitePath, 180_000, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<CommandResult?> PrepareDeploymentMarkerAsync(
+        string sitePath,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var marker = await _deploymentMonitor.PrepareDeploymentAsync(sitePath, cancellationToken)
+                .ConfigureAwait(false);
+            progress?.Report($"建立部署版本標記：{marker.DeploymentId}");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return new CommandResult
+            {
+                ExitCode = -1,
+                StdErr = $"無法建立部署版本標記，已停止提交與推送：{ex.Message}"
+            };
+        }
     }
 
     public async Task<CommandResult> EnablePagesFromActionsAsync(

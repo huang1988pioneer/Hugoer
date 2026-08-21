@@ -1,10 +1,17 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Hugoer.Models;
 
 namespace Hugoer.ViewModels;
 
-public partial class GitHubViewModel : PageViewModelBase
+public partial class GitHubViewModel : PageViewModelBase, IDisposable
 {
+    private static readonly TimeSpan DeploymentCheckInterval = TimeSpan.FromMinutes(5);
+    private readonly SemaphoreSlim _deploymentCheckGate = new(1, 1);
+    private CancellationTokenSource? _deploymentMonitorCts;
+    private DeploymentVersionState? _lastDeploymentState;
+    private string? _lastExpectedDeploymentId;
+
     public GitHubViewModel()
     {
         Title = "GitHub Pages";
@@ -49,6 +56,18 @@ public partial class GitHubViewModel : PageViewModelBase
     [ObservableProperty]
     public partial string Log { get; set; } = string.Empty;
 
+    [ObservableProperty]
+    public partial string DeploymentMonitorTitle { get; set; } = "等待第一次部署";
+
+    [ObservableProperty]
+    public partial string DeploymentMonitorSummary { get; set; } = "推送網站後，Hugoer 會辨識線上網站是否已更新。";
+
+    [ObservableProperty]
+    public partial string DeploymentMonitorSchedule { get; set; } = "每 5 分鐘自動檢查";
+
+    [ObservableProperty]
+    public partial bool IsCheckingDeployment { get; set; }
+
     partial void OnRepositoryUrlChanged(string value)
     {
         var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(value);
@@ -71,6 +90,7 @@ public partial class GitHubViewModel : PageViewModelBase
     public override async Task OnNavigatedToAsync()
     {
         await RefreshAsync();
+        EnsureDeploymentMonitorStarted();
     }
 
     [RelayCommand]
@@ -165,6 +185,7 @@ public partial class GitHubViewModel : PageViewModelBase
                 ? "已連結 repository、推送網站並啟用 GitHub Pages"
                 : "連結或部署失敗；請查看操作日誌";
             await RefreshAsync();
+            await CheckDeploymentVersionAsync(manual: false, CancellationToken.None);
         }
         finally
         {
@@ -233,6 +254,7 @@ public partial class GitHubViewModel : PageViewModelBase
                 ? "已推送並嘗試啟用 GitHub Pages"
                 : "部署過程有錯誤，請查看日誌";
             await RefreshAsync();
+            await CheckDeploymentVersionAsync(manual: false, CancellationToken.None);
         }
         finally
         {
@@ -285,6 +307,8 @@ public partial class GitHubViewModel : PageViewModelBase
             AppendLog(result.CombinedOutput);
             StatusMessage = result.Succeeded ? "推送完成" : "推送失敗";
             await RefreshPagesStatusAsync();
+            if (result.Succeeded)
+                await CheckDeploymentVersionAsync(manual: false, CancellationToken.None);
         }
         finally
         {
@@ -327,6 +351,119 @@ public partial class GitHubViewModel : PageViewModelBase
             $"CNAME：{status.Cname ?? "—"}\n" +
             $"{status.Message}";
         StatusMessage = status.Message;
+    }
+
+    [RelayCommand]
+    private Task CheckDeploymentNowAsync() =>
+        CheckDeploymentVersionAsync(manual: true, CancellationToken.None);
+
+    private void EnsureDeploymentMonitorStarted()
+    {
+        if (_deploymentMonitorCts is not null) return;
+        _deploymentMonitorCts = new CancellationTokenSource();
+        _ = MonitorDeploymentLoopAsync(_deploymentMonitorCts.Token);
+    }
+
+    private async Task MonitorDeploymentLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await CheckDeploymentVersionAsync(manual: false, cancellationToken);
+                await Task.Delay(DeploymentCheckInterval, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The application is closing.
+        }
+    }
+
+    private async Task CheckDeploymentVersionAsync(bool manual, CancellationToken cancellationToken)
+    {
+        if (!await _deploymentCheckGate.WaitAsync(0, cancellationToken)) return;
+
+        IsCheckingDeployment = true;
+        DeploymentMonitorTitle = "正在檢查線上版本…";
+        DeploymentMonitorSchedule = "每 5 分鐘自動檢查 · 正在連線";
+        try
+        {
+            if (!RequireSite(out var site))
+            {
+                DeploymentMonitorTitle = "尚未選擇網站";
+                DeploymentMonitorSummary = "請先在「環境」開啟或建立 Hugo 網站。";
+                DeploymentMonitorSchedule = "選擇網站後開始每 5 分鐘檢查";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(PagesUrl))
+            {
+                var pages = await Services.GitHub.GetPagesStatusAsync(site, cancellationToken);
+                PagesUrl = pages.HtmlUrl;
+            }
+
+            var result = await Services.DeploymentMonitor.CheckAsync(site, PagesUrl, cancellationToken);
+            var stateChanged = result.State != _lastDeploymentState
+                               || !string.Equals(result.ExpectedDeploymentId, _lastExpectedDeploymentId,
+                                   StringComparison.Ordinal);
+
+            DeploymentMonitorTitle = result.State switch
+            {
+                DeploymentVersionState.Latest => "線上網站已是最新版本",
+                DeploymentVersionState.Previous => "線上網站仍是上一版本",
+                DeploymentVersionState.Unavailable => "暫時無法檢查",
+                _ => "等待下一次部署"
+            };
+            DeploymentMonitorSummary = result.Message;
+            DeploymentMonitorSchedule =
+                $"每 5 分鐘自動檢查 · 上次：{result.CheckedAt.LocalDateTime:yyyy/MM/dd HH:mm:ss}";
+
+            if (manual || stateChanged)
+                AppendLog($"線上版本監控：{result.Message}");
+
+            if (result.State == DeploymentVersionState.Latest && stateChanged)
+            {
+                StatusMessage = "網站已更新：線上內容是最新版本。";
+                Services.SetAppStatus("網站已更新為最新版本");
+            }
+            else if (result.State == DeploymentVersionState.Previous && stateChanged)
+            {
+                StatusMessage = "線上網站仍是上一版本，將在 5 分鐘後再次檢查。";
+                Services.SetAppStatus("線上網站仍是上一版本 · 自動監控中");
+            }
+            else if (manual)
+            {
+                StatusMessage = result.Message;
+            }
+
+            _lastDeploymentState = result.State;
+            _lastExpectedDeploymentId = result.ExpectedDeploymentId;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The application is closing.
+        }
+        catch (Exception ex)
+        {
+            DeploymentMonitorTitle = "暫時無法檢查";
+            DeploymentMonitorSummary = $"檢查線上版本時發生錯誤：{ex.Message}";
+            DeploymentMonitorSchedule = "每 5 分鐘自動檢查 · 稍後重試";
+            if (manual) AppendLog(DeploymentMonitorSummary);
+        }
+        finally
+        {
+            IsCheckingDeployment = false;
+            _deploymentCheckGate.Release();
+        }
+    }
+
+    public void Dispose()
+    {
+        _deploymentMonitorCts?.Cancel();
+        _deploymentMonitorCts?.Dispose();
+        _deploymentMonitorCts = null;
+        GC.SuppressFinalize(this);
     }
 
     [RelayCommand]

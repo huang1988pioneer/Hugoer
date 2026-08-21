@@ -83,6 +83,29 @@
                 </Border>
             </Grid>
 
+            <Border Classes="card deploymentMonitor">
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                    <StackPanel Spacing="5" Margin="0,0,20,0">
+                        <TextBlock Text="線上版本監控" Classes="sectionTitle"/>
+                        <TextBlock Text="{Binding DeploymentMonitorTitle}"
+                                   FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding DeploymentMonitorSummary}"
+                                   Classes="muted" TextWrapping="Wrap" LineHeight="20"/>
+                        <TextBlock Text="{Binding DeploymentMonitorSchedule}"
+                                   Classes="caption" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <Button Grid.Column="1"
+                            Content="立即檢查線上版本"
+                            Command="{Binding CheckDeploymentNowCommand}"
+                            IsEnabled="{Binding !IsCheckingDeployment}"
+                            VerticalAlignment="Center"/>
+                    <ProgressBar Grid.Row="1" Grid.ColumnSpan="2"
+                                 Margin="0,12,0,0" Height="3"
+                                 IsIndeterminate="True"
+                                 IsVisible="{Binding IsCheckingDeployment}"/>
+                </Grid>
+            </Border>
+
             <Border Classes="card">
                 <StackPanel Spacing="12">
                     <TextBlock Text="建立新的 GitHub Repository" Classes="sectionTitle"/>

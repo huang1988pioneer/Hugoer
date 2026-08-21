@@ -5,7 +5,7 @@ using Hugoer.Services;
 
 namespace Hugoer.ViewModels;
 
-public partial class MainViewModel : ViewModelBase
+public partial class MainViewModel : ViewModelBase, IDisposable
 {
     public MainViewModel()
     {
@@ -26,6 +26,7 @@ public partial class MainViewModel : ViewModelBase
 
         SelectedNav = NavItems[0];
         AppServices.Instance.SiteChanged += (_, _) => UpdateSiteBanner();
+        AppServices.Instance.AppStatusChanged += (_, message) => AppStatus = message;
         UpdateSiteBanner();
         _ = SelectedNav.Page.OnNavigatedToAsync();
     }
@@ -67,6 +68,12 @@ public partial class MainViewModel : ViewModelBase
         SiteBanner = string.IsNullOrWhiteSpace(path)
             ? "尚未選擇網站 — 請到「環境」開啟或建立"
             : $"目前網站：{path}";
+    }
+
+    public void Dispose()
+    {
+        GitHubPage.Dispose();
+        GC.SuppressFinalize(this);
     }
 }
 

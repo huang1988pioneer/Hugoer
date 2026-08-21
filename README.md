@@ -10,7 +10,7 @@
 | **設定檔** | 網站基本欄位、**圖形化 params 表單**（Hugo / Stack 常用參數）、原始 TOML |
 | **主題** | 一鍵安裝 **Stack** 及其他熱門主題、切換 theme、編輯主題設定 |
 | **內容** | 瀏覽 `content/`、新增文章、**Markdown 即時預覽**、瀏覽器 HTML 預覽 |
-| **GitHub** | `gh` 登入、建立 repo、推送、GitHub Actions、啟用／查詢 GitHub Pages |
+| **GitHub** | `gh` 登入、建立 repo、推送、GitHub Actions、啟用／查詢 Pages、每 5 分鐘監控線上部署版本 |
 
 ## 系統需求
 
@@ -34,7 +34,7 @@ dotnet run
 ```powershell
 .\scripts\publish.ps1
 # 或指定版本
-.\scripts\publish.ps1 -Version 1.1.0
+.\scripts\publish.ps1 -Version 1.3.0
 # 只要單一 exe、不要安裝程式
 .\scripts\publish.ps1 -SkipInstaller
 ```
@@ -62,7 +62,7 @@ Velopack CLI（可選，產生 Setup.exe）：
 
 ```powershell
 dotnet tool install -g vpk
-vpk pack --packId Hugoer --packVersion 1.1.0 --packDir .\dist\publish\win-x64 --mainExe Hugoer.exe --outputDir .\dist\releases\velopack
+vpk pack --packId Hugoer --packVersion 1.3.0 --packDir .\dist\publish\win-x64 --mainExe Hugoer.exe --outputDir .\dist\releases\velopack
 ```
 
 ## 建議使用流程
@@ -73,6 +73,7 @@ vpk pack --packId Hugoer --packVersion 1.1.0 --packDir .\dist\publish\win-x64 --
 4. **設定檔** →「網站基本」改 baseURL / title；「Params 表單」調描述、色系、widgets 等  
 5. **內容** → 新增／編輯 Markdown，右側即時預覽  
 6. **GitHub** → `gh auth login` → 建立 Repo + 推送 + 啟用 Pages  
+7. **GitHub** → 查看「線上版本監控」；Hugoer 每 5 分鐘確認 Pages 是否已更新至本次推送版本
 
 ## 專案結構
 

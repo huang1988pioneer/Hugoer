@@ -66,6 +66,11 @@
             <Setter Property="Padding" Value="16"/>
         </Style>
 
+        <Style Selector="Border.deploymentMonitor">
+            <Setter Property="Background" Value="#102029"/>
+            <Setter Property="BorderBrush" Value="#28677A"/>
+        </Style>
+
         <Style Selector="Border.pill">
             <Setter Property="Background" Value="#1C2736"/>
             <Setter Property="CornerRadius" Value="999"/>
