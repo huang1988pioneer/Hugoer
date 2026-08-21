@@ -191,6 +191,24 @@ public partial class GitHubViewModel : PageViewModelBase
             return;
         }
 
+        var existingTarget = Hugoer.Services.GitHubService.ParseRepositoryTarget(RepoName);
+        if (existingTarget.IsValid)
+        {
+            RepositoryUrl = RepoName.Trim();
+            AppendLog($"偵測到既有 repository 網址，改用安全連結流程：{existingTarget.Owner}/{existingTarget.Repository}");
+            await ConnectExistingRepositoryAsync();
+            return;
+        }
+
+        if (RepoName.Contains("github.com", StringComparison.OrdinalIgnoreCase)
+            || RepoName.Contains('/')
+            || RepoName.Contains('\\'))
+        {
+            StatusMessage = $"Repository 網址格式無效：{existingTarget.ErrorMessage}";
+            AppendLog(StatusMessage);
+            return;
+        }
+
         IsBusy = true;
         try
         {

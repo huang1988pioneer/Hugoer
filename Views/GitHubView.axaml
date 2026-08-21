@@ -89,7 +89,7 @@
                     <Grid ColumnDefinitions="120,*" RowDefinitions="Auto,Auto,Auto">
                         <TextBlock Text="Repo 名稱" VerticalAlignment="Center" Margin="0,0,0,8"/>
                         <TextBox Grid.Column="1" Text="{Binding RepoName}"
-                                 PlaceholderText="my-hugo-site" Margin="0,0,0,8"/>
+                                 PlaceholderText="my-hugo-site（只填新 repository 名稱）" Margin="0,0,0,8"/>
                         <TextBlock Grid.Row="1" Text="可見性" VerticalAlignment="Center" Margin="0,0,0,8"/>
                         <CheckBox Grid.Row="1" Grid.Column="1" Content="Public repository"
                                   IsChecked="{Binding IsPublicRepo}" Margin="0,0,0,8"/>
