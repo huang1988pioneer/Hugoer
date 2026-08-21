@@ -412,34 +412,73 @@ Thumbs.db
             };
         }
 
-        var create = await ProcessRunner.RunAsync(
+        var permission = await ProcessRunner.RunAsync(
             "gh",
-            $"api -X POST repos/{info.Owner}/{info.Repo}/pages -f build_type=workflow",
+            $"api repos/{info.Owner}/{info.Repo} --jq .permissions.admin",
             sitePath,
-            60_000,
+            30_000,
             cancellationToken).ConfigureAwait(false);
 
-        if (create.Succeeded)
-            return create;
-
-        // Already enabled or needs update — try PUT
-        var put = await ProcessRunner.RunAsync(
-            "gh",
-            $"api -X PUT repos/{info.Owner}/{info.Repo}/pages -f build_type=workflow",
-            sitePath,
-            60_000,
-            cancellationToken).ConfigureAwait(false);
-
-        if (put.Succeeded
-            || create.CombinedOutput.Contains("already exists", StringComparison.OrdinalIgnoreCase)
-            || create.CombinedOutput.Contains("409", StringComparison.OrdinalIgnoreCase))
+        if (!permission.Succeeded)
         {
-            return put.Succeeded
-                ? put
-                : new CommandResult { ExitCode = 0, StdOut = "GitHub Pages 可能已啟用，請重新查詢狀態。" };
+            return new CommandResult
+            {
+                ExitCode = permission.ExitCode,
+                StdErr = $"無法確認 GitHub Pages 管理權限。請確認 gh 已登入且 repository 可存取。\n{permission.CombinedOutput}"
+            };
         }
 
-        return put.ExitCode != 0 ? create : put;
+        var canManagePages = permission.StdOut.Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
+        if (!canManagePages)
+        {
+            return new CommandResult
+            {
+                ExitCode = -1,
+                StdOut = "網站檔案與 GitHub Actions workflow 已成功推送。",
+                StdErr = $"目前登入帳號具有 {info.Owner}/{info.Repo} 的推送權限，但沒有管理 GitHub Pages 設定所需的 admin 權限。\n" +
+                         "請 Repository 擁有者開啟 Settings > Pages，在 Build and deployment 的 Source 選擇 GitHub Actions；完成後回到 Hugoer 按「查詢 Pages 狀態」。"
+            };
+        }
+
+        var current = await ProcessRunner.RunAsync(
+            "gh",
+            $"api repos/{info.Owner}/{info.Repo}/pages",
+            sitePath,
+            30_000,
+            cancellationToken).ConfigureAwait(false);
+
+        var pagesExist = current.Succeeded;
+        if (!pagesExist
+            && !current.CombinedOutput.Contains("404", StringComparison.OrdinalIgnoreCase)
+            && !current.CombinedOutput.Contains("Not Found", StringComparison.OrdinalIgnoreCase))
+        {
+            return current;
+        }
+
+        var method = pagesExist ? "PUT" : "POST";
+        var update = await ProcessRunner.RunAsync(
+            "gh",
+            $"api -X {method} repos/{info.Owner}/{info.Repo}/pages -f build_type=workflow",
+            sitePath,
+            60_000,
+            cancellationToken).ConfigureAwait(false);
+
+        if (update.Succeeded)
+        {
+            return new CommandResult
+            {
+                ExitCode = 0,
+                StdOut = pagesExist
+                    ? "已將 GitHub Pages 建置來源更新為 GitHub Actions。"
+                    : "已啟用 GitHub Pages（GitHub Actions）。"
+            };
+        }
+
+        return new CommandResult
+        {
+            ExitCode = update.ExitCode,
+            StdErr = $"無法將 GitHub Pages 設為 GitHub Actions。\n{update.CombinedOutput}"
+        };
     }
 
     public async Task<GitHubPagesStatus> GetPagesStatusAsync(
