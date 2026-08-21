@@ -137,7 +137,7 @@ public partial class ConfigViewModel : PageViewModelBase
             {
                 ["baseURL"] = BaseUrl,
                 ["title"] = SiteTitle,
-                ["languageCode"] = LanguageCode,
+                ["locale"] = LanguageCode,
                 ["theme"] = ThemeName
             });
             StatusMessage = "已套用網站基本欄位（記得按儲存）";
@@ -150,7 +150,7 @@ public partial class ConfigViewModel : PageViewModelBase
             var text = EditorText;
             text = UpsertTomlLine(text, "baseURL", BaseUrl);
             text = UpsertTomlLine(text, "title", SiteTitle);
-            text = UpsertTomlLine(text, "languageCode", LanguageCode);
+            text = UpsertTomlLine(text, "locale", LanguageCode);
             if (!string.IsNullOrWhiteSpace(ThemeName))
                 text = UpsertTomlLine(text, "theme", ThemeName);
             EditorText = text;
@@ -223,14 +223,17 @@ public partial class ConfigViewModel : PageViewModelBase
         {
             var content = """
 baseURL = 'https://example.org/'
-languageCode = 'zh-tw'
+locale = 'zh-tw'
 title = 'My Hugo Site'
 theme = ''
 
 [params]
   description = 'A site managed by Hugoer'
-  colorScheme = 'auto'
   mainSections = ['post']
+
+[params.colorScheme]
+  toggle = true
+  default = 'auto'
 """;
             await File.WriteAllTextAsync(path, content);
         }
@@ -244,7 +247,7 @@ theme = ''
     {
         BaseUrl = ReadTomlLine(text, "baseURL") ?? ReadTomlLine(text, "baseurl") ?? string.Empty;
         SiteTitle = ReadTomlLine(text, "title") ?? string.Empty;
-        LanguageCode = ReadTomlLine(text, "languageCode") ?? "zh-tw";
+        LanguageCode = ReadTomlLine(text, "locale") ?? ReadTomlLine(text, "languageCode") ?? "zh-tw";
         ThemeName = ReadTomlLine(text, "theme") ?? string.Empty;
     }
 

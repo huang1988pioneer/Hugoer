@@ -45,7 +45,8 @@ public sealed class TomlParamsService
     [
         ("description", "網站描述", "SEO / 首頁摘要", ParamFieldKind.String),
         ("mainSections", "主要區塊", "例如 post（逗號分隔）", ParamFieldKind.Array),
-        ("colorScheme", "色彩模式", "auto / light / dark", ParamFieldKind.String),
+        ("colorScheme.default", "色彩模式", "auto / light / dark", ParamFieldKind.String),
+        ("colorScheme.toggle", "允許切換色彩模式", "顯示明暗模式切換", ParamFieldKind.Bool),
         ("defaultTheme", "預設主題色", "Stack: auto / light / dark", ParamFieldKind.String),
         ("image", "預設圖片", "社群分享預設圖", ParamFieldKind.String),
         ("dateFormat", "日期格式", "例如 2006-01-02", ParamFieldKind.String),

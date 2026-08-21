@@ -231,7 +231,10 @@ weight = 3
 [params]
   description = "A personal blog powered by Hugo and Stack"
   mainSections = ["post"]
-  colorScheme = "auto"
+
+[params.colorScheme]
+  toggle = true
+  default = "auto"
 """);
         }
 
