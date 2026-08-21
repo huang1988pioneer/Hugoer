@@ -62,11 +62,11 @@
                         <Button Content="建立 Repo + 推送 + 啟用 Pages" Classes="accent"
                                 Command="{Binding CreateAndDeployCommand}"
                                 IsEnabled="{Binding !IsBusy}"/>
-                        <Button Content="提交並推送更新" Command="{Binding PushCommand}"
+                        <Button Content="建置、提交並推送更新" Command="{Binding PushCommand}"
                                 IsEnabled="{Binding !IsBusy}"/>
                     </StackPanel>
                     <TextBlock Classes="caption" TextWrapping="Wrap"
-                               Text="流程：寫入 .github/workflows/hugo.yml → git commit/push → 以 GitHub Actions 建置並部署到 GitHub Pages。請先 gh auth login。"/>
+                               Text="流程：本機 Hugo Production Build → 寫入 .github/workflows/hugo.yml → git commit/push → GitHub Actions 建置並部署到 GitHub Pages。建置失敗時不會推送；請先 gh auth login。"/>
                 </StackPanel>
             </Border>
 

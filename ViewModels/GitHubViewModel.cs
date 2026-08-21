@@ -135,6 +135,16 @@ public partial class GitHubViewModel : PageViewModelBase
         IsBusy = true;
         try
         {
+            StatusMessage = "正在以 production 設定建置 Hugo 網站…";
+            AppendLog("hugo build…");
+            var build = await Services.Hugo.BuildAsync(site);
+            AppendLog(build.CombinedOutput);
+            if (!build.Succeeded)
+            {
+                StatusMessage = "建置失敗；已停止提交與推送。請依日誌修正網站內容。";
+                return;
+            }
+
             var progress = new Progress<string>(m =>
             {
                 AppendLog(m);
