@@ -62,6 +62,17 @@ public sealed partial class HugoService
                 if (info.IsInstalled)
                     return info;
             }
+
+            // Winget normally creates a link under ...\WinGet\Links, but it is not
+            // guaranteed to be available to an already-running desktop process.
+            // Fall back to the package payload so Hugoer works immediately after install.
+            var wingetHugo = FindWingetHugoExecutable();
+            if (wingetHugo is not null)
+            {
+                var info = await ProbeHugoAsync(wingetHugo, cancellationToken).ConfigureAwait(false);
+                if (info.IsInstalled)
+                    return info;
+            }
         }
 
         return new HugoInfo
@@ -69,6 +80,32 @@ public sealed partial class HugoService
             IsInstalled = false,
             StatusMessage = "未偵測到 Hugo。可使用「一鍵安裝 Hugo Extended」。"
         };
+    }
+
+    private static string? FindWingetHugoExecutable()
+    {
+        try
+        {
+            var packages = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Microsoft", "WinGet", "Packages");
+            if (!Directory.Exists(packages)) return null;
+
+            var hugoPackage = Directory.EnumerateDirectories(packages, "Hugo.Hugo.*", SearchOption.TopDirectoryOnly)
+                .OrderByDescending(Directory.GetLastWriteTimeUtc)
+                .FirstOrDefault();
+            return hugoPackage is null
+                ? null
+                : Directory.EnumerateFiles(hugoPackage, "hugo.exe", SearchOption.AllDirectories).FirstOrDefault();
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private static async Task<HugoInfo> ProbeHugoAsync(string exe, CancellationToken cancellationToken)
