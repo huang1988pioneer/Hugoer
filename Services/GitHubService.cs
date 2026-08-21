@@ -70,6 +70,30 @@ public sealed partial class GitHubService
         await File.WriteAllTextAsync(config, updated, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<(bool HasAccess, string Message)> CheckPushAccessAsync(
+        GitHubRepositoryTarget target,
+        CancellationToken cancellationToken = default)
+    {
+        if (!target.IsValid || string.IsNullOrWhiteSpace(target.Owner) || string.IsNullOrWhiteSpace(target.Repository))
+            return (false, target.ErrorMessage);
+
+        var result = await ProcessRunner.RunAsync(
+            "gh",
+            $"api repos/{target.Owner}/{target.Repository} --jq .permissions.push",
+            timeoutMs: 30_000,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!result.Succeeded)
+        {
+            return (false,
+                $"無法確認 repository 權限。請確認 gh 已登入，且 repository 存在或目前帳號可存取。\n{result.CombinedOutput}");
+        }
+
+        var canPush = result.StdOut.Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
+        return canPush
+            ? (true, $"已確認具有 {target.Owner}/{target.Repository} 的推送權限。")
+            : (false, $"目前 GitHub 登入帳號沒有 {target.Owner}/{target.Repository} 的推送權限。請由 owner 加入 collaborator，或改用有權限的帳號執行 gh auth login。");
+    }
+
     public async Task<bool> IsGitAvailableAsync(CancellationToken cancellationToken = default)
     {
         var r = await ProcessRunner.RunAsync("git", "--version", timeoutMs: 10_000, cancellationToken: cancellationToken)

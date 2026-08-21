@@ -125,6 +125,15 @@ public partial class GitHubViewModel : PageViewModelBase
         IsBusy = true;
         try
         {
+            StatusMessage = "正在確認 GitHub repository 推送權限…";
+            var access = await Services.GitHub.CheckPushAccessAsync(target);
+            AppendLog(access.Message);
+            if (!access.HasAccess)
+            {
+                StatusMessage = access.Message;
+                return;
+            }
+
             if (SyncRecommendedBaseUrl && !string.IsNullOrWhiteSpace(target.PagesUrl))
             {
                 await Services.GitHub.UpdateBaseUrlAsync(site, target.PagesUrl);
