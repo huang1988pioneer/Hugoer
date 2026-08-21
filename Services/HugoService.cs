@@ -338,6 +338,7 @@ public sealed partial class HugoService
         await RepairDuplicateRootTomlKeysAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await MigrateDeprecatedLanguageCodeAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await RepairLegacyStackColorSchemeAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await RepairLegacyStackSearchPageAsync(sitePath, cancellationToken).ConfigureAwait(false);
 
         var hugo = await DetectAsync(cancellationToken).ConfigureAwait(false);
         if (!hugo.IsInstalled || string.IsNullOrWhiteSpace(hugo.ExecutablePath))
@@ -496,6 +497,23 @@ public sealed partial class HugoService
             .ConfigureAwait(false);
     }
 
+    private static async Task RepairLegacyStackSearchPageAsync(
+        string sitePath,
+        CancellationToken cancellationToken)
+    {
+        var legacy = Path.Combine(sitePath, "content", "search", "_index.md");
+        var current = Path.Combine(sitePath, "content", "search", "index.md");
+        if (!File.Exists(legacy) || File.Exists(current)) return;
+
+        var content = await File.ReadAllTextAsync(legacy, cancellationToken).ConfigureAwait(false);
+        if (!Regex.IsMatch(content, """(?im)^\s*layout\s*:\s*['"]?search['"]?\s*$""")) return;
+
+        var backup = legacy + ".hugoer.bak";
+        if (!File.Exists(backup))
+            File.Copy(legacy, backup);
+        File.Move(legacy, current);
+    }
+
     public async Task<(Process? Process, string Message)> StartServerAsync(
         string sitePath,
         int port = 1313,
@@ -504,6 +522,7 @@ public sealed partial class HugoService
         await RepairDuplicateRootTomlKeysAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await MigrateDeprecatedLanguageCodeAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await RepairLegacyStackColorSchemeAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await RepairLegacyStackSearchPageAsync(sitePath, cancellationToken).ConfigureAwait(false);
 
         var hugo = await DetectAsync(cancellationToken).ConfigureAwait(false);
         if (!hugo.IsInstalled || string.IsNullOrWhiteSpace(hugo.ExecutablePath))

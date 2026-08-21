@@ -244,6 +244,25 @@ public partial class GitHubViewModel : PageViewModelBase
     private async Task PushAsync()
     {
         if (!RequireSite(out var site)) return;
+
+        var info = await Services.GitHub.GetInfoAsync(site);
+        if (string.IsNullOrWhiteSpace(info.RemoteUrl))
+        {
+            var candidate = !string.IsNullOrWhiteSpace(RepositoryUrl) ? RepositoryUrl : RepoName;
+            var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(candidate);
+            if (target.IsValid)
+            {
+                RepositoryUrl = candidate;
+                AppendLog($"尚未設定 origin；改用安全連結流程：{target.Owner}/{target.Repository}");
+                await ConnectExistingRepositoryAsync();
+                return;
+            }
+
+            StatusMessage = "尚未連結 GitHub repository。請先在上方貼上完整 Repository URL，再按「連結、推送並啟用 Pages」。";
+            AppendLog(StatusMessage);
+            return;
+        }
+
         IsBusy = true;
         try
         {

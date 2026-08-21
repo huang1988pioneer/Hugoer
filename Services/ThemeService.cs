@@ -262,7 +262,9 @@ menu:
 """, cancellationToken).ConfigureAwait(false);
         }
 
-        var search = Path.Combine(sitePath, "content", "search", "_index.md");
+        // Stack's search layouts live under layouts/page, so this must be a
+        // regular page (index.md), not a section (_index.md).
+        var search = Path.Combine(sitePath, "content", "search", "index.md");
         if (!File.Exists(search))
         {
             Directory.CreateDirectory(Path.GetDirectoryName(search)!);
