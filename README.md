@@ -35,7 +35,7 @@ dotnet run
 ```powershell
 .\scripts\publish.ps1
 # 或指定版本
-.\scripts\publish.ps1 -Version 1.3.0
+.\scripts\publish.ps1 -Version 1.4.0
 # 只要單一 exe、不要安裝程式
 .\scripts\publish.ps1 -SkipInstaller
 ```
@@ -63,7 +63,7 @@ Velopack CLI（可選，產生 Setup.exe）：
 
 ```powershell
 dotnet tool install -g vpk
-vpk pack --packId Hugoer --packVersion 1.3.0 --packDir .\dist\publish\win-x64 --mainExe Hugoer.exe --outputDir .\dist\releases\velopack
+vpk pack --packId Hugoer --packVersion 1.4.0 --packDir .\dist\publish\win-x64 --mainExe Hugoer.exe --outputDir .\dist\releases\velopack
 ```
 
 ## 建議使用流程
