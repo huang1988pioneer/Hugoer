@@ -71,4 +71,5 @@ public static class PathHelper
     public static string ContentDir(string sitePath) => Path.Combine(sitePath, "content");
     public static string ThemesDir(string sitePath) => Path.Combine(sitePath, "themes");
     public static string ArchetypesDir(string sitePath) => Path.Combine(sitePath, "archetypes");
+    public static string StaticDir(string sitePath) => Path.Combine(sitePath, "static");
 }

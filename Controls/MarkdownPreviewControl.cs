@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -7,17 +8,22 @@ using Hugoer.Services;
 namespace Hugoer.Controls;
 
 /// <summary>
-/// Live Markdown preview: renders via Markdig → HTML, shown in an embedded WebView when available,
-/// otherwise falls back to a structured Avalonia text preview.
+/// Live Markdown preview: Markdig HTML in an embedded WebView when available,
+/// otherwise a structured Avalonia text fallback.
 /// </summary>
 public sealed class MarkdownPreviewControl : UserControl
 {
     public static readonly StyledProperty<string?> MarkdownProperty =
         AvaloniaProperty.Register<MarkdownPreviewControl, string?>(nameof(Markdown));
 
+    private readonly NativeWebView? _webView;
     private readonly ScrollViewer _fallbackScroll;
     private readonly StackPanel _fallbackPanel;
-    private readonly Border _root;
+    private readonly Grid _root;
+    private readonly TextBlock _status;
+    private bool _ready;
+    private bool _loadedHtml;
+    private bool _useFallback;
 
     public MarkdownPreviewControl()
     {
@@ -28,13 +34,36 @@ public sealed class MarkdownPreviewControl : UserControl
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
         };
 
-        _root = new Border
+        _status = new TextBlock
         {
-            Background = new SolidColorBrush(Color.Parse("#0D1218")),
-            Child = _fallbackScroll
+            Text = "載入預覽…",
+            Opacity = 0.55,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            FontStyle = FontStyle.Italic
         };
 
+        _root = new Grid
+        {
+            Background = new SolidColorBrush(Color.Parse("#0D1218"))
+        };
+        _root.Children.Add(_fallbackScroll);
+        _root.Children.Add(_status);
+
+        try
+        {
+            _webView = new NativeWebView { IsVisible = false };
+            _webView.NavigationCompleted += OnNavigationCompleted;
+            _root.Children.Add(_webView);
+        }
+        catch
+        {
+            _useFallback = true;
+            _status.IsVisible = false;
+        }
+
         Content = _root;
+        AttachedToVisualTree += OnAttachedToVisualTree;
     }
 
     public string? Markdown
@@ -50,6 +79,53 @@ public sealed class MarkdownPreviewControl : UserControl
             ScheduleRefresh();
     }
 
+    private void OnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        if (_loadedHtml)
+            return;
+        _loadedHtml = true;
+
+        if (_webView is null || _useFallback)
+        {
+            _useFallback = true;
+            _status.IsVisible = false;
+            BuildFallbackPreview(Markdown ?? string.Empty);
+            return;
+        }
+
+        try
+        {
+            _webView.NavigateToString(MarkdownPreviewService.PreviewShellDocument());
+        }
+        catch
+        {
+            _useFallback = true;
+            _webView.IsVisible = false;
+            _status.IsVisible = false;
+            BuildFallbackPreview(Markdown ?? string.Empty);
+        }
+    }
+
+    private void OnNavigationCompleted(object? sender, WebViewNavigationCompletedEventArgs e)
+    {
+        if (!e.IsSuccess)
+        {
+            _useFallback = true;
+            if (_webView is not null)
+                _webView.IsVisible = false;
+            _status.IsVisible = false;
+            BuildFallbackPreview(Markdown ?? string.Empty);
+            return;
+        }
+
+        _ready = true;
+        _status.IsVisible = false;
+        if (_webView is not null)
+            _webView.IsVisible = true;
+        _fallbackScroll.IsVisible = false;
+        PushHtml();
+    }
+
     private void ScheduleRefresh()
     {
         Dispatcher.UIThread.Post(Refresh, DispatcherPriority.Background);
@@ -57,12 +133,32 @@ public sealed class MarkdownPreviewControl : UserControl
 
     private void Refresh()
     {
-        BuildFallbackPreview(Markdown ?? string.Empty);
+        if (_useFallback || _webView is null)
+        {
+            BuildFallbackPreview(Markdown ?? string.Empty);
+            return;
+        }
+
+        if (_ready)
+            PushHtml();
+    }
+
+    private void PushHtml()
+    {
+        if (!_ready || _webView is null)
+            return;
+
+        var fragment = MediaAssetService.ToPreviewHtml(
+            MarkdownPreviewService.ToHtmlFragment(Markdown ?? string.Empty),
+            AppServices.Instance.CurrentSitePath);
+        var script = $"window.hugoerSetPreview({JsonSerializer.Serialize(fragment)})";
+        _ = _webView.InvokeScript(script);
     }
 
     private void BuildFallbackPreview(string markdown)
     {
         _fallbackPanel.Children.Clear();
+        _fallbackScroll.IsVisible = true;
 
         var front = MarkdownPreviewService.ExtractFrontMatter(markdown);
         if (!string.IsNullOrWhiteSpace(front))
@@ -106,8 +202,6 @@ public sealed class MarkdownPreviewControl : UserControl
             return;
         }
 
-        // Use Markdig HTML then strip tags lightly for structured-ish display,
-        // plus line-based heuristics for headings / lists / code.
         RenderBodyLines(body);
     }
 
@@ -241,7 +335,6 @@ public sealed class MarkdownPreviewControl : UserControl
 
     private static Control CreateRichParagraph(string text)
     {
-        // Lightweight inline emphasis: **bold**, *italic*, `code`
         var tb = new SelectableTextBlock
         {
             TextWrapping = TextWrapping.Wrap,

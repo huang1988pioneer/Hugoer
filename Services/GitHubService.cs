@@ -577,6 +577,22 @@ Thumbs.db
                 path = source.TryGetProperty("path", out var p) ? p.GetString() : null;
             }
 
+            var message = status switch
+            {
+                "built" => "網站已成功建置並上線。",
+                "building" => "正在建置中…",
+                "errored" => "建置發生錯誤，請檢查 Actions 日誌。",
+                null => "GitHub Pages 已啟用。",
+                _ => $"狀態：{status}"
+            };
+            if (buildType?.Equals("workflow", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                var actionsMessage = await GetLatestWorkflowRunMessageAsync(sitePath, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(actionsMessage))
+                    message = actionsMessage;
+            }
+
             return new GitHubPagesStatus
             {
                 Enabled = true,
@@ -586,14 +602,7 @@ Thumbs.db
                 SourcePath = path,
                 BuildType = buildType,
                 Cname = cname,
-                Message = status switch
-                {
-                    "built" => "網站已成功建置並上線。",
-                    "building" => "正在建置中…",
-                    "errored" => "建置發生錯誤，請檢查 Actions 日誌。",
-                    null => "GitHub Pages 已啟用。",
-                    _ => $"狀態：{status}"
-                }
+                Message = message
             };
         }
         catch (Exception ex)
@@ -613,6 +622,54 @@ Thumbs.db
             "auth login --web --git-protocol https",
             timeoutMs: 300_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<string?> GetLatestWorkflowRunMessageAsync(
+        string sitePath,
+        CancellationToken cancellationToken)
+    {
+        var result = await ProcessRunner.RunAsync(
+            "gh",
+            "run list --workflow hugo.yml --limit 1 --json status,conclusion,updatedAt,url,displayTitle",
+            sitePath,
+            30_000,
+            cancellationToken).ConfigureAwait(false);
+        if (!result.Succeeded || string.IsNullOrWhiteSpace(result.StdOut))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(result.StdOut);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Array || root.GetArrayLength() == 0)
+                return "GitHub Pages 已設定為 Actions，但尚未找到 hugo.yml 部署紀錄。";
+
+            var run = root[0];
+            var runStatus = run.TryGetProperty("status", out var s) ? s.GetString() : null;
+            var conclusion = run.TryGetProperty("conclusion", out var c) ? c.GetString() : null;
+            var updatedAt = run.TryGetProperty("updatedAt", out var u) ? u.GetString() : null;
+            var url = run.TryGetProperty("url", out var link) ? link.GetString() : null;
+            var timeText = DateTimeOffset.TryParse(updatedAt, out var parsedUpdatedAt)
+                ? parsedUpdatedAt.LocalDateTime.ToString("yyyy/MM/dd HH:mm")
+                : updatedAt;
+
+            var message = runStatus switch
+            {
+                "queued" => "GitHub Actions 最新部署正在排隊。",
+                "in_progress" => "GitHub Actions 最新部署正在執行。",
+                "completed" when conclusion == "success" => $"GitHub Actions 最新部署成功（{timeText}）。",
+                "completed" when conclusion == "failure" => $"GitHub Actions 最新部署失敗（{timeText}）。",
+                "completed" when conclusion == "cancelled" => $"GitHub Actions 最新部署已取消（{timeText}）。",
+                "completed" => $"GitHub Actions 最新部署已完成：{conclusion ?? "未知結果"}（{timeText}）。",
+                _ => $"GitHub Actions 最新部署狀態：{runStatus ?? "未知"}。"
+            };
+
+            return string.IsNullOrWhiteSpace(url) ? message : $"{message}\nActions：{url}";
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static (string? Owner, string? Repo) ParseGitHubRemote(string url)
@@ -662,11 +719,13 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Setup Hugo
-        uses: peaceiris/actions-hugo@v3
-        with:
-          hugo-version: ${{ env.HUGO_VERSION }}
-          extended: true
+      - name: Install Hugo CLI
+        run: |
+          wget -O ${{ runner.temp }}/hugo.tar.gz \
+            https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.tar.gz
+          tar -xzf ${{ runner.temp }}/hugo.tar.gz -C ${{ runner.temp }}
+          sudo mv ${{ runner.temp }}/hugo /usr/local/bin/hugo
+          hugo version
 
       - name: Setup Pages
         id: pages

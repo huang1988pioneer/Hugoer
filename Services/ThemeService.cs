@@ -210,17 +210,26 @@ name = "Home"
 url = "/"
 weight = 1
 
+[menu.main.params]
+icon = "home"
+
 [[menu.main]]
 identifier = "archives"
 name = "Archives"
 url = "/archives/"
 weight = 2
 
+[menu.main.params]
+icon = "archives"
+
 [[menu.main]]
 identifier = "search"
 name = "Search"
 url = "/search/"
 weight = 3
+
+[menu.main.params]
+icon = "search"
 """);
         }
 
@@ -253,11 +262,6 @@ weight = 3
 title: "Archives"
 layout: "archives"
 slug: "archives"
-menu:
-  main:
-    weight: 2
-    params:
-      icon: archives
 ---
 """, cancellationToken).ConfigureAwait(false);
         }
@@ -273,11 +277,6 @@ menu:
 title: "Search"
 layout: "search"
 outputs: ["html", "json"]
-menu:
-  main:
-    weight: 3
-    params:
-      icon: search
 ---
 """, cancellationToken).ConfigureAwait(false);
         }

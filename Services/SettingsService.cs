@@ -46,4 +46,10 @@ public sealed class SettingsService
         _settings.LastSitePath = path;
         Save();
     }
+
+    public void SetMarkdownEditorMode(string mode)
+    {
+        _settings.MarkdownEditorMode = mode;
+        Save();
+    }
 }

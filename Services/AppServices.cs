@@ -9,6 +9,7 @@ public sealed class AppServices
     public HugoService Hugo { get; }
     public ThemeService Themes { get; } = new();
     public ContentService Content { get; } = new();
+    public MenuService Menus { get; } = new();
     public FrontMatterService FrontMatter { get; } = new();
     public DeploymentMonitorService DeploymentMonitor { get; } = new();
     public GitHubService GitHub { get; }

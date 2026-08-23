@@ -16,8 +16,10 @@ public static partial class MarkdownPreviewService
         if (string.IsNullOrEmpty(markdown))
             return string.Empty;
 
-        var m = FrontMatterRegex().Match(markdown);
-        return m.Success ? markdown[m.Length..] : markdown;
+        var body = markdown;
+        while (FrontMatterRegex().Match(body) is { Success: true } match)
+            body = body[match.Length..].TrimStart('\r', '\n');
+        return body;
     }
 
     public static string ExtractFrontMatter(string markdown)
@@ -26,7 +28,15 @@ public static partial class MarkdownPreviewService
             return string.Empty;
 
         var m = FrontMatterRegex().Match(markdown);
-        return m.Success ? m.Groups[1].Value.Trim() : string.Empty;
+        return m.Success ? m.Groups["frontMatter"].Value.Trim() : string.Empty;
+    }
+
+    public static string ToHtmlFragment(string markdown)
+    {
+        var bodyMd = StripFrontMatter(markdown);
+        if (string.IsNullOrWhiteSpace(bodyMd))
+            return string.Empty;
+        return Markdown.ToHtml(bodyMd, Pipeline).Trim();
     }
 
     public static string ToHtmlDocument(string markdown, string? title = null)
@@ -45,6 +55,43 @@ public static partial class MarkdownPreviewService
         sb.AppendLine("<article class=\"markdown-body\">");
         sb.AppendLine(bodyHtml);
         sb.AppendLine("</article></body></html>");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Empty WebView shell for live preview. Call <c>hugoerSetPreview(html)</c> to replace the article.
+    /// </summary>
+    public static string PreviewShellDocument()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("<!DOCTYPE html>");
+        sb.AppendLine("<html lang=\"zh-Hant\"><head><meta charset=\"utf-8\"/>");
+        sb.AppendLine("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: https: http: file: blob:; media-src data: https: http: file: blob:;\"/>");
+        sb.AppendLine("<title>Preview</title>");
+        sb.AppendLine("<style>");
+        sb.AppendLine(DarkPreviewCss);
+        sb.AppendLine("#placeholder { display:block; color:#6b7785; font-style:italic; padding:20px 24px; }");
+        sb.AppendLine("#content { display:none; }");
+        sb.AppendLine("</style></head><body>");
+        sb.AppendLine("<p id=\"placeholder\">開始輸入 Markdown，預覽會即時更新。</p>");
+        sb.AppendLine("<article id=\"content\" class=\"markdown-body\"></article>");
+        sb.AppendLine("<script>");
+        sb.AppendLine("window.hugoerSetPreview = function (html) {");
+        sb.AppendLine("  var content = document.getElementById('content');");
+        sb.AppendLine("  var placeholder = document.getElementById('placeholder');");
+        sb.AppendLine("  var scroller = document.scrollingElement || document.documentElement;");
+        sb.AppendLine("  var top = scroller ? scroller.scrollTop : 0;");
+        sb.AppendLine("  var empty = !html;");
+        sb.AppendLine("  placeholder.style.display = empty ? 'block' : 'none';");
+        sb.AppendLine("  content.style.display = empty ? 'none' : 'block';");
+        sb.AppendLine("  content.innerHTML = html || '';");
+        sb.AppendLine("  if (scroller) scroller.scrollTop = top;");
+        sb.AppendLine("};");
+        sb.AppendLine("document.addEventListener('click', function (event) {");
+        sb.AppendLine("  var link = event.target && event.target.closest ? event.target.closest('a[href]') : null;");
+        sb.AppendLine("  if (link) event.preventDefault();");
+        sb.AppendLine("});");
+        sb.AppendLine("</script></body></html>");
         return sb.ToString();
     }
 
@@ -100,12 +147,14 @@ table { border-collapse: collapse; width: 100%; margin: 1em 0; }
 th, td { border: 1px solid #2a3648; padding: 8px 10px; }
 th { background: #1a2330; }
 img { max-width: 100%; border-radius: 6px; }
+audio, video { width: 100%; max-width: 640px; margin: 1em 0; }
 hr { border: none; border-top: 1px solid #2a3648; margin: 1.5em 0; }
 ul, ol { padding-left: 1.4em; }
 li { margin: 0.25em 0; }
+li > input[type="checkbox"] { margin-right: 0.45em; }
 strong { color: #fff; }
 """;
 
-    [GeneratedRegex(@"^---\r?\n(.*?)\r?\n---\r?\n?", RegexOptions.Singleline)]
+    [GeneratedRegex(@"\A(?<delimiter>---|\+\+\+)(?:\s*\r?\n(?<frontMatter>.*?)\r?\n\k<delimiter>|\s+(?<frontMatter>.*?)\s+\k<delimiter>)\s*(?:\r?\n|\z)", RegexOptions.Singleline)]
     private static partial Regex FrontMatterRegex();
 }

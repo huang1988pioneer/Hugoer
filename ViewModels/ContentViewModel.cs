@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Hugoer.Helpers;
 using Hugoer.Models;
 using Hugoer.Services;
 
@@ -10,7 +11,14 @@ public partial class ContentViewModel : PageViewModelBase
 {
     public ContentViewModel()
     {
-        Title = "內容 Markdown";
+        Title = "文章";
+        var saved = Services.Settings.Current.MarkdownEditorMode;
+        if (saved.Equals("Source", StringComparison.OrdinalIgnoreCase))
+            EditorMode = MarkdownEditorMode.Source;
+        else
+            RefreshEditorModePresentation();
+        AlignCorrespondingPreview();
+        RefreshPreviewPresentation();
     }
 
     public ObservableCollection<ContentItem> Files { get; } = [];
@@ -40,6 +48,13 @@ public partial class ContentViewModel : PageViewModelBase
     /// <summary>Markdown body bound to live preview (same as editor; control strips front matter).</summary>
     [ObservableProperty]
     public partial string PreviewMarkdown { get; set; } = string.Empty;
+
+    /// <summary>Markdown body shown in the CKEditor-style source output pane (front matter excluded).</summary>
+    [ObservableProperty]
+    public partial string PreviewBodyMarkdown { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial bool HasPreviewBody { get; set; }
 
     [ObservableProperty]
     public partial bool ShowPreview { get; set; } = true;
@@ -116,6 +131,33 @@ public partial class ContentViewModel : PageViewModelBase
     [ObservableProperty]
     public partial string EditorStatistics { get; set; } = "正文 0 字元 · 1 行";
 
+    [ObservableProperty]
+    public partial MarkdownEditorMode EditorMode { get; set; } = MarkdownEditorMode.Wysiwyg;
+
+    [ObservableProperty]
+    public partial bool IsWysiwygMode { get; set; } = true;
+
+    [ObservableProperty]
+    public partial bool IsSourceMode { get; set; }
+
+    [ObservableProperty]
+    public partial string EditorModeTitle { get; set; } = "WYSIWYG 視覺編輯";
+
+    [ObservableProperty]
+    public partial MarkdownPreviewKind PreviewKind { get; set; } = MarkdownPreviewKind.MarkdownOutput;
+
+    [ObservableProperty]
+    public partial bool IsRenderPreview { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsMarkdownOutputPreview { get; set; } = true;
+
+    [ObservableProperty]
+    public partial string PreviewCorrespondenceHint { get; set; } = "對應 WYSIWYG：產生的 Markdown 原文";
+
+    [ObservableProperty]
+    public partial string PreviewKindTitle { get; set; } = "Markdown 輸出";
+
     private bool _loading;
     private bool _syncingFrontMatter;
     private List<ContentItem> _all = [];
@@ -137,6 +179,7 @@ public partial class ContentViewModel : PageViewModelBase
     partial void OnEditorTextChanged(string value)
     {
         UpdateEditorStatistics(value);
+        UpdatePreviewBody(value);
         if (!_loading)
             IsDirty = true;
 
@@ -144,6 +187,12 @@ public partial class ContentViewModel : PageViewModelBase
             PopulateFrontMatter(value);
 
         SchedulePreviewUpdate(value);
+    }
+
+    private void UpdatePreviewBody(string markdown)
+    {
+        PreviewBodyMarkdown = MarkdownPreviewService.StripFrontMatter(markdown ?? string.Empty);
+        HasPreviewBody = !string.IsNullOrWhiteSpace(PreviewBodyMarkdown);
     }
 
     private void UpdateEditorStatistics(string markdown)
@@ -169,6 +218,74 @@ public partial class ContentViewModel : PageViewModelBase
         if (value)
             SchedulePreviewUpdate(EditorText);
     }
+
+    partial void OnEditorModeChanged(MarkdownEditorMode value)
+    {
+        RefreshEditorModePresentation();
+        AlignCorrespondingPreview();
+        Services.Settings.SetMarkdownEditorMode(value == MarkdownEditorMode.Source ? "Source" : "Wysiwyg");
+    }
+
+    partial void OnPreviewKindChanged(MarkdownPreviewKind value) => RefreshPreviewPresentation();
+
+    private void RefreshEditorModePresentation()
+    {
+        IsWysiwygMode = EditorMode == MarkdownEditorMode.Wysiwyg;
+        IsSourceMode = EditorMode == MarkdownEditorMode.Source;
+        EditorModeTitle = IsWysiwygMode ? "WYSIWYG 視覺編輯" : "Markdown 原始碼";
+        RefreshPreviewPresentation();
+    }
+
+    /// <summary>
+    /// CKEditor 5 markdown demo: WYSIWYG corresponds to Markdown output;
+    /// source editing corresponds to the rendered preview.
+    /// </summary>
+    private void AlignCorrespondingPreview()
+    {
+        var corresponding = EditorMode == MarkdownEditorMode.Source
+            ? MarkdownPreviewKind.Render
+            : MarkdownPreviewKind.MarkdownOutput;
+        if (PreviewKind != corresponding)
+            PreviewKind = corresponding;
+        else
+            RefreshPreviewPresentation();
+    }
+
+    private void RefreshPreviewPresentation()
+    {
+        IsRenderPreview = PreviewKind == MarkdownPreviewKind.Render;
+        IsMarkdownOutputPreview = PreviewKind == MarkdownPreviewKind.MarkdownOutput;
+        PreviewKindTitle = IsRenderPreview ? "渲染預覽" : "Markdown 輸出";
+        PreviewCorrespondenceHint = (EditorMode, PreviewKind) switch
+        {
+            (MarkdownEditorMode.Wysiwyg, MarkdownPreviewKind.Render) =>
+                "對應 WYSIWYG：Markdig 渲染結果",
+            (MarkdownEditorMode.Wysiwyg, MarkdownPreviewKind.MarkdownOutput) =>
+                "對應 WYSIWYG：產生的 Markdown 原文",
+            (MarkdownEditorMode.Source, MarkdownPreviewKind.Render) =>
+                "對應原始碼：即時渲染預覽",
+            _ =>
+                "對應原始碼：目前 Markdown 正文"
+        };
+    }
+
+    [RelayCommand]
+    private void SetWysiwygMode() => EditorMode = MarkdownEditorMode.Wysiwyg;
+
+    [RelayCommand]
+    private void SetSourceMode() => EditorMode = MarkdownEditorMode.Source;
+
+    [RelayCommand]
+    private void SetRenderPreview() => PreviewKind = MarkdownPreviewKind.Render;
+
+    [RelayCommand]
+    private void SetMarkdownOutputPreview() => PreviewKind = MarkdownPreviewKind.MarkdownOutput;
+
+    [RelayCommand]
+    private void ToggleEditorMode() =>
+        EditorMode = EditorMode == MarkdownEditorMode.Wysiwyg
+            ? MarkdownEditorMode.Source
+            : MarkdownEditorMode.Wysiwyg;
 
     partial void OnFilterChanged(string value) => ApplyFilter();
 
@@ -222,7 +339,7 @@ public partial class ContentViewModel : PageViewModelBase
         Files.Clear();
         if (!RequireSite(out var site)) return;
 
-        _all = Services.Content.ListAllMarkdown(site).ToList();
+        _all = Services.Content.ListArticles(site).ToList();
         ApplyFilter();
         if (selectedPath is not null)
             SelectedFile = Files.FirstOrDefault(item =>
@@ -279,7 +396,7 @@ public partial class ContentViewModel : PageViewModelBase
         ShowEmptyState = !HasVisibleFiles;
         EmptyStateTitle = _all.Count == 0 ? "尚無文章" : "找不到符合條件的文章";
         EmptyStateDescription = _all.Count == 0
-            ? "在上方輸入標題，建立第一篇 Markdown 文章。"
+            ? "在上方輸入標題，建立第一篇部落格文章。歸檔、搜尋、關於等請到「選單」分頁。"
             : "調整搜尋文字或狀態篩選後再試一次。";
 
         if (SelectedFile is not null && !Files.Contains(SelectedFile))
@@ -293,6 +410,7 @@ public partial class ContentViewModel : PageViewModelBase
         {
             EditorText = await Services.Content.ReadAsync(item.FullPath);
             PreviewMarkdown = EditorText;
+            UpdatePreviewBody(EditorText);
             PopulateFrontMatter(EditorText);
             IsDirty = false;
             StatusMessage = item.RelativePath;
@@ -366,7 +484,33 @@ public partial class ContentViewModel : PageViewModelBase
             SelectedFile = null;
             EditorText = string.Empty;
             PreviewMarkdown = string.Empty;
+            UpdatePreviewBody(string.Empty);
             Refresh();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task UploadCoverImageAsync()
+    {
+        if (!RequireSite(out var site)) return;
+        if (!HasSelection)
+        {
+            StatusMessage = "請先選擇文章";
+            return;
+        }
+
+        var path = await DialogHelper.PickFileAsync("選擇封面圖片", [DialogHelper.Images]);
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        try
+        {
+            var asset = MediaAssetService.Import(site, path, MediaKind.Image);
+            FrontMatterImage = asset.PublicUrl;
+            StatusMessage = $"封面已上傳至 static/{asset.Folder}/{Path.GetFileName(asset.DestinationPath)}";
         }
         catch (Exception ex)
         {
@@ -382,6 +526,7 @@ public partial class ContentViewModel : PageViewModelBase
             var html = MarkdownPreviewService.ToHtmlDocument(
                 EditorText,
                 SelectedFile?.Name ?? "preview");
+            html = MediaAssetService.ToPreviewHtml(html, Services.CurrentSitePath);
             var dir = Path.Combine(Path.GetTempPath(), "HugoerPreview");
             Directory.CreateDirectory(dir);
             var path = Path.Combine(dir, "preview.html");

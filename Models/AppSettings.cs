@@ -7,6 +7,23 @@ public sealed class AppSettings
     public string? LastSitePath { get; set; }
     public string? PreferredHugoPath { get; set; }
     public string ThemeVariant { get; set; } = "Default";
+    /// <summary>Last Markdown editor mode: Wysiwyg or Source.</summary>
+    public string MarkdownEditorMode { get; set; } = "Wysiwyg";
+}
+
+public enum MarkdownEditorMode
+{
+    Wysiwyg,
+    Source
+}
+
+/// <summary>
+/// CKEditor 5-style corresponding preview: rendered HTML, or the Markdown source output.
+/// </summary>
+public enum MarkdownPreviewKind
+{
+    Render,
+    MarkdownOutput
 }
 
 public sealed class HugoInfo

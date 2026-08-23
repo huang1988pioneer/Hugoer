@@ -145,6 +145,17 @@ public static partial class MarkdownEditingService
     public static MarkdownEditResult HorizontalRule(string text, int selectionStart, int selectionLength) =>
         InsertBlock(text, selectionStart, selectionLength, "---", 3, 0);
 
+    public static MarkdownEditResult InsertSnippet(
+        string text,
+        int selectionStart,
+        int selectionLength,
+        string snippet)
+    {
+        if (string.IsNullOrEmpty(snippet))
+            return new MarkdownEditResult(text, selectionStart, 0);
+        return InsertBlock(text, selectionStart, selectionLength, snippet, 0, snippet.Length);
+    }
+
     private static MarkdownEditResult InsertBlock(
         string text,
         int selectionStart,
