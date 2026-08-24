@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.RegularExpressions;
 using Hugoer.Helpers;
 using Hugoer.Models;
@@ -290,6 +291,8 @@ public sealed partial class HugoService
                     await File.WriteAllTextAsync(config, seeded, cancellationToken).ConfigureAwait(false);
                 }
             }
+
+            await EnsureGoldmarkUnsafeHtmlAsync(sitePath, cancellationToken).ConfigureAwait(false);
         }
 
         return result;
@@ -339,6 +342,7 @@ public sealed partial class HugoService
         await MigrateDeprecatedLanguageCodeAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await RepairLegacyStackColorSchemeAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await RepairLegacyStackSearchPageAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await EnsureGoldmarkUnsafeHtmlAsync(sitePath, cancellationToken).ConfigureAwait(false);
 
         var hugo = await DetectAsync(cancellationToken).ConfigureAwait(false);
         if (!hugo.IsInstalled || string.IsNullOrWhiteSpace(hugo.ExecutablePath))
@@ -497,6 +501,39 @@ public sealed partial class HugoService
             .ConfigureAwait(false);
     }
 
+    private static async Task EnsureGoldmarkUnsafeHtmlAsync(
+        string sitePath,
+        CancellationToken cancellationToken)
+    {
+        var files = new List<string>();
+        var root = PathHelper.FindConfigFile(sitePath);
+        if (root is not null &&
+            root.EndsWith(".toml", StringComparison.OrdinalIgnoreCase))
+        {
+            files.Add(Path.GetFullPath(root));
+        }
+
+        var splitMarkup = Path.Combine(sitePath, "config", "_default", "markup.toml");
+        if (File.Exists(splitMarkup))
+        {
+            var full = Path.GetFullPath(splitMarkup);
+            if (!files.Exists(path => string.Equals(path, full, StringComparison.OrdinalIgnoreCase)))
+                files.Add(full);
+        }
+
+        foreach (var file in files)
+        {
+            var original = await File.ReadAllTextAsync(file, cancellationToken).ConfigureAwait(false);
+            var next = GoldmarkUnsafeHtml.EnsureEnabled(original, out var changed);
+            if (!changed) continue;
+
+            var backup = file + ".hugoer.bak";
+            if (!File.Exists(backup))
+                File.Copy(file, backup);
+            await File.WriteAllTextAsync(file, next, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private static async Task RepairLegacyStackSearchPageAsync(
         string sitePath,
         CancellationToken cancellationToken)
@@ -514,55 +551,109 @@ public sealed partial class HugoService
         File.Move(legacy, current);
     }
 
-    public async Task<(Process? Process, string Message)> StartServerAsync(
+    public async Task<HugoServerStartResult> StartServerAsync(
         string sitePath,
-        int port = 1313,
+        int preferredPort = 1313,
         CancellationToken cancellationToken = default)
     {
         await RepairDuplicateRootTomlKeysAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await MigrateDeprecatedLanguageCodeAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await RepairLegacyStackColorSchemeAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await RepairLegacyStackSearchPageAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await EnsureGoldmarkUnsafeHtmlAsync(sitePath, cancellationToken).ConfigureAwait(false);
 
         var hugo = await DetectAsync(cancellationToken).ConfigureAwait(false);
         if (!hugo.IsInstalled || string.IsNullOrWhiteSpace(hugo.ExecutablePath))
-            return (null, "請先安裝 Hugo。");
+            return Fail("請先安裝 Hugo。");
 
+        const int portRange = 10;
+        var nextPort = preferredPort;
+        var lastPort = preferredPort + portRange - 1;
+        while (nextPort <= lastPort)
+        {
+            var port = await TcpListeningPort.AllocateAsync(nextPort, lastPort - nextPort + 1, cancellationToken)
+                .ConfigureAwait(false);
+            if (port is null)
+                break;
+
+            var result = await StartServerOnPortAsync(
+                hugo.ExecutablePath,
+                sitePath,
+                port.Value,
+                cancellationToken).ConfigureAwait(false);
+            if (result.Succeeded || !HugoServerOutput.LooksLikePortInUse(result.Message))
+                return result;
+
+            nextPort = port.Value + 1;
+        }
+
+        return Fail($"找不到可用的本機預覽埠（{preferredPort}–{lastPort}）。請關閉占用中的程式後再試。");
+    }
+
+    private static async Task<HugoServerStartResult> StartServerOnPortAsync(
+        string hugoExe,
+        string sitePath,
+        int port,
+        CancellationToken cancellationToken)
+    {
+        var url = $"http://127.0.0.1:{port}/";
         var psi = new ProcessStartInfo
         {
-            FileName = hugo.ExecutablePath,
+            FileName = hugoExe,
             Arguments = $"server --buildDrafts --navigateToChanged --port {port} --bind 127.0.0.1",
             WorkingDirectory = sitePath,
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            CreateNoWindow = true
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
         };
+
+        Process? process = null;
+        var collecting = true;
+        var output = new StringBuilder();
+        void Drain(object? sender, DataReceivedEventArgs e)
+        {
+            if (e.Data is null) return;
+            lock (output)
+            {
+                if (!collecting) return;
+                output.AppendLine(e.Data);
+            }
+        }
+
+        void StopCollecting()
+        {
+            lock (output)
+                collecting = false;
+        }
 
         try
         {
-            var p = Process.Start(psi);
-            if (p is null)
-                return (null, "無法啟動 Hugo Server 程序。");
+            process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+            process.OutputDataReceived += Drain;
+            process.ErrorDataReceived += Drain;
+            if (!process.Start())
+            {
+                process.Dispose();
+                return Fail("無法啟動 Hugo Server 程序。", url);
+            }
 
-            var stdout = p.StandardOutput.ReadToEndAsync(cancellationToken);
-            var stderr = p.StandardError.ReadToEndAsync(cancellationToken);
-            var url = $"http://127.0.0.1:{port}/";
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
-
             for (var attempt = 0; attempt < 40; attempt++)
             {
                 await Task.Delay(200, cancellationToken).ConfigureAwait(false);
-                if (p.HasExited)
+                if (process.HasExited)
                 {
-                    var output = string.Join(
-                        Environment.NewLine,
-                        new[] { await stdout.ConfigureAwait(false), await stderr.ConfigureAwait(false) }
-                            .Where(value => !string.IsNullOrWhiteSpace(value)));
-                    p.Dispose();
-                    return (null, string.IsNullOrWhiteSpace(output)
-                        ? "Hugo Server 啟動後立即結束，請檢查網站設定。"
-                        : $"Hugo Server 啟動失敗：{output.Trim()}");
+                    StopCollecting();
+                    var snapshot = Snapshot(output);
+                    process.Dispose();
+                    process = null;
+                    return Fail(FormatStartFailure(snapshot, port), url);
                 }
 
                 try
@@ -572,7 +663,10 @@ public sealed partial class HugoService
                         HttpCompletionOption.ResponseHeadersRead,
                         cancellationToken).ConfigureAwait(false);
                     if (response.IsSuccessStatusCode)
-                        return (p, $"本機預覽已就緒：{url}");
+                    {
+                        StopCollecting();
+                        return new HugoServerStartResult(process, $"本機預覽已就緒：{url}", url);
+                    }
                 }
                 catch (HttpRequestException)
                 {
@@ -584,17 +678,69 @@ public sealed partial class HugoService
                 }
             }
 
-            if (!p.HasExited)
-            {
-                p.Kill(entireProcessTree: true);
-                await p.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            p.Dispose();
-            return (null, $"Hugo Server 在等待 8 秒後仍未就緒：{url}");
+            StopCollecting();
+            var timeoutOutput = Snapshot(output);
+            KillServer(process);
+            process = null;
+            var summary = HugoServerOutput.Summarize(timeoutOutput);
+            return Fail(string.IsNullOrWhiteSpace(summary)
+                ? $"Hugo Server 在等待 8 秒後仍未就緒：{url}"
+                : $"Hugo Server 在等待 8 秒後仍未就緒：{url}{Environment.NewLine}{summary}", url);
         }
         catch (Exception ex)
         {
-            return (null, ex.Message);
+            StopCollecting();
+            if (process is not null)
+                KillServer(process);
+            return Fail(ex.Message, url);
+        }
+    }
+
+    private static string Snapshot(StringBuilder output)
+    {
+        lock (output)
+            return output.ToString();
+    }
+
+    private static string FormatStartFailure(string output, int port)
+    {
+        var summary = HugoServerOutput.Summarize(output);
+        if (HugoServerOutput.LooksLikePortInUse(output) ||
+            (string.IsNullOrWhiteSpace(summary) && !TcpListeningPort.IsFree(port)))
+        {
+            return string.IsNullOrWhiteSpace(summary)
+                ? $"本機預覽啟動失敗：埠 {port} 已被占用。"
+                : $"本機預覽啟動失敗：埠 {port} 已被占用。{Environment.NewLine}{summary}";
+        }
+
+        return string.IsNullOrWhiteSpace(summary)
+            ? "Hugo Server 啟動後立即結束，請檢查網站設定。"
+            : $"Hugo Server 啟動失敗：{summary}";
+    }
+
+    private static HugoServerStartResult Fail(string message, string url = "http://127.0.0.1:1313/") =>
+        new(null, message, url);
+
+    public void StopServer(Process? process) => KillServer(process);
+
+    private static void KillServer(Process? process)
+    {
+        if (process is null) return;
+
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+            if (!process.HasExited)
+                process.WaitForExit(3000);
+        }
+        catch (InvalidOperationException)
+        {
+            // Process already exited.
+        }
+        finally
+        {
+            process.Dispose();
         }
     }
 
@@ -652,4 +798,9 @@ public sealed partial class HugoService
 
     [GeneratedRegex("""^colorScheme\s*=\s*['"](?<value>auto|light|dark)['"]\s*$""", RegexOptions.IgnoreCase)]
     private static partial Regex LegacyColorSchemeRegex();
+}
+
+public sealed record HugoServerStartResult(Process? Process, string Message, string Url)
+{
+    public bool Succeeded => Process is not null;
 }

@@ -1,13 +1,14 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Hugoer.ViewModels"
+             xmlns:models="using:Hugoer.Models"
              x:Class="Hugoer.Views.GitHubView"
              x:DataType="vm:GitHubViewModel">
 
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="24">
         <StackPanel Spacing="16" MaxWidth="980">
-            <TextBlock Text="GitHub Pages" Classes="pageTitle"/>
-            <TextBlock Text="將網站推上 GitHub，以 GitHub Actions 部署 Pages，並查詢上線狀態。"
+            <TextBlock Text="Git 部署" Classes="pageTitle"/>
+            <TextBlock Text="將 Hugo 網站推到 GitHub、GitLab、Codeberg 或 Bitbucket。GitHub 可自動啟用 Pages；GitLab 會加入 CI；Codeberg/Bitbucket 會提供平台設定提示。"
                        Classes="muted" TextWrapping="Wrap"/>
 
             <Border Classes="card">
@@ -18,17 +19,73 @@
                     <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
                         <Button Content="重新整理狀態" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsBusy}"/>
                         <Button Content="GitHub 登入 (gh auth)" Command="{Binding LoginCommand}" IsEnabled="{Binding !IsBusy}"/>
-                        <Button Content="只加入 workflow 檔" Command="{Binding AddWorkflowOnlyCommand}"/>
+                        <Button Content="只加入部署設定" Command="{Binding AddWorkflowOnlyCommand}"
+                                IsVisible="{Binding HasLocalSite}"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
 
-            <Border Classes="card" BorderBrush="#0E7490" BorderThickness="1">
+            <Border Classes="card" BorderBrush="#0E7490" BorderThickness="1"
+                    IsVisible="{Binding !HasLocalSite}">
                 <StackPanel Spacing="12">
                     <Grid ColumnDefinitions="*,Auto">
                         <StackPanel Spacing="3">
-                            <TextBlock Text="連結既有 GitHub Repository" Classes="sectionTitle"/>
-                            <TextBlock Text="貼上 repository 網址，Hugoer 會辨識 Pages 類型、同步 baseURL，安全合併遠端內容後部署。"
+                            <TextBlock Text="從 Git 平台複製到本機" Classes="sectionTitle"/>
+                            <TextBlock Text="本機還沒有網站時，可貼上 GitHub / GitLab / Codeberg / Bitbucket repository 或 Pages 網址，複製到本機後開啟。私人 repository 請先設定該平台的 Git 憑證。"
+                                       Classes="caption" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <Border Grid.Column="1" Classes="pill" Padding="10,4" VerticalAlignment="Top">
+                            <TextBlock Text="本機沒有網站" Foreground="#67D8FF" FontWeight="SemiBold" FontSize="12"/>
+                        </Border>
+                    </Grid>
+
+                    <TextBox Text="{Binding RepositoryUrl}"
+                             PlaceholderText="https://github.com/owner/repo、https://gitlab.com/owner/repo、https://codeberg.org/owner/repo、https://bitbucket.org/workspace/repo"
+                             FontFamily="Consolas, Cascadia Mono, monospace"/>
+
+                    <ComboBox ItemsSource="{Binding PagesRepositories}"
+                              SelectedItem="{Binding SelectedPagesRepository}"
+                              IsVisible="{Binding HasPagesRepositories}"
+                              HorizontalAlignment="Stretch"
+                              PlaceholderText="選擇已啟用 GitHub Pages 的 repository">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="models:GitHubPagesRepositoryItem">
+                                <TextBlock Text="{Binding DisplayName}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+
+                    <Border Background="#101720" BorderBrush="#2A3648" BorderThickness="1"
+                            CornerRadius="8" Padding="12">
+                        <TextBlock Text="{Binding RepositoryTargetSummary}" TextWrapping="Wrap"
+                                   Classes="muted" LineHeight="20"/>
+                    </Border>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Text="{Binding CloneParent}"
+                                 PlaceholderText="本機存放父資料夾"/>
+                        <Button Grid.Column="1" Content="選擇…" Margin="8,0,0,0"
+                                Command="{Binding BrowseCloneParentCommand}"/>
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="列出我的 GitHub Pages 網站"
+                                Command="{Binding ListPagesRepositoriesCommand}"
+                                IsEnabled="{Binding !IsBusy}"/>
+                        <Button Content="複製到本機並開啟" Classes="accent"
+                                Command="{Binding CloneSiteToLocalCommand}"
+                                IsEnabled="{Binding CanCloneToLocal}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card" BorderBrush="#0E7490" BorderThickness="1"
+                    IsVisible="{Binding HasLocalSite}">
+                <StackPanel Spacing="12">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Spacing="3">
+                            <TextBlock Text="連結既有 Repository" Classes="sectionTitle"/>
+                            <TextBlock Text="貼上 GitHub、GitLab、Codeberg 或 Bitbucket repository / Pages 網址，Hugoer 會辨識平台、同步 baseURL，安全合併遠端內容後推送。"
                                        Classes="caption" TextWrapping="Wrap"/>
                         </StackPanel>
                         <Border Grid.Column="1" Classes="pill" Padding="10,4" VerticalAlignment="Top">
@@ -37,7 +94,7 @@
                     </Grid>
 
                     <TextBox Text="{Binding RepositoryUrl}"
-                             PlaceholderText="https://github.com/owner/owner.github.io"
+                             PlaceholderText="https://github.com/owner/repo、https://gitlab.com/owner/repo、https://codeberg.org/owner/repo、https://bitbucket.org/workspace/repo"
                              FontFamily="Consolas, Cascadia Mono, monospace"/>
 
                     <Border Background="#101720" BorderBrush="#2A3648" BorderThickness="1"
@@ -53,7 +110,7 @@
                             <TextBlock Text="若遠端已有 README，會先安全取得並保留；遇到衝突立即停止，不會 force push。"
                                        Classes="caption" TextWrapping="Wrap"/>
                         </StackPanel>
-                        <Button Grid.Column="1" Content="連結、推送並啟用 Pages"
+                        <Button Grid.Column="1" Content="連結、推送並設定 Pages"
                                 Classes="accent" Command="{Binding ConnectExistingRepositoryCommand}"
                                 IsEnabled="{Binding CanConnectRepository}" Margin="16,0,0,0"
                                 VerticalAlignment="Center"/>
@@ -61,7 +118,7 @@
                 </StackPanel>
             </Border>
 
-            <Grid ColumnDefinitions="*,*">
+            <Grid ColumnDefinitions="*,*" IsVisible="{Binding HasLocalSite}">
                 <Border Classes="card" Margin="0,0,6,0">
                     <StackPanel Spacing="8">
                         <TextBlock Text="Repository 連線" Classes="sectionTitle"/>
@@ -70,20 +127,20 @@
                 </Border>
                 <Border Classes="card" Grid.Column="1" Margin="6,0,0,0">
                     <StackPanel Spacing="8">
-                        <TextBlock Text="GitHub Pages 狀態" Classes="sectionTitle"/>
+                        <TextBlock Text="Pages / 靜態網站狀態" Classes="sectionTitle"/>
                         <TextBlock Text="{Binding PagesSummary}" Classes="muted" TextWrapping="Wrap"/>
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Content="查詢 Pages 狀態" Command="{Binding RefreshPagesStatusCommand}"
                                     IsEnabled="{Binding !IsBusy}"/>
                             <Button Content="開啟網站" Command="{Binding OpenPagesUrlCommand}"/>
-                            <Button Content="啟用 Pages (Actions)" Command="{Binding EnablePagesCommand}"
+                            <Button Content="啟用 / 顯示平台提示" Command="{Binding EnablePagesCommand}"
                                     IsEnabled="{Binding !IsBusy}"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
             </Grid>
 
-            <Border Classes="card deploymentMonitor">
+            <Border Classes="card deploymentMonitor" IsVisible="{Binding HasLocalSite}">
                 <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
                     <StackPanel Spacing="5" Margin="0,0,20,0">
                         <TextBlock Text="線上版本監控" Classes="sectionTitle"/>
@@ -106,13 +163,13 @@
                 </Grid>
             </Border>
 
-            <Border Classes="card">
+            <Border Classes="card" IsVisible="{Binding HasLocalSite}">
                 <StackPanel Spacing="12">
                     <TextBlock Text="建立新的 GitHub Repository" Classes="sectionTitle"/>
                     <Grid ColumnDefinitions="120,*" RowDefinitions="Auto,Auto,Auto">
                         <TextBlock Text="Repo 名稱" VerticalAlignment="Center" Margin="0,0,0,8"/>
                         <TextBox Grid.Column="1" Text="{Binding RepoName}"
-                                 PlaceholderText="my-hugo-site（只填新 repository 名稱）" Margin="0,0,0,8"/>
+                                 PlaceholderText="my-hugo-site（只填名稱；已有的 Hugo repo 會改為連結）" Margin="0,0,0,8"/>
                         <TextBlock Grid.Row="1" Text="可見性" VerticalAlignment="Center" Margin="0,0,0,8"/>
                         <CheckBox Grid.Row="1" Grid.Column="1" Content="Public repository"
                                   IsChecked="{Binding IsPublicRepo}" Margin="0,0,0,8"/>
@@ -127,7 +184,9 @@
                                 IsEnabled="{Binding !IsBusy}"/>
                     </StackPanel>
                     <TextBlock Classes="caption" TextWrapping="Wrap"
-                               Text="流程：本機 Hugo Production Build → 寫入 .github/workflows/hugo.yml → git commit/push → GitHub Actions 建置並部署到 GitHub Pages。建置失敗時不會推送；請先 gh auth login。"/>
+                               Text="若 GitHub 上已有同名 repository，且是 Hugo 網站（或空的／只有 README），會改走「連結既有」：保留遠端內容、衝突即停、不 force push。名稱被其他專案占用時會拒絕建立。"/>
+                    <TextBlock Classes="caption" TextWrapping="Wrap"
+                               Text="自動建立新 repository 目前只支援 GitHub：寫入 .github/workflows/hugo.yml → git commit/push → GitHub Actions 建置並部署到 GitHub Pages。GitLab、Codeberg、Bitbucket 請先在平台建立 repository，再用上方「連結既有」。"/>
                 </StackPanel>
             </Border>
 

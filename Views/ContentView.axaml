@@ -11,7 +11,7 @@
         <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
             <StackPanel Spacing="8">
                 <TextBlock Text="文章" Classes="pageTitle"/>
-                <TextBlock Text="只管理部落格文章。參考 CKEditor 5：WYSIWYG 與原始碼切換，右側即時對應預覽。網站導覽請到「選單」分頁。"
+                <TextBlock Text="只管理部落格文章。支援 CommonMark、GFM 與 Markdig 進階語法；完整語法可在「原始碼」模式編輯。網站導覽請到「選單」分頁。"
                            Classes="muted" TextWrapping="Wrap"/>
             </StackPanel>
             <TextBlock Grid.Column="1" Text="{Binding ContentSummary}" Classes="muted"
@@ -34,7 +34,7 @@
                     <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding FrontMatterDate}"
                              PlaceholderText="日期，例如 2026-08-21T10:00:00+08:00"/>
                     <TextBox Grid.Row="0" Grid.Column="2" Text="{Binding FrontMatterSlug}"
-                             PlaceholderText="Slug"/>
+                             PlaceholderText="Slug，例如 20260823-1"/>
                     <CheckBox Grid.Row="0" Grid.Column="3" Content="草稿（不公開）"
                               IsChecked="{Binding IsDraft}" VerticalAlignment="Center"/>
 
@@ -80,8 +80,10 @@
                         <TextBlock Text="快速新增" Classes="caption" Margin="0,3,0,0"/>
                         <Grid ColumnDefinitions="*,*">
                             <TextBox PlaceholderText="資料夾 post" Text="{Binding NewPostFolder}" Margin="0,0,4,0"/>
-                            <TextBox Grid.Column="1" PlaceholderText="標題" Text="{Binding NewPostTitle}" Margin="4,0,0,0"/>
+                            <TextBox Grid.Column="1" PlaceholderText="標題（可改）" Text="{Binding NewPostTitle}" Margin="4,0,0,0"/>
                         </Grid>
+                        <TextBlock Classes="caption" TextWrapping="Wrap"
+                                   Text="{Binding NextArticleCode, StringFormat='檔名編碼：{0}（西元年月日-自動編號）'}"/>
                         <Button Content="新增文章" Classes="accent" Command="{Binding CreatePostCommand}"
                                 HorizontalAlignment="Stretch"/>
                         <StackPanel Orientation="Horizontal" Spacing="6">
@@ -137,14 +139,34 @@
                         <DockPanel>
                             <Border DockPanel.Dock="Top" Padding="10,8" Background="#121820"
                                     BorderBrush="#2A3648" BorderThickness="0,0,0,1">
-                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                                    <TextBlock Text="{Binding EditorModeTitle}" Classes="sectionTitle"
-                                               VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding SelectedFile.RelativePath}"
+                                <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10">
+                                    <StackPanel Spacing="1" VerticalAlignment="Center">
+                                        <TextBlock Text="Markdown 編輯器" Classes="sectionTitle"/>
+                                        <TextBlock Text="{Binding EditorModeHint}" Classes="caption"
+                                                   TextTrimming="CharacterEllipsis" MaxWidth="360"/>
+                                    </StackPanel>
+                                    <Border Grid.Column="1" Classes="modeToggle" VerticalAlignment="Center"
+                                            ToolTip.Tip="切換 WYSIWYG 視覺編輯與 Markdown 原始碼">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button Classes="modeBtn" Content="WYSIWYG"
+                                                    Classes.selected="{Binding IsWysiwygMode}"
+                                                    Command="{Binding SetWysiwygModeCommand}"
+                                                    ToolTip.Tip="所見即所得。像 CKEditor 一樣直接編排內容"/>
+                                            <Button Classes="modeBtn" Content="原始碼"
+                                                    Classes.selected="{Binding IsSourceMode}"
+                                                    Command="{Binding SetSourceModeCommand}"
+                                                    ToolTip.Tip="查看並編輯 Markdown 原文"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Grid.Column="2" Text="{Binding SelectedFile.RelativePath}"
                                                Classes="caption" VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis"/>
-                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10"
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="10"
                                                 VerticalAlignment="Center" HorizontalAlignment="Right">
+                                        <Border Classes="editorModePill" Padding="9,3" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding EditorModeTitle}" FontSize="12"
+                                                       FontWeight="SemiBold"/>
+                                        </Border>
                                         <Button Classes="toolBtn" Content="換行" Click="ToggleWrap_OnClick"
                                                 ToolTip.Tip="切換自動換行"
                                                 IsVisible="{Binding IsSourceMode}"/>
@@ -155,7 +177,7 @@
                             </Border>
                             <Border DockPanel.Dock="Top" Padding="7,5" Background="#0F151D"
                                     BorderBrush="#2A3648" BorderThickness="0,0,0,1">
-                                <Grid ColumnDefinitions="*,Auto">
+                                <Grid ColumnDefinitions="*">
                                 <WrapPanel Orientation="Horizontal">
                                     <Border Classes="toolGroup">
                                         <StackPanel Orientation="Horizontal" Spacing="2">
@@ -168,6 +190,9 @@
                                             <Button Classes="toolBtn accentGlyph" Click="Heading1_OnClick" ToolTip.Tip="一級標題"><TextBlock Text="H1"/></Button>
                                             <Button Classes="toolBtn accentGlyph" Click="Heading2_OnClick" ToolTip.Tip="二級標題"><TextBlock Text="H2"/></Button>
                                             <Button Classes="toolBtn accentGlyph" Click="Heading3_OnClick" ToolTip.Tip="三級標題"><TextBlock Text="H3"/></Button>
+                                            <Button Classes="toolBtn accentGlyph" Click="Heading4_OnClick" ToolTip.Tip="四級標題"><TextBlock Text="H4"/></Button>
+                                            <Button Classes="toolBtn accentGlyph" Click="Heading5_OnClick" ToolTip.Tip="五級標題"><TextBlock Text="H5"/></Button>
+                                            <Button Classes="toolBtn accentGlyph" Click="Heading6_OnClick" ToolTip.Tip="六級標題"><TextBlock Text="H6"/></Button>
                                         </StackPanel>
                                     </Border>
                                     <Border Classes="toolGroup">
@@ -217,20 +242,26 @@
                                                 <TextBlock Text="—" FontWeight="Bold"/></Button>
                                         </StackPanel>
                                     </Border>
+                                    <Border Classes="toolGroup" Margin="0,0,0,5">
+                                        <StackPanel Orientation="Horizontal" Spacing="2">
+                                            <Button Classes="toolBtn" Content="註腳" Click="Footnote_OnClick"
+                                                    IsEnabled="{Binding IsSourceMode}"
+                                                    ToolTip.Tip="插入 Markdown 註腳；請切換到原始碼模式"/>
+                                            <Button Classes="toolBtn" Content="定義" Click="Definition_OnClick"
+                                                    IsEnabled="{Binding IsSourceMode}"
+                                                    ToolTip.Tip="插入定義清單；請切換到原始碼模式"/>
+                                            <Button Classes="toolBtn" Content="警示" Click="Alert_OnClick"
+                                                    IsEnabled="{Binding IsSourceMode}"
+                                                    ToolTip.Tip="插入警示區塊；請切換到原始碼模式"/>
+                                            <Button Classes="toolBtn" Content="數學" Click="Math_OnClick"
+                                                    IsEnabled="{Binding IsSourceMode}"
+                                                    ToolTip.Tip="插入數學區塊；請切換到原始碼模式"/>
+                                            <Button Classes="toolBtn" Content="HTML" Click="HtmlBlock_OnClick"
+                                                    IsEnabled="{Binding IsSourceMode}"
+                                                    ToolTip.Tip="插入原始 HTML；請切換到原始碼模式"/>
+                                        </StackPanel>
+                                    </Border>
                                 </WrapPanel>
-                                <Border Grid.Column="1" Classes="modeToggle" VerticalAlignment="Center"
-                                        Margin="8,0,2,5">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Button Classes="modeBtn" Content="WYSIWYG"
-                                                Classes.selected="{Binding IsWysiwygMode}"
-                                                Command="{Binding SetWysiwygModeCommand}"
-                                                ToolTip.Tip="所見即所得。切換後右側顯示對應的 Markdown 輸出（參考 CKEditor 5）"/>
-                                        <Button Classes="modeBtn" Content="原始碼"
-                                                Classes.selected="{Binding IsSourceMode}"
-                                                Command="{Binding SetSourceModeCommand}"
-                                                ToolTip.Tip="編輯 Markdown 原文。切換後右側顯示對應的渲染預覽（參考 CKEditor 5 Source）"/>
-                                    </StackPanel>
-                                </Border>
                                 </Grid>
                             </Border>
                             <Panel>
@@ -299,6 +330,7 @@
 
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
                     <Button Content="儲存" Classes="accent" Click="Save_OnClick"/>
+                    <TextBlock Text="10 秒未編輯會自動儲存" Classes="caption" VerticalAlignment="Center"/>
                     <Button Content="{Binding PreviewModeLabel}" Command="{Binding TogglePreviewCommand}"/>
                     <Button Content="瀏覽器 HTML 預覽" Command="{Binding OpenHtmlPreviewCommand}"/>
                     <TextBlock Text="{Binding StatusMessage}" Classes="muted" VerticalAlignment="Center"/>

@@ -133,15 +133,125 @@ public sealed class GitRemoteInfo
     public string? Branch { get; set; }
     public bool GhAuthenticated { get; set; }
     public string? GhUser { get; set; }
+    public GitHostingProvider? Provider { get; set; }
+    public string ProviderName => Provider?.DisplayName() ?? "未知 Git 平台";
+}
+
+public enum GitHostingProvider
+{
+    GitHub,
+    GitLab,
+    Codeberg,
+    Bitbucket
+}
+
+public static class GitHostingProviderExtensions
+{
+    public static string DisplayName(this GitHostingProvider provider) => provider switch
+    {
+        GitHostingProvider.GitHub => "GitHub",
+        GitHostingProvider.GitLab => "GitLab",
+        GitHostingProvider.Codeberg => "Codeberg",
+        GitHostingProvider.Bitbucket => "Bitbucket",
+        _ => "Git"
+    };
+
+    public static string PagesProductName(this GitHostingProvider provider) => provider switch
+    {
+        GitHostingProvider.GitHub => "GitHub Pages",
+        GitHostingProvider.GitLab => "GitLab Pages",
+        GitHostingProvider.Codeberg => "Codeberg Pages",
+        GitHostingProvider.Bitbucket => "Bitbucket Static Website",
+        _ => "Pages"
+    };
 }
 
 public sealed class GitHubRepositoryTarget
 {
     public bool IsValid { get; init; }
+    public GitHostingProvider Provider { get; init; } = GitHostingProvider.GitHub;
     public string? Owner { get; init; }
     public string? Repository { get; init; }
     public string? CanonicalUrl { get; init; }
     public string? PagesUrl { get; init; }
     public bool IsUserOrOrganizationSite { get; init; }
     public string ErrorMessage { get; init; } = string.Empty;
+    public string ProviderName => Provider.DisplayName();
+    public string PagesProductName => Provider.PagesProductName();
+    public string NameWithOwner =>
+        string.IsNullOrWhiteSpace(Owner) || string.IsNullOrWhiteSpace(Repository)
+            ? string.Empty
+            : $"{Owner}/{Repository}";
+}
+
+public sealed class GitHubRepositoryLookup
+{
+    public bool CheckSucceeded { get; init; }
+    public bool Exists { get; init; }
+    public bool CanReuse { get; init; }
+    public bool LooksLikeHugo { get; init; }
+    public GitHubRepositoryTarget? Target { get; init; }
+    public string Message { get; init; } = string.Empty;
+
+    public static GitHubRepositoryLookup Fail(string message) => new()
+    {
+        CheckSucceeded = false,
+        Message = message
+    };
+
+    public static GitHubRepositoryLookup Missing() => new()
+    {
+        CheckSucceeded = true,
+        Exists = false
+    };
+}
+
+public sealed class GitHubPagesRepositoryItem
+{
+    public string NameWithOwner { get; init; } = string.Empty;
+    public string HtmlUrl { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+}
+
+public sealed class GitHubPagesRepositoryList
+{
+    public bool Succeeded { get; init; }
+    public IReadOnlyList<GitHubPagesRepositoryItem> Repositories { get; init; } = [];
+    public string Message { get; init; } = string.Empty;
+}
+
+public sealed class CloneSiteResult
+{
+    public bool Succeeded { get; init; }
+    public bool OpenedExisting { get; init; }
+    public string? SitePath { get; init; }
+    public GitHubRepositoryTarget? Target { get; init; }
+    public string Message { get; init; } = string.Empty;
+    public string CombinedOutput { get; init; } = string.Empty;
+
+    public static CloneSiteResult Fail(
+        string message,
+        GitHubRepositoryTarget? target = null,
+        string? output = null) => new()
+    {
+        Succeeded = false,
+        Target = target,
+        Message = message,
+        CombinedOutput = string.IsNullOrWhiteSpace(output) ? message : output
+    };
+
+    public static CloneSiteResult Ok(
+        string sitePath,
+        GitHubRepositoryTarget target,
+        string message,
+        bool openedExisting = false,
+        string? output = null) => new()
+    {
+        Succeeded = true,
+        OpenedExisting = openedExisting,
+        SitePath = sitePath,
+        Target = target,
+        Message = message,
+        CombinedOutput = string.IsNullOrWhiteSpace(output) ? message : output
+    };
 }

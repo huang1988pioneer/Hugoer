@@ -211,6 +211,7 @@
 
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
                     <Button Content="儲存" Classes="accent" Command="{Binding SaveCommand}"/>
+                    <TextBlock Text="10 秒未編輯會自動儲存" Classes="caption" VerticalAlignment="Center"/>
                     <Button Content="重新載入檔案" Command="{Binding LoadSelectedCommand}"/>
                     <TextBlock Text="{Binding StatusMessage}" Classes="muted" VerticalAlignment="Center"/>
                     <TextBlock Text="● 未儲存" Foreground="#E6A23C" VerticalAlignment="Center"

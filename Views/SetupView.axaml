@@ -1,13 +1,14 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Hugoer.ViewModels"
+             xmlns:models="using:Hugoer.Models"
              x:Class="Hugoer.Views.SetupView"
              x:DataType="vm:SetupViewModel">
 
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="24">
         <StackPanel Spacing="16" MaxWidth="980">
             <TextBlock Text="環境設定" Classes="pageTitle"/>
-            <TextBlock Text="一鍵安裝 Hugo、建立新站或開啟既有網站，並可本機預覽與建置。"
+            <TextBlock Text="一鍵安裝 Hugo、建立新站、開啟既有網站，或從 GitHub / GitLab / Codeberg / Bitbucket 複製到本機，並可本機預覽與建置。"
                        Classes="muted" TextWrapping="Wrap"/>
 
             <Border Classes="card">
@@ -38,14 +39,76 @@
                         <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0"
                                    Text="{Binding SiteSummary}" Classes="muted" TextWrapping="Wrap"/>
                     </Grid>
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Content="本機預覽 (hugo server)" Command="{Binding StartPreviewCommand}"
-                                IsEnabled="{Binding !IsBusy}"/>
-                        <Button Content="在瀏覽器開啟" Command="{Binding OpenPreviewInBrowserCommand}"
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="本機預覽 (hugo server)" Command="{Binding StartPreviewCommand}"
+                                    IsEnabled="{Binding CanStartPreview}"/>
+                            <Button Content="在瀏覽器開啟" Command="{Binding OpenPreviewInBrowserCommand}"
+                                    IsEnabled="{Binding PreviewReady}"
+                                    ToolTip.Tip="{Binding PreviewUrl}"/>
+                            <Button Content="建置 (hugo build)" Command="{Binding BuildSiteCommand}"
+                                    IsEnabled="{Binding !IsBusy}"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="關閉預覽"
+                                HorizontalAlignment="Right"
+                                Command="{Binding StopPreviewCommand}"
                                 IsEnabled="{Binding PreviewReady}"
-                                ToolTip.Tip="開啟 http://127.0.0.1:1313/"/>
-                        <Button Content="建置 (hugo build)" Command="{Binding BuildSiteCommand}"
+                                ToolTip.Tip="停止 hugo server"/>
+                    </Grid>
+                    <TextBlock Text="{Binding PreviewUrl}" Classes="muted"
+                               IsVisible="{Binding PreviewReady}"/>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card" BorderBrush="#0E7490" BorderThickness="1">
+                <StackPanel Spacing="12">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Spacing="3">
+                            <TextBlock Text="從 Git 平台複製網站" Classes="sectionTitle"/>
+                            <TextBlock Text="本機沒有網站、但遠端已有 Hugo 原始碼時，可貼上 GitHub / GitLab / Codeberg / Bitbucket repository 或 Pages 網址複製到本機。私人 repository 請先設定該平台的 Git 憑證。"
+                                       Classes="caption" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <Border Grid.Column="1" Classes="pill" Padding="10,4" VerticalAlignment="Top">
+                            <TextBlock Text="沒有本機網站時" Foreground="#67D8FF" FontWeight="SemiBold" FontSize="12"/>
+                        </Border>
+                    </Grid>
+
+                    <TextBox Text="{Binding CloneUrl}"
+                             PlaceholderText="https://github.com/owner/repo、https://gitlab.com/owner/repo、https://codeberg.org/owner/repo、https://bitbucket.org/workspace/repo"
+                             FontFamily="Consolas, Cascadia Mono, monospace"/>
+
+                    <ComboBox ItemsSource="{Binding PagesRepositories}"
+                              SelectedItem="{Binding SelectedPagesRepository}"
+                              IsVisible="{Binding HasPagesRepositories}"
+                              HorizontalAlignment="Stretch"
+                              PlaceholderText="選擇已啟用 GitHub Pages 的 repository">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="models:GitHubPagesRepositoryItem">
+                                <TextBlock Text="{Binding DisplayName}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+
+                    <Border Background="#101720" BorderBrush="#2A3648" BorderThickness="1"
+                            CornerRadius="8" Padding="12">
+                        <TextBlock Text="{Binding CloneTargetSummary}" TextWrapping="Wrap"
+                                   Classes="muted" LineHeight="20"/>
+                    </Border>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Text="{Binding CloneParent}"
+                                 PlaceholderText="本機存放父資料夾"/>
+                        <Button Grid.Column="1" Content="選擇…" Margin="8,0,0,0"
+                                Command="{Binding BrowseCloneParentCommand}"/>
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="列出我的 GitHub Pages 網站"
+                                Command="{Binding ListPagesRepositoriesCommand}"
                                 IsEnabled="{Binding !IsBusy}"/>
+                        <Button Content="複製到本機並開啟" Classes="accent"
+                                Command="{Binding CloneSiteCommand}"
+                                IsEnabled="{Binding CanClone}"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -76,6 +139,9 @@
                              AcceptsReturn="True"
                              Classes="logBox"
                              MinHeight="140"
+                             MaxHeight="220"
+                             TextWrapping="Wrap"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
                              FontFamily="Consolas, Cascadia Mono, monospace"/>
                     <TextBlock Text="{Binding StatusMessage}" Classes="muted"/>
                 </StackPanel>

@@ -240,7 +240,8 @@ public sealed class ContentService
         string sitePath,
         string relativePath,
         string title,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? slug = null)
     {
         var contentRoot = PathHelper.ContentDir(sitePath);
         var normalized = relativePath.Replace('\\', '/').TrimStart('/');
@@ -254,10 +255,14 @@ public sealed class ContentService
             throw new InvalidOperationException($"檔案已存在：{normalized}");
 
         var date = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ssK");
+        var code = string.IsNullOrWhiteSpace(slug)
+            ? Path.GetFileNameWithoutExtension(normalized)
+            : slug.Trim();
         var body = $"""
 ---
 title: "{title.Replace("\"", "\\\"")}"
 date: {date}
+slug: "{code.Replace("\"", "\\\"")}"
 draft: true
 ---
 

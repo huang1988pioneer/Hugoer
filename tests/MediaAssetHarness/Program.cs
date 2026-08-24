@@ -73,10 +73,29 @@ try
 
     var html = """<p><img src="/image/photo.png" alt="photo"/></p>""";
     var preview = MediaAssetService.ToPreviewHtml(html, site);
-    Assert(preview.Contains("file:", StringComparison.OrdinalIgnoreCase), preview);
-    Assert(preview.Contains("photo.png", StringComparison.Ordinal), preview);
+    Assert(preview.Contains("data:image/png;base64,", StringComparison.OrdinalIgnoreCase), preview);
+    Assert(preview.Contains("data-hugoer-src", StringComparison.Ordinal), preview);
+    Assert(preview.Contains("/image/photo.png", StringComparison.Ordinal), preview);
     var roundTrip = MediaAssetService.FromPreviewHtml(preview, site);
     Assert(roundTrip.Contains("src=\"/image/photo.png\"", StringComparison.Ordinal), roundTrip);
+    Assert(!roundTrip.Contains("data-hugoer-src", StringComparison.Ordinal), roundTrip);
+    Assert(!roundTrip.Contains("data:image", StringComparison.Ordinal), roundTrip);
+
+    var mediaMap = MediaAssetService.BuildPreviewMediaMap(html, site);
+    Assert(mediaMap.ContainsKey("/image/photo.png"), "media map keyed by public url");
+    Assert(mediaMap["/image/photo.png"].StartsWith("data:image/png;base64,", StringComparison.Ordinal), mediaMap["/image/photo.png"]);
+
+    var chinese = WriteTemp("ChatGPT Image 2026年8月19日 上午02_15_46.png", "png");
+    var chineseAsset = MediaAssetService.Import(site, chinese);
+    Assert(chineseAsset.PublicUrl.StartsWith("/image/", StringComparison.Ordinal), chineseAsset.PublicUrl);
+    Assert(chineseAsset.PublicUrl.Contains("%20", StringComparison.Ordinal), chineseAsset.PublicUrl);
+    var chineseHtml = $"<p><img src=\"{chineseAsset.PublicUrl}\" alt=\"cat\"/></p>";
+    var chineseMap = MediaAssetService.BuildPreviewMediaMap(chineseHtml, site);
+    Assert(chineseMap.Count > 0, "unicode filename should embed for preview");
+    Assert(chineseMap.ContainsKey(chineseAsset.PublicUrl), chineseAsset.PublicUrl);
+    var chinesePreview = MediaAssetService.ToPreviewHtml(chineseHtml, site);
+    var chineseRoundTrip = MediaAssetService.FromPreviewHtml(chinesePreview, site);
+    Assert(chineseRoundTrip.Contains(chineseAsset.PublicUrl, StringComparison.Ordinal), chineseRoundTrip);
 
     var inserted = MarkdownEditingService.InsertSnippet("# 標題\n\n正文", 6, 0, "![photo](/image/photo.png)");
     Assert(inserted.Text.Contains("![photo](/image/photo.png)", StringComparison.Ordinal), inserted.Text);

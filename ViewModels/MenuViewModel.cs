@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Hugoer.Helpers;
 using Hugoer.Models;
 using Hugoer.Services;
 
@@ -110,6 +111,9 @@ public partial class MenuViewModel : PageViewModelBase
     public MenuViewModel()
     {
         Title = "選單";
+        _autoSave = new IdleAutoSave(
+            () => IsDirty || PageIsDirty,
+            AutoSaveAsync);
     }
 
     public ObservableCollection<string> MenuNames { get; } = [];
@@ -177,6 +181,7 @@ public partial class MenuViewModel : PageViewModelBase
     private SiteMenuDocument? _document;
     private bool _loading;
     private bool _syncingSelection;
+    private readonly IdleAutoSave _autoSave;
 
     public override Task OnNavigatedToAsync()
     {
@@ -235,18 +240,19 @@ public partial class MenuViewModel : PageViewModelBase
     partial void OnPageTitleChanged(string value)
     {
         if (!_loading)
-            PageIsDirty = true;
+            MarkPageDirty();
     }
 
     partial void OnPageBodyChanged(string value)
     {
         if (!_loading)
-            PageIsDirty = true;
+            MarkPageDirty();
     }
 
     [RelayCommand]
     private void Refresh()
     {
+        _autoSave.Cancel();
         _all.Clear();
         Entries.Clear();
         SitePages.Clear();
@@ -294,7 +300,7 @@ public partial class MenuViewModel : PageViewModelBase
                 ? $"內容頁 front matter 有 {imported} 個選單定義。儲存選單後會改寫到設定檔，並從頁面 front matter 移除，避免跟文章混在一起、網站出現重複項目。"
                 : string.Empty;
             if (imported > 0)
-                IsDirty = true;
+                MarkDirty();
 
             MenuSummary = $"{_all.Count} 個選單項目 · {MenuNames.Count} 組選單 · {SitePages.Count} 個網站頁面";
             StatusMessage = imported > 0
@@ -326,7 +332,7 @@ public partial class MenuViewModel : PageViewModelBase
         };
         item.PropertyChanged += OnEntryPropertyChanged;
         _all.Add(item);
-        IsDirty = true;
+        MarkDirty();
         RebuildMenuNames();
         RebuildVisibleEntries(preserveSelection: false);
         SelectedEntry = item;
@@ -367,7 +373,7 @@ public partial class MenuViewModel : PageViewModelBase
         };
         item.PropertyChanged += OnEntryPropertyChanged;
         _all.Add(item);
-        IsDirty = true;
+        MarkDirty();
         RebuildVisibleEntries(preserveSelection: false);
         SelectedEntry = item;
         StatusMessage = $"已加入「{name}」（記得儲存）";
@@ -378,7 +384,7 @@ public partial class MenuViewModel : PageViewModelBase
     {
         if (SelectedEntry is null) return;
         _all.Remove(SelectedEntry);
-        IsDirty = true;
+        MarkDirty();
         RebuildMenuNames();
         RebuildVisibleEntries(preserveSelection: false);
         StatusMessage = "已刪除選單項目（記得儲存）";
@@ -438,14 +444,39 @@ public partial class MenuViewModel : PageViewModelBase
         };
         item.PropertyChanged += OnEntryPropertyChanged;
         _all.Add(item);
-        IsDirty = true;
+        MarkDirty();
         RebuildVisibleEntries(preserveSelection: false);
         SelectedEntry = item;
         StatusMessage = $"已將「{item.Name}」加入選單（記得儲存）";
     }
 
     [RelayCommand]
-    private async Task SaveAsync()
+    private Task SaveAsync() => SaveCoreAsync(reload: true, auto: false);
+
+    [RelayCommand]
+    private Task SavePageAsync() => SavePageCoreAsync(reload: true, auto: false);
+
+    private void MarkDirty()
+    {
+        IsDirty = true;
+        _autoSave.Schedule();
+    }
+
+    private void MarkPageDirty()
+    {
+        PageIsDirty = true;
+        _autoSave.Schedule();
+    }
+
+    private async Task AutoSaveAsync()
+    {
+        if (IsDirty)
+            await SaveCoreAsync(reload: false, auto: true);
+        if (PageIsDirty)
+            await SavePageCoreAsync(reload: false, auto: true);
+    }
+
+    private async Task SaveCoreAsync(bool reload, bool auto)
     {
         if (!RequireSite(out var site)) return;
         _document ??= Services.Menus.Load(site);
@@ -455,24 +486,32 @@ public partial class MenuViewModel : PageViewModelBase
             var entries = _all.Select(item => item.ToEntry()).ToList();
             Services.Menus.Save(site, _document, entries);
             IsDirty = false;
-            StatusMessage = $"已儲存選單：{_document.ConfigPath}";
-            Refresh();
-            StatusMessage = $"已儲存選單：{_document.ConfigPath}";
+            _autoSave.Cancel();
+            if (PageIsDirty)
+                _autoSave.Schedule();
+            StatusMessage = auto
+                ? $"已自動儲存選單：{_document.ConfigPath}"
+                : $"已儲存選單：{_document.ConfigPath}";
+            if (reload)
+            {
+                Refresh();
+                StatusMessage = auto
+                    ? $"已自動儲存選單：{_document.ConfigPath}"
+                    : $"已儲存選單：{_document.ConfigPath}";
+            }
         }
         catch (Exception ex)
         {
-            StatusMessage = ex.Message;
+            StatusMessage = auto ? $"自動儲存失敗：{ex.Message}" : ex.Message;
         }
-
-        await Task.CompletedTask;
     }
 
-    [RelayCommand]
-    private async Task SavePageAsync()
+    private async Task SavePageCoreAsync(bool reload, bool auto)
     {
         if (SelectedPage is null)
         {
-            StatusMessage = "請先選擇網站頁面";
+            if (!auto)
+                StatusMessage = "請先選擇網站頁面";
             return;
         }
 
@@ -484,15 +523,22 @@ public partial class MenuViewModel : PageViewModelBase
             document.Body = PageBody ?? string.Empty;
             await Services.Content.SaveAsync(SelectedPage.FullPath, Services.FrontMatter.Write(document));
             PageIsDirty = false;
-            StatusMessage = $"已儲存頁面：{SelectedPage.RelativePath}";
-            var selectedPath = SelectedPage.FullPath;
-            Refresh();
-            SelectedPage = SitePages.FirstOrDefault(page =>
-                page.FullPath.Equals(selectedPath, StringComparison.OrdinalIgnoreCase));
+            if (!IsDirty)
+                _autoSave.Cancel();
+            StatusMessage = auto
+                ? $"已自動儲存頁面：{SelectedPage.RelativePath}"
+                : $"已儲存頁面：{SelectedPage.RelativePath}";
+            if (reload)
+            {
+                var selectedPath = SelectedPage.FullPath;
+                Refresh();
+                SelectedPage = SitePages.FirstOrDefault(page =>
+                    page.FullPath.Equals(selectedPath, StringComparison.OrdinalIgnoreCase));
+            }
         }
         catch (Exception ex)
         {
-            StatusMessage = ex.Message;
+            StatusMessage = auto ? $"自動儲存失敗：{ex.Message}" : ex.Message;
         }
     }
 
@@ -598,7 +644,7 @@ public partial class MenuViewModel : PageViewModelBase
         for (var i = 0; i < ordered.Count; i++)
             ordered[i].Weight = i + 1;
 
-        IsDirty = true;
+        MarkDirty();
         var keep = SelectedEntry;
         RebuildVisibleEntries(preserveSelection: false);
         SelectedEntry = keep;
@@ -630,7 +676,7 @@ public partial class MenuViewModel : PageViewModelBase
     private void OnEntryPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (_loading) return;
-        IsDirty = true;
+        MarkDirty();
         if (e.PropertyName != nameof(MenuEntryItem.MenuName) || sender is not MenuEntryItem item)
             return;
 

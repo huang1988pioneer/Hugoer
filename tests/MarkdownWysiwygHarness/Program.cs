@@ -79,8 +79,35 @@ AssertContains(rendered, "<em>斜體</em>");
 
 var shell = MarkdownPreviewService.PreviewShellDocument();
 AssertContains(shell, "hugoerSetPreview");
+AssertContains(shell, "hugoerApplyMedia");
 AssertContains(shell, "markdown-body");
 AssertContains(shell, "開始輸入 Markdown，預覽會即時更新。");
+
+var imageHtml = """<p><img src="data:image/png;base64,aaaa" alt="cat" data-hugoer-src="/image/cat.png"></p>""";
+var restored = MarkdownWysiwygConverter.FromEditableHtml(imageHtml);
+AssertContains(restored, "![cat](/image/cat.png)");
+Assert(!restored.Contains("data:image", StringComparison.Ordinal), restored);
+
+var plainImage = RoundTrip("![貓](/image/cat.png)");
+AssertContains(plainImage, "![貓](/image/cat.png)");
+Assert(!plainImage.Contains("<img", StringComparison.Ordinal), plainImage);
+
+var sizedHtml = """<p><img src="/image/cat.png" alt="貓" width="320" data-hugoer-align="center" style="max-width:100%;height:auto;width:320px;display:block;margin:0.5em auto"></p>""";
+var sized = MarkdownWysiwygConverter.FromEditableHtml(sizedHtml);
+AssertContains(sized, "<img src=\"/image/cat.png\"");
+AssertContains(sized, "alt=\"貓\"");
+AssertContains(sized, "width=\"320\"");
+AssertContains(sized, "data-hugoer-align=\"center\"");
+AssertContains(sized, "margin:0.5em auto");
+var sizedRound = RoundTrip(sized);
+AssertContains(sizedRound, "width=\"320\"");
+AssertContains(sizedRound, "data-hugoer-align=\"center\"");
+
+var wrapHtml = """<p><img src="/image/cat.png" alt="cat" width="240" data-hugoer-align="wrap-left"></p>""";
+var wrap = MarkdownWysiwygConverter.FromEditableHtml(wrapHtml);
+AssertContains(wrap, "data-hugoer-align=\"wrap-left\"");
+AssertContains(wrap, "float:left");
+AssertContains(wrap, "width=\"240\"");
 
 Console.WriteLine("MARKDOWN_WYSIWYG_HARNESS_OK");
 Console.WriteLine(heading);

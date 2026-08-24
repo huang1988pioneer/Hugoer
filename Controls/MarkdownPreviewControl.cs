@@ -2,6 +2,7 @@ using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Hugoer.Services;
 
@@ -24,6 +25,8 @@ public sealed class MarkdownPreviewControl : UserControl
     private bool _ready;
     private bool _loadedHtml;
     private bool _useFallback;
+    private string? _mediaSite;
+    private readonly Dictionary<string, string> _sentMedia = new(StringComparer.Ordinal);
 
     public MarkdownPreviewControl()
     {
@@ -148,15 +151,43 @@ public sealed class MarkdownPreviewControl : UserControl
         if (!_ready || _webView is null)
             return;
 
-        var fragment = MediaAssetService.ToPreviewHtml(
-            MarkdownPreviewService.ToHtmlFragment(Markdown ?? string.Empty),
-            AppServices.Instance.CurrentSitePath);
-        var script = $"window.hugoerSetPreview({JsonSerializer.Serialize(fragment)})";
+        var fragment = MarkdownPreviewService.ToHtmlFragment(Markdown ?? string.Empty);
+        var site = AppServices.Instance.CurrentSitePath;
+        var media = TakeNewMedia(fragment, site);
+        var script = media.Count == 0
+            ? $"window.hugoerSetPreview({JsonSerializer.Serialize(fragment)})"
+            : $"window.hugoerSetPreview({JsonSerializer.Serialize(fragment)}, {JsonSerializer.Serialize(media)})";
         _ = _webView.InvokeScript(script);
+    }
+
+    private Dictionary<string, string> TakeNewMedia(string html, string? sitePath)
+    {
+        if (!string.Equals(_mediaSite, sitePath, StringComparison.OrdinalIgnoreCase))
+        {
+            _sentMedia.Clear();
+            _mediaSite = sitePath;
+        }
+
+        var fresh = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (url, dataUri) in MediaAssetService.BuildPreviewMediaMap(html, sitePath))
+        {
+            if (_sentMedia.TryGetValue(url, out var previous) && previous == dataUri)
+                continue;
+            _sentMedia[url] = dataUri;
+            fresh[url] = dataUri;
+        }
+
+        return fresh;
     }
 
     private void BuildFallbackPreview(string markdown)
     {
+        foreach (var child in _fallbackPanel.Children)
+        {
+            if (child is Image { Source: IDisposable bitmap })
+                bitmap.Dispose();
+        }
+
         _fallbackPanel.Children.Clear();
         _fallbackScroll.IsVisible = true;
 
@@ -276,6 +307,17 @@ public sealed class MarkdownPreviewControl : UserControl
                 continue;
             }
 
+            var trimmed = line.Trim();
+            var imageMatch = System.Text.RegularExpressions.Regex.Match(
+                trimmed, @"^!\[(?<alt>[^\]]*)\]\((?<url>[^)]+)\)$");
+            if (imageMatch.Success)
+            {
+                FlushPara();
+                _fallbackPanel.Children.Add(
+                    CreateMarkdownImage(imageMatch.Groups["alt"].Value, imageMatch.Groups["url"].Value));
+                continue;
+            }
+
             if (line.StartsWith("#", StringComparison.Ordinal))
             {
                 FlushPara();
@@ -331,6 +373,45 @@ public sealed class MarkdownPreviewControl : UserControl
 
         if (inCode) FlushCode();
         FlushPara();
+    }
+
+    private static Control CreateMarkdownImage(string alt, string url)
+    {
+        var site = AppServices.Instance.CurrentSitePath;
+        if (!string.IsNullOrWhiteSpace(site))
+        {
+            var staticDir = Path.GetFullPath(Path.Combine(site, MediaAssetService.StaticDirectoryName));
+            if (MediaAssetService.TryMapSiteUrlToFile(url, staticDir, out var fileUrl))
+            {
+                try
+                {
+                    var path = Uri.UnescapeDataString(new Uri(fileUrl).LocalPath);
+                    if (File.Exists(path))
+                    {
+                        return new Image
+                        {
+                            Source = new Bitmap(path),
+                            MaxWidth = 720,
+                            Stretch = Stretch.Uniform,
+                            Margin = new Thickness(0, 8),
+                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left
+                        };
+                    }
+                }
+                catch
+                {
+                    // Fall through to the caption.
+                }
+            }
+        }
+
+        return new TextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(alt) ? url : alt,
+            Opacity = 0.7,
+            FontStyle = FontStyle.Italic,
+            TextWrapping = TextWrapping.Wrap
+        };
     }
 
     private static Control CreateRichParagraph(string text)

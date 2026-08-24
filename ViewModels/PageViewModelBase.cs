@@ -16,6 +16,12 @@ public abstract partial class PageViewModelBase : ViewModelBase
     [ObservableProperty]
     public partial bool IsBusy { get; set; }
 
+    partial void OnIsBusyChanged(bool value) => OnBusyChanged(value);
+
+    protected virtual void OnBusyChanged(bool isBusy)
+    {
+    }
+
     public virtual Task OnNavigatedToAsync() => Task.CompletedTask;
 
     protected bool RequireSite(out string sitePath)
@@ -23,7 +29,7 @@ public abstract partial class PageViewModelBase : ViewModelBase
         sitePath = Services.CurrentSitePath ?? string.Empty;
         if (string.IsNullOrWhiteSpace(sitePath) || !Directory.Exists(sitePath))
         {
-            StatusMessage = "請先在「環境設定」開啟或建立 Hugo 網站。";
+            StatusMessage = "請先在「環境設定」開啟、建立，或從 GitHub 複製 Hugo 網站。";
             return false;
         }
 

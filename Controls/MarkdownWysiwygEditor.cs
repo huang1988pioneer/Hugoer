@@ -102,6 +102,13 @@ public sealed class MarkdownWysiwygEditor : UserControl
         await _webView.InvokeScript(script);
     }
 
+    public async Task AddMediaAsync(IReadOnlyDictionary<string, string> media)
+    {
+        if (!_ready || _webView is null || media.Count == 0)
+            return;
+        await _webView.InvokeScript($"window.hugoerAddMedia({JsonSerializer.Serialize(media)})");
+    }
+
     public async Task FocusEditorAsync()
     {
         if (!_ready || _webView is null)
@@ -237,10 +244,12 @@ public sealed class MarkdownWysiwygEditor : UserControl
         if (!_ready || _webView is null)
             return;
 
-        var html = MediaAssetService.ToPreviewHtml(
-            MarkdownWysiwygConverter.ToEditableHtml(Markdown ?? string.Empty),
-            SitePath);
-        _ = _webView.InvokeScript($"window.hugoerSetHtml({JsonSerializer.Serialize(html)})");
+        var html = MarkdownWysiwygConverter.ToEditableHtml(Markdown ?? string.Empty);
+        var media = MediaAssetService.BuildPreviewMediaMap(html, SitePath);
+        var script = media.Count == 0
+            ? $"window.hugoerSetHtml({JsonSerializer.Serialize(html)})"
+            : $"window.hugoerSetHtml({JsonSerializer.Serialize(html)}, {JsonSerializer.Serialize(media)})";
+        _ = _webView.InvokeScript(script);
     }
 
     private void ShowFailure(string userMessage, string detail)

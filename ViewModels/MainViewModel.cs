@@ -18,12 +18,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
         NavItems =
         [
-            new NavItem("環境", "一鍵安裝 Hugo、建立／開啟網站", SetupPage),
+            new NavItem("環境", "一鍵安裝 Hugo、建立／開啟／從 Git 平台複製網站", SetupPage),
             new NavItem("設定檔", "編輯 hugo.toml 等設定", ConfigPage),
             new NavItem("主題", "安裝 Stack 等 themes", ThemesPage),
             new NavItem("文章", "撰寫部落格文章", ContentPage),
             new NavItem("選單", "編輯網站導覽選單", MenuPage),
-            new NavItem("GitHub", "推送並啟用 GitHub Pages", GitHubPage),
+            new NavItem("Git 部署", "推送到 GitHub / GitLab / Codeberg / Bitbucket", GitHubPage),
         ];
 
         SelectedNav = NavItems[0];
@@ -69,12 +69,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     {
         var path = AppServices.Instance.CurrentSitePath;
         SiteBanner = string.IsNullOrWhiteSpace(path)
-            ? "尚未選擇網站 — 請到「環境」開啟或建立"
+            ? "尚未選擇網站 — 請到「環境」開啟、建立或從 Git 平台複製"
             : $"目前網站：{path}";
     }
 
     public void Dispose()
     {
+        SetupPage.Dispose();
         GitHubPage.Dispose();
         GC.SuppressFinalize(this);
     }

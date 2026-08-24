@@ -3,10 +3,11 @@ using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Hugoer.Helpers;
+using Hugoer.Models;
 
 namespace Hugoer.ViewModels;
 
-public partial class SetupViewModel : PageViewModelBase
+public partial class SetupViewModel : PageViewModelBase, IDisposable
 {
     public SetupViewModel()
     {
@@ -35,19 +36,45 @@ public partial class SetupViewModel : PageViewModelBase
     public partial string NewSiteName { get; set; } = "my-hugo-site";
 
     [ObservableProperty]
+    public partial string CloneUrl { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string CloneParent { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+    [ObservableProperty]
+    public partial string CloneTargetSummary { get; set; } = "貼上 GitHub、GitLab、Codeberg 或 Bitbucket repository / Pages 網址後，Hugoer 會複製到本機並開啟。";
+
+    [ObservableProperty]
+    public partial bool CanClone { get; set; }
+
+    [ObservableProperty]
+    public partial bool HasPagesRepositories { get; set; }
+
+    [ObservableProperty]
+    public partial GitHubPagesRepositoryItem? SelectedPagesRepository { get; set; }
+
+    public ObservableCollection<GitHubPagesRepositoryItem> PagesRepositories { get; } = [];
+
+    [ObservableProperty]
     public partial string Log { get; set; } = string.Empty;
 
     [ObservableProperty]
     public partial bool PreviewReady { get; set; }
 
-    private const string PreviewUrl = "http://127.0.0.1:1313/";
+    [ObservableProperty]
+    public partial bool CanStartPreview { get; set; } = true;
+
+    [ObservableProperty]
+    public partial string PreviewUrl { get; set; } = "http://127.0.0.1:1313/";
+
     private Process? _previewProcess;
 
     public ObservableCollection<string> QuickTips { get; } =
     [
         "建議安裝 Hugo Extended（支援 SCSS / SASS）",
         "建立網站後可安裝 Stack 等主題",
-        "GitHub Pages 需要本機安裝 Git 與 GitHub CLI (gh)"
+        "GitHub Pages 自動啟用需要 GitHub CLI (gh)",
+        "也可從 GitLab、Codeberg、Bitbucket 複製 Hugo 原始碼 repository"
     ];
 
     public override async Task OnNavigatedToAsync()
@@ -126,6 +153,86 @@ public partial class SetupViewModel : PageViewModelBase
     }
 
     [RelayCommand]
+    private async Task BrowseCloneParentAsync()
+    {
+        var folder = await DialogHelper.PickFolderAsync("選擇複製到本機的父資料夾");
+        if (!string.IsNullOrWhiteSpace(folder))
+            CloneParent = folder;
+    }
+
+    partial void OnCloneUrlChanged(string value) => UpdateCloneState();
+
+    partial void OnCloneParentChanged(string value) => UpdateCloneState();
+
+    partial void OnSelectedPagesRepositoryChanged(GitHubPagesRepositoryItem? value)
+    {
+        if (value is null || string.IsNullOrWhiteSpace(value.HtmlUrl))
+            return;
+        if (!string.Equals(CloneUrl, value.HtmlUrl, StringComparison.Ordinal))
+            CloneUrl = value.HtmlUrl;
+    }
+
+    [RelayCommand]
+    private async Task ListPagesRepositoriesAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            StatusMessage = "正在列出 GitHub Pages 網站…";
+            var list = await Services.GitHub.ListPagesRepositoriesAsync();
+            ApplyPagesRepositories(list);
+            StatusMessage = list.Message;
+            AppendLog(list.Message);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task CloneSiteAsync()
+    {
+        var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(CloneUrl);
+        if (!target.IsValid)
+        {
+            StatusMessage = target.ErrorMessage;
+            AppendLog(StatusMessage);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(CloneParent))
+        {
+            StatusMessage = "請選擇本機存放資料夾。";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var progress = new Progress<string>(message =>
+            {
+                AppendLog(message);
+                StatusMessage = message;
+            });
+            var result = await Services.GitHub.CloneSiteFromGitHubAsync(CloneUrl, CloneParent, progress);
+            if (!string.IsNullOrWhiteSpace(result.CombinedOutput))
+                AppendLog(result.CombinedOutput);
+            StatusMessage = result.Message;
+            if (!result.Succeeded || string.IsNullOrWhiteSpace(result.SitePath))
+                return;
+
+            Services.SetSite(result.SitePath);
+            SitePath = result.SitePath;
+            RefreshSite();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
     private async Task CreateSiteAsync()
     {
         if (string.IsNullOrWhiteSpace(NewSiteName))
@@ -173,23 +280,55 @@ public partial class SetupViewModel : PageViewModelBase
         IsBusy = true;
         try
         {
-            var (process, message) = await Services.Hugo.StartServerAsync(site);
-            AppendLog(message);
-            StatusMessage = message;
-            if (process is not null)
+            var result = await Services.Hugo.StartServerAsync(site);
+            AppendLog(result.Message);
+            StatusMessage = result.Message;
+            if (result.Process is not null)
             {
-                _previewProcess = process;
+                PreviewUrl = result.Url;
+                _previewProcess = result.Process;
                 _previewProcess.EnableRaisingEvents = true;
-                _previewProcess.Exited += (_, _) =>
-                {
-                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                    {
-                        PreviewReady = false;
-                        StatusMessage = "本機預覽已停止；請重新啟動預覽。";
-                    });
-                };
+                _previewProcess.Exited += HandlePreviewProcessExited;
                 PreviewReady = true;
             }
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task StopPreviewAsync()
+    {
+        var process = _previewProcess;
+        _previewProcess = null;
+        PreviewReady = false;
+
+        if (process is null || process.HasExited)
+        {
+            try { process?.Dispose(); } catch { /* ignore */ }
+            StatusMessage = "本機預覽未在執行。";
+            return;
+        }
+
+        try
+        {
+            process.Exited -= HandlePreviewProcessExited;
+        }
+        catch { /* ignore */ }
+
+        IsBusy = true;
+        try
+        {
+            await Task.Run(() => Services.Hugo.StopServer(process));
+            StatusMessage = "本機預覽已關閉。";
+            AppendLog(StatusMessage);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"無法關閉本機預覽：{ex.Message}";
+            AppendLog(StatusMessage);
         }
         finally
         {
@@ -240,6 +379,78 @@ public partial class SetupViewModel : PageViewModelBase
         {
             IsBusy = false;
         }
+    }
+
+    protected override void OnBusyChanged(bool isBusy)
+    {
+        UpdateCanStartPreview();
+        UpdateCloneState();
+    }
+
+    private void UpdateCloneState()
+    {
+        var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(CloneUrl);
+        CanClone = target.IsValid && !string.IsNullOrWhiteSpace(CloneParent) && !IsBusy;
+        if (!target.IsValid)
+        {
+            CloneTargetSummary = string.IsNullOrWhiteSpace(CloneUrl)
+                ? "貼上 GitHub、GitLab、Codeberg 或 Bitbucket repository / Pages 網址後，Hugoer 會複製到本機並開啟。"
+                : target.ErrorMessage;
+            return;
+        }
+
+        var destination = GitHubClonePath.TryGetDestination(CloneParent, target.Repository, out var pathError);
+        var pagesUrl = string.IsNullOrWhiteSpace(target.PagesUrl)
+            ? "此平台/此 repo 沒有可推導的專案 Pages 網址"
+            : target.PagesUrl;
+        CloneTargetSummary =
+            $"平台：{target.ProviderName}\n" +
+            $"Repository：{target.Owner}/{target.Repository}\n" +
+            $"網站類型：{(target.IsUserOrOrganizationSite ? "使用者／組織網站" : "專案網站")}\n" +
+            $"建議網址：{pagesUrl}\n" +
+            $"本機目標：{destination ?? pathError}";
+    }
+
+    private void ApplyPagesRepositories(GitHubPagesRepositoryList list)
+    {
+        PagesRepositories.Clear();
+        foreach (var item in list.Repositories)
+            PagesRepositories.Add(item);
+        HasPagesRepositories = PagesRepositories.Count > 0;
+        if (PagesRepositories.Count == 1)
+            SelectedPagesRepository = PagesRepositories[0];
+    }
+
+    partial void OnPreviewReadyChanged(bool value) => UpdateCanStartPreview();
+
+    private void UpdateCanStartPreview() => CanStartPreview = !IsBusy && !PreviewReady;
+
+    private void HandlePreviewProcessExited(object? sender, EventArgs e)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (!ReferenceEquals(sender, _previewProcess))
+                return;
+
+            PreviewReady = false;
+            try { _previewProcess?.Dispose(); } catch { /* ignore */ }
+            _previewProcess = null;
+            StatusMessage = "本機預覽已停止；請重新啟動預覽。";
+            AppendLog(StatusMessage);
+        });
+    }
+
+    public void Dispose()
+    {
+        var process = _previewProcess;
+        _previewProcess = null;
+        PreviewReady = false;
+        if (process is not null)
+        {
+            try { process.Exited -= HandlePreviewProcessExited; } catch { /* ignore */ }
+            try { Services.Hugo.StopServer(process); } catch { /* ignore */ }
+        }
+        GC.SuppressFinalize(this);
     }
 
     private void RefreshSite()

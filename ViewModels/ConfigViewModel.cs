@@ -16,6 +16,9 @@ public partial class ConfigViewModel : PageViewModelBase
     public ConfigViewModel()
     {
         Title = "設定檔";
+        _autoSave = new IdleAutoSave(
+            () => IsDirty && !string.IsNullOrWhiteSpace(SelectedFile),
+            () => SaveCoreAsync(auto: true));
     }
 
     public ObservableCollection<string> ConfigFiles { get; } = [];
@@ -63,10 +66,23 @@ public partial class ConfigViewModel : PageViewModelBase
     public partial string ConfigCatalogSummary { get; set; } = string.Empty;
 
     private bool _loading;
+    private readonly IdleAutoSave _autoSave;
 
     public override async Task OnNavigatedToAsync()
     {
         await RefreshFilesAsync();
+    }
+
+    partial void OnSelectedFileChanging(string? oldValue, string? newValue)
+    {
+        _autoSave.Cancel();
+        if (_loading || !IsDirty || string.IsNullOrWhiteSpace(oldValue))
+            return;
+
+        var path = oldValue;
+        var text = EditorText;
+        IsDirty = false;
+        _ = PersistSilentlyAsync(path, text);
     }
 
     partial void OnSelectedFileChanged(string? value)
@@ -78,7 +94,7 @@ public partial class ConfigViewModel : PageViewModelBase
     partial void OnEditorTextChanged(string value)
     {
         if (!_loading)
-            IsDirty = true;
+            MarkDirty();
     }
 
     partial void OnConfigSearchChanged(string value) => ApplyConfigFilter();
@@ -116,6 +132,7 @@ public partial class ConfigViewModel : PageViewModelBase
         if (string.IsNullOrWhiteSpace(SelectedFile) || !File.Exists(SelectedFile))
             return;
 
+        _autoSave.Cancel();
         _loading = true;
         try
         {
@@ -133,17 +150,47 @@ public partial class ConfigViewModel : PageViewModelBase
     }
 
     [RelayCommand]
-    private async Task SaveAsync()
+    private Task SaveAsync() => SaveCoreAsync(auto: false);
+
+    private void MarkDirty()
+    {
+        IsDirty = true;
+        _autoSave.Schedule();
+    }
+
+    private async Task SaveCoreAsync(bool auto)
     {
         if (string.IsNullOrWhiteSpace(SelectedFile))
         {
+            if (auto) return;
             if (!RequireSite(out var site)) return;
             SelectedFile = Path.Combine(site, "hugo.toml");
         }
 
-        await File.WriteAllTextAsync(SelectedFile, EditorText);
-        IsDirty = false;
-        StatusMessage = $"已儲存：{SelectedFile}";
+        try
+        {
+            await File.WriteAllTextAsync(SelectedFile, EditorText);
+            IsDirty = false;
+            _autoSave.Cancel();
+            StatusMessage = auto ? $"已自動儲存：{SelectedFile}" : $"已儲存：{SelectedFile}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = auto ? $"自動儲存失敗：{ex.Message}" : ex.Message;
+        }
+    }
+
+    private async Task PersistSilentlyAsync(string path, string text)
+    {
+        try
+        {
+            await File.WriteAllTextAsync(path, text);
+            StatusMessage = $"已自動儲存：{path}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"自動儲存失敗：{ex.Message}";
+        }
     }
 
     [RelayCommand]
@@ -159,7 +206,7 @@ public partial class ConfigViewModel : PageViewModelBase
                 ["theme"] = ThemeName
             });
             StatusMessage = "已套用網站基本欄位（記得按儲存）";
-            IsDirty = true;
+            MarkDirty();
             ReloadParamsForm();
             ReloadAdvancedForm();
         }
@@ -185,7 +232,7 @@ public partial class ConfigViewModel : PageViewModelBase
         {
             EditorText = _paramsService.ApplyParamsToToml(EditorText, ParamFields);
             ParseQuickFields(EditorText);
-            IsDirty = true;
+            MarkDirty();
             StatusMessage = "已將 params 表單寫入編輯器（記得按儲存）";
             ReloadParamsForm();
         }
@@ -235,7 +282,7 @@ public partial class ConfigViewModel : PageViewModelBase
             ParseQuickFields(EditorText);
             ReloadParamsForm();
             ReloadAdvancedForm();
-            IsDirty = true;
+            MarkDirty();
             StatusMessage = "已將 Hugo 進階設定套用到編輯器（記得按儲存）";
         }
         catch (Exception ex)

@@ -12,6 +12,9 @@ public partial class ContentViewModel : PageViewModelBase
     public ContentViewModel()
     {
         Title = "文章";
+        _autoSave = new IdleAutoSave(
+            () => IsDirty && SelectedFile is { IsDirectory: false },
+            () => SaveCoreAsync(refreshList: false, auto: true));
         var saved = Services.Settings.Current.MarkdownEditorMode;
         if (saved.Equals("Source", StringComparison.OrdinalIgnoreCase))
             EditorMode = MarkdownEditorMode.Source;
@@ -63,10 +66,13 @@ public partial class ContentViewModel : PageViewModelBase
     public partial bool IsDirty { get; set; }
 
     [ObservableProperty]
-    public partial string NewPostTitle { get; set; } = "hello-world";
+    public partial string NewPostTitle { get; set; } = ArticleCode.Format(DateTimeOffset.Now, 1);
 
     [ObservableProperty]
     public partial string NewPostFolder { get; set; } = "post";
+
+    [ObservableProperty]
+    public partial string NextArticleCode { get; set; } = ArticleCode.Format(DateTimeOffset.Now, 1);
 
     [ObservableProperty]
     public partial string Filter { get; set; } = string.Empty;
@@ -144,6 +150,9 @@ public partial class ContentViewModel : PageViewModelBase
     public partial string EditorModeTitle { get; set; } = "WYSIWYG 視覺編輯";
 
     [ObservableProperty]
+    public partial string EditorModeHint { get; set; } = "像 CKEditor 一樣直接編排內容；右側可查看產生的 Markdown。";
+
+    [ObservableProperty]
     public partial MarkdownPreviewKind PreviewKind { get; set; } = MarkdownPreviewKind.MarkdownOutput;
 
     [ObservableProperty]
@@ -162,11 +171,24 @@ public partial class ContentViewModel : PageViewModelBase
     private bool _syncingFrontMatter;
     private List<ContentItem> _all = [];
     private CancellationTokenSource? _previewCts;
+    private readonly IdleAutoSave _autoSave;
 
     public override Task OnNavigatedToAsync()
     {
         Refresh();
         return Task.CompletedTask;
+    }
+
+    partial void OnSelectedFileChanging(ContentItem? oldValue, ContentItem? newValue)
+    {
+        _autoSave.Cancel();
+        if (_loading || !IsDirty || oldValue is null || oldValue.IsDirectory)
+            return;
+
+        var path = oldValue.FullPath;
+        var text = EditorText;
+        IsDirty = false;
+        _ = PersistSilentlyAsync(path, text);
     }
 
     partial void OnSelectedFileChanged(ContentItem? value)
@@ -181,7 +203,7 @@ public partial class ContentViewModel : PageViewModelBase
         UpdateEditorStatistics(value);
         UpdatePreviewBody(value);
         if (!_loading)
-            IsDirty = true;
+            MarkDirty();
 
         if (!_syncingFrontMatter)
             PopulateFrontMatter(value);
@@ -233,6 +255,9 @@ public partial class ContentViewModel : PageViewModelBase
         IsWysiwygMode = EditorMode == MarkdownEditorMode.Wysiwyg;
         IsSourceMode = EditorMode == MarkdownEditorMode.Source;
         EditorModeTitle = IsWysiwygMode ? "WYSIWYG 視覺編輯" : "Markdown 原始碼";
+        EditorModeHint = IsWysiwygMode
+            ? "像 CKEditor 一樣直接編排內容；右側可查看產生的 Markdown。"
+            : "直接編輯 Markdown 原文；右側可查看即時渲染。";
         RefreshPreviewPresentation();
     }
 
@@ -396,8 +421,10 @@ public partial class ContentViewModel : PageViewModelBase
         ShowEmptyState = !HasVisibleFiles;
         EmptyStateTitle = _all.Count == 0 ? "尚無文章" : "找不到符合條件的文章";
         EmptyStateDescription = _all.Count == 0
-            ? "在上方輸入標題，建立第一篇部落格文章。歸檔、搜尋、關於等請到「選單」分頁。"
+            ? "按「新增文章」會以西元年月日-編號建立檔名，例如 20260823-1.md。歸檔、搜尋、關於等請到「選單」分頁。"
             : "調整搜尋文字或狀態篩選後再試一次。";
+
+        RefreshSuggestedArticleCode();
 
         if (SelectedFile is not null && !Files.Contains(SelectedFile))
             SelectedFile = null;
@@ -405,6 +432,7 @@ public partial class ContentViewModel : PageViewModelBase
 
     private async Task LoadFileAsync(ContentItem item)
     {
+        _autoSave.Cancel();
         _loading = true;
         try
         {
@@ -426,44 +454,76 @@ public partial class ContentViewModel : PageViewModelBase
     }
 
     [RelayCommand]
-    private async Task SaveAsync()
+    private Task SaveAsync() => SaveCoreAsync(refreshList: true, auto: false);
+
+    private void MarkDirty()
+    {
+        IsDirty = true;
+        _autoSave.Schedule();
+    }
+
+    private async Task SaveCoreAsync(bool refreshList, bool auto)
     {
         if (SelectedFile is null || SelectedFile.IsDirectory)
         {
-            StatusMessage = "請先選擇檔案";
+            if (!auto)
+                StatusMessage = "請先選擇檔案";
             return;
         }
 
-        await Services.Content.SaveAsync(SelectedFile.FullPath, EditorText);
-        IsDirty = false;
-        StatusMessage = $"已儲存：{SelectedFile.RelativePath}";
-        Refresh();
+        try
+        {
+            await Services.Content.SaveAsync(SelectedFile.FullPath, EditorText);
+            IsDirty = false;
+            _autoSave.Cancel();
+            StatusMessage = auto
+                ? $"已自動儲存：{SelectedFile.RelativePath}"
+                : $"已儲存：{SelectedFile.RelativePath}";
+            if (refreshList)
+                Refresh();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = auto ? $"自動儲存失敗：{ex.Message}" : ex.Message;
+        }
+    }
+
+    private async Task PersistSilentlyAsync(string fullPath, string text)
+    {
+        try
+        {
+            await Services.Content.SaveAsync(fullPath, text);
+            StatusMessage = $"已自動儲存：{Path.GetFileName(fullPath)}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"自動儲存失敗：{ex.Message}";
+        }
     }
 
     [RelayCommand]
     private async Task CreatePostAsync()
     {
         if (!RequireSite(out var site)) return;
-        if (string.IsNullOrWhiteSpace(NewPostTitle))
-        {
-            StatusMessage = "請輸入標題";
-            return;
-        }
 
-        var slug = Slugify(NewPostTitle);
-        var relative = $"{NewPostFolder.Trim().Trim('/')}/{slug}.md";
+        var folder = string.IsNullOrWhiteSpace(NewPostFolder) ? "post" : NewPostFolder.Trim().Trim('/');
+        var code = AllocateNextArticleCode(site, folder);
+        var title = string.IsNullOrWhiteSpace(NewPostTitle) ? code : NewPostTitle.Trim();
+        var relative = $"{folder}/{code}.md";
 
         try
         {
             var hugoResult = await Services.Hugo.NewContentAsync(site, relative);
             if (!hugoResult.Succeeded)
-                await Services.Content.CreateMarkdownAsync(site, relative, NewPostTitle);
+                await Services.Content.CreateMarkdownAsync(site, relative, title, slug: code);
+            else
+                await ApplyArticleCodeAsync(site, relative, title, code);
 
             StatusMessage = $"已建立：{relative}";
             Refresh();
             var created = _all.FirstOrDefault(f =>
                 f.RelativePath.Equals(relative, StringComparison.OrdinalIgnoreCase)
-                || f.RelativePath.EndsWith(slug + ".md", StringComparison.OrdinalIgnoreCase));
+                || f.RelativePath.EndsWith(code + ".md", StringComparison.OrdinalIgnoreCase));
             if (created is not null)
                 SelectedFile = created;
         }
@@ -544,12 +604,48 @@ public partial class ContentViewModel : PageViewModelBase
         }
     }
 
-    private static string Slugify(string title)
+    partial void OnNewPostFolderChanged(string value) => RefreshSuggestedArticleCode();
+
+    private void RefreshSuggestedArticleCode()
     {
-        var s = title.Trim().ToLowerInvariant();
-        s = System.Text.RegularExpressions.Regex.Replace(s, @"\s+", "-");
-        s = System.Text.RegularExpressions.Regex.Replace(s, @"[^a-z0-9\u4e00-\u9fff\-_]", "");
-        return string.IsNullOrWhiteSpace(s) ? $"post-{DateTime.Now:yyyyMMddHHmmss}" : s;
+        var site = Services.CurrentSitePath;
+        var folder = string.IsNullOrWhiteSpace(NewPostFolder) ? "post" : NewPostFolder.Trim().Trim('/');
+        var previous = NextArticleCode;
+        NextArticleCode = string.IsNullOrWhiteSpace(site) || !Directory.Exists(site)
+            ? ArticleCode.Format(DateTimeOffset.Now, 1)
+            : AllocateNextArticleCode(site, folder);
+        if (string.IsNullOrWhiteSpace(NewPostTitle)
+            || NewPostTitle == previous
+            || ArticleCodeLooksLikeDefault(NewPostTitle))
+            NewPostTitle = NextArticleCode;
+    }
+
+    private static string AllocateNextArticleCode(string site, string folder)
+    {
+        var directory = Path.Combine(PathHelper.ContentDir(site), folder.Replace('/', Path.DirectorySeparatorChar));
+        return ArticleCode.NextInDirectory(directory, DateTimeOffset.Now);
+    }
+
+    private static bool ArticleCodeLooksLikeDefault(string value)
+    {
+        var text = value.Trim();
+        return text.Length >= 10
+               && text[8] == '-'
+               && text.Take(8).All(char.IsDigit)
+               && text.Skip(9).All(char.IsDigit);
+    }
+
+    private async Task ApplyArticleCodeAsync(string site, string relative, string title, string code)
+    {
+        var full = Path.Combine(
+            PathHelper.ContentDir(site),
+            relative.Replace('/', Path.DirectorySeparatorChar));
+        if (!File.Exists(full)) return;
+
+        var document = Services.FrontMatter.Parse(await Services.Content.ReadAsync(full));
+        document.Fields["title"] = title;
+        document.Fields["slug"] = code;
+        await Services.Content.SaveAsync(full, Services.FrontMatter.Write(document));
     }
 
     private void PopulateFrontMatter(string text)

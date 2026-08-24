@@ -247,6 +247,10 @@ icon = "search"
 """);
         }
 
+        var withMarkup = GoldmarkUnsafeHtml.EnsureEnabled(sb.ToString(), out var markupChanged);
+        if (markupChanged)
+            sb = new StringBuilder(withMarkup);
+
         // Stack content structure helpers
         var postDir = Path.Combine(sitePath, "content", "post");
         Directory.CreateDirectory(postDir);

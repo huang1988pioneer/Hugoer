@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -31,6 +32,10 @@ public sealed record MediaAsset(
 public static partial class MediaAssetService
 {
     public const string StaticDirectoryName = "static";
+    public const string PreviewSourceAttribute = "data-hugoer-src";
+
+    private const long MaxEmbedBytes = 20L * 1024 * 1024;
+    private static readonly ConcurrentDictionary<string, CachedDataUri> DataUriCache = new(StringComparer.OrdinalIgnoreCase);
 
     public static string FolderName(MediaKind kind) => kind switch
     {
@@ -135,13 +140,22 @@ public static partial class MediaAssetService
             var url = WebUtility.HtmlDecode(match.Groups["url"].Value);
             if (!TryMapSiteUrlToFile(url, staticDir, out var fileUrl))
                 return match.Value;
-            return $"{match.Groups["attr"].Value}={match.Groups["quote"].Value}{WebUtility.HtmlEncode(fileUrl)}{match.Groups["quote"].Value}";
+
+            var quote = match.Groups["quote"].Value;
+            var previewSrc = TryCreateDataUri(LocalPathFromFileUrl(fileUrl), out var dataUri)
+                ? dataUri
+                : fileUrl;
+            return $"{match.Groups["attr"].Value}={quote}{WebUtility.HtmlEncode(previewSrc)}{quote} {PreviewSourceAttribute}={quote}{WebUtility.HtmlEncode(url)}{quote}";
         });
     }
 
     public static string FromPreviewHtml(string html, string? sitePath)
     {
-        if (string.IsNullOrWhiteSpace(html) || string.IsNullOrWhiteSpace(sitePath))
+        if (string.IsNullOrWhiteSpace(html))
+            return html;
+
+        html = RestoreMarkedSources(html);
+        if (string.IsNullOrWhiteSpace(sitePath))
             return html;
 
         var staticDir = Path.GetFullPath(Path.Combine(sitePath, StaticDirectoryName));
@@ -152,6 +166,36 @@ public static partial class MediaAssetService
                 return match.Value;
             return $"{match.Groups["attr"].Value}={match.Groups["quote"].Value}{WebUtility.HtmlEncode(siteUrl)}{match.Groups["quote"].Value}";
         });
+    }
+
+    /// <summary>
+    /// Maps site-relative media URLs in HTML to data URIs the WebView can display
+    /// after <c>NavigateToString</c> (file:// subresources are blocked).
+    /// </summary>
+    public static Dictionary<string, string> BuildPreviewMediaMap(string html, string? sitePath)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(html) || string.IsNullOrWhiteSpace(sitePath))
+            return map;
+
+        var staticDir = Path.GetFullPath(Path.Combine(sitePath, StaticDirectoryName));
+        foreach (Match match in SrcHrefRegex().Matches(html))
+            TryAddPreviewMedia(map, WebUtility.HtmlDecode(match.Groups["url"].Value), staticDir);
+
+        return map;
+    }
+
+    public static Dictionary<string, string> MediaMapForAssets(IEnumerable<MediaAsset> assets)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var asset in assets)
+        {
+            if (!TryCreateDataUri(asset.DestinationPath, out var dataUri))
+                continue;
+            AddMediaMapKeys(map, asset.PublicUrl, dataUri);
+        }
+
+        return map;
     }
 
     public static string BuildMarkdown(MediaKind kind, string publicUrl, string displayName)
@@ -213,7 +257,7 @@ public static partial class MediaAssetService
         string displayName)
     {
         var publicUrl = ToPublicUrl(staticDir, destinationPath);
-        var previewUrl = new Uri(destinationPath).AbsoluteUri;
+        var previewUrl = publicUrl;
         return new MediaAsset(
             kind,
             folder,
@@ -308,8 +352,6 @@ public static partial class MediaAssetService
         var trimmed = url.Trim();
         if (trimmed.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
             return false;
-        if (!trimmed.StartsWith('/'))
-            return false;
 
         var cut = trimmed.IndexOfAny(['?', '#']);
         if (cut >= 0)
@@ -318,6 +360,152 @@ public static partial class MediaAssetService
         relative = Uri.UnescapeDataString(trimmed.TrimStart('/')).Replace('/', Path.DirectorySeparatorChar);
         return relative.Length > 0;
     }
+
+    private static string RestoreMarkedSources(string html)
+    {
+        return HtmlTagRegex().Replace(html, match =>
+        {
+            var attrs = match.Groups["attrs"].Value;
+            if (attrs.IndexOf(PreviewSourceAttribute, StringComparison.OrdinalIgnoreCase) < 0)
+                return match.Value;
+
+            var parsed = ParseAttributes(attrs);
+            if (!parsed.TryGetValue(PreviewSourceAttribute, out var original)
+                || string.IsNullOrWhiteSpace(original))
+                return match.Value;
+
+            if (parsed.ContainsKey("src"))
+                parsed["src"] = original;
+            else if (parsed.ContainsKey("href"))
+                parsed["href"] = original;
+
+            parsed.Remove(PreviewSourceAttribute);
+            return "<" + match.Groups["name"].Value + FormatAttributes(parsed) + ">";
+        });
+    }
+
+    private static Dictionary<string, string> ParseAttributes(string attrs)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Match match in AttrRegex().Matches(attrs))
+            map[match.Groups["name"].Value] = WebUtility.HtmlDecode(match.Groups["value"].Value);
+        return map;
+    }
+
+    private static string FormatAttributes(Dictionary<string, string> attrs)
+    {
+        if (attrs.Count == 0)
+            return string.Empty;
+
+        var builder = new StringBuilder();
+        foreach (var (name, value) in attrs)
+        {
+            builder.Append(' ')
+                .Append(name)
+                .Append("=\"")
+                .Append(WebUtility.HtmlEncode(value))
+                .Append('"');
+        }
+
+        return builder.ToString();
+    }
+
+    private static void TryAddPreviewMedia(Dictionary<string, string> map, string url, string staticDir)
+    {
+        if (!TryMapSiteUrlToFile(url, staticDir, out var fileUrl))
+            return;
+        if (!TryCreateDataUri(LocalPathFromFileUrl(fileUrl), out var dataUri))
+            return;
+        AddMediaMapKeys(map, url, dataUri);
+    }
+
+    private static void AddMediaMapKeys(Dictionary<string, string> map, string url, string dataUri)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return;
+
+        map[url] = dataUri;
+        var trimmed = url.Trim();
+        if (!trimmed.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+            && !trimmed.Contains("://", StringComparison.Ordinal))
+        {
+            var decoded = "/" + Uri.UnescapeDataString(trimmed.TrimStart('/'));
+            map[decoded] = dataUri;
+            if (!trimmed.StartsWith('/'))
+                map["/" + trimmed.TrimStart('/')] = dataUri;
+        }
+    }
+
+    private static bool TryCreateDataUri(string path, out string dataUri)
+    {
+        dataUri = string.Empty;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return false;
+
+        var mime = MimeFromExtension(Path.GetExtension(path));
+        if (mime is null)
+            return false;
+
+        try
+        {
+            var info = new FileInfo(path);
+            if (info.Length <= 0 || info.Length > MaxEmbedBytes)
+                return false;
+
+            if (DataUriCache.TryGetValue(path, out var cached)
+                && cached.Length == info.Length
+                && cached.Ticks == info.LastWriteTimeUtc.Ticks)
+            {
+                dataUri = cached.DataUri;
+                return true;
+            }
+
+            var bytes = File.ReadAllBytes(path);
+            dataUri = $"data:{mime};base64,{Convert.ToBase64String(bytes)}";
+            if (DataUriCache.Count > 48)
+                DataUriCache.Clear();
+            DataUriCache[path] = new CachedDataUri(info.Length, info.LastWriteTimeUtc.Ticks, dataUri);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string LocalPathFromFileUrl(string fileUrl)
+    {
+        if (Uri.TryCreate(fileUrl, UriKind.Absolute, out var uri) && uri.IsFile)
+            return Uri.UnescapeDataString(uri.LocalPath);
+        return fileUrl;
+    }
+
+    private static string? MimeFromExtension(string extension) => extension.ToLowerInvariant() switch
+    {
+        ".png" => "image/png",
+        ".jpg" or ".jpeg" or ".jfif" => "image/jpeg",
+        ".gif" => "image/gif",
+        ".webp" => "image/webp",
+        ".svg" => "image/svg+xml",
+        ".bmp" => "image/bmp",
+        ".ico" => "image/x-icon",
+        ".avif" => "image/avif",
+        ".mp3" => "audio/mpeg",
+        ".wav" => "audio/wav",
+        ".ogg" => "audio/ogg",
+        ".flac" => "audio/flac",
+        ".aac" => "audio/aac",
+        ".m4a" => "audio/mp4",
+        ".opus" or ".weba" => "audio/ogg",
+        ".mp4" => "video/mp4",
+        ".webm" => "video/webm",
+        ".mov" => "video/quicktime",
+        ".m4v" => "video/mp4",
+        ".ogv" => "video/ogg",
+        _ => null
+    };
+
+    private sealed record CachedDataUri(long Length, long Ticks, string DataUri);
 
     private static bool IsUnder(string path, string root)
     {
@@ -335,4 +523,10 @@ public static partial class MediaAssetService
 
     [GeneratedRegex(@"(?<attr>\b(?:src|href))\s*=\s*(?<quote>['""])(?<url>[^'""]+)\k<quote>", RegexOptions.IgnoreCase)]
     private static partial Regex SrcHrefRegex();
+
+    [GeneratedRegex(@"<(?<name>[a-zA-Z][\w:-]*)(?<attrs>[^>]*)>", RegexOptions.IgnoreCase)]
+    private static partial Regex HtmlTagRegex();
+
+    [GeneratedRegex(@"(?<name>[\w:-]+)\s*=\s*(?<quote>['""])(?<value>.*?)\k<quote>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex AttrRegex();
 }

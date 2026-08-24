@@ -246,7 +246,10 @@ public partial class ContentView : UserControl
             if (viewModel.HasSelection)
             {
                 if (IsWysiwyg && WysiwygEditor.IsReady)
+                {
+                    await WysiwygEditor.AddMediaAsync(MediaAssetService.MediaMapForAssets(assets));
                     await WysiwygEditor.ExecAsync("insertHtml", MediaAssetService.JoinPreviewHtml(assets));
+                }
                 else
                     ApplyEdit((text, start, length) =>
                         MarkdownEditingService.InsertSnippet(
@@ -271,6 +274,9 @@ public partial class ContentView : UserControl
     private void Heading1_OnClick(object? sender, RoutedEventArgs e) => ApplyHeading(1);
     private void Heading2_OnClick(object? sender, RoutedEventArgs e) => ApplyHeading(2);
     private void Heading3_OnClick(object? sender, RoutedEventArgs e) => ApplyHeading(3);
+    private void Heading4_OnClick(object? sender, RoutedEventArgs e) => ApplyHeading(4);
+    private void Heading5_OnClick(object? sender, RoutedEventArgs e) => ApplyHeading(5);
+    private void Heading6_OnClick(object? sender, RoutedEventArgs e) => ApplyHeading(6);
 
     private void ApplyHeading(int level)
     {
@@ -304,6 +310,21 @@ public partial class ContentView : UserControl
     private void Table_OnClick(object? sender, RoutedEventArgs e) =>
         RunEditorCommand("table", MarkdownEditingService.InsertTable);
 
+    private void Footnote_OnClick(object? sender, RoutedEventArgs e) =>
+        ApplySourceOnly(MarkdownEditingService.InsertFootnote);
+
+    private void Definition_OnClick(object? sender, RoutedEventArgs e) =>
+        ApplySourceOnly(MarkdownEditingService.InsertDefinition);
+
+    private void Alert_OnClick(object? sender, RoutedEventArgs e) =>
+        ApplySourceOnly(MarkdownEditingService.InsertAlert);
+
+    private void Math_OnClick(object? sender, RoutedEventArgs e) =>
+        ApplySourceOnly(MarkdownEditingService.InsertMath);
+
+    private void HtmlBlock_OnClick(object? sender, RoutedEventArgs e) =>
+        ApplySourceOnly(MarkdownEditingService.InsertHtmlBlock);
+
     private void HorizontalRule_OnClick(object? sender, RoutedEventArgs e) =>
         RunEditorCommand("hr", MarkdownEditingService.HorizontalRule);
 
@@ -316,6 +337,18 @@ public partial class ContentView : UserControl
         }
 
         ApplyEdit(sourceOperation);
+    }
+
+    private void ApplySourceOnly(Func<string, int, int, MarkdownEditResult> operation)
+    {
+        if (IsWysiwyg)
+        {
+            if (DataContext is ContentViewModel viewModel)
+                viewModel.StatusMessage = "這個 Markdown 語法需要在「原始碼」模式編輯。";
+            return;
+        }
+
+        ApplyEdit(operation);
     }
 
     private void EditorKeyDown(object? sender, KeyEventArgs e)

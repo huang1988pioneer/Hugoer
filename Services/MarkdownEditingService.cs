@@ -142,6 +142,50 @@ public static partial class MarkdownEditingService
             2,
             3);
 
+    public static MarkdownEditResult InsertFootnote(string text, int selectionStart, int selectionLength)
+    {
+        var (start, length) = Normalize(text, selectionStart, selectionLength);
+        var label = length > 0 ? text.Substring(start, length).Trim() : "註腳參照";
+        var snippet = $"{label}[^1]\n\n[^1]: 在這裡輸入註腳內容。";
+        return InsertBlock(text, start, length, snippet, label.Length, 2);
+    }
+
+    public static MarkdownEditResult InsertDefinition(string text, int selectionStart, int selectionLength) =>
+        InsertBlock(
+            text,
+            selectionStart,
+            selectionLength,
+            "術語\n   : 輸入這個術語的定義。",
+            0,
+            2);
+
+    public static MarkdownEditResult InsertAlert(string text, int selectionStart, int selectionLength) =>
+        InsertBlock(
+            text,
+            selectionStart,
+            selectionLength,
+            "> [!NOTE]\n> 這是一個提示區塊。可改成 TIP、IMPORTANT、WARNING 或 CAUTION。",
+            12,
+            10);
+
+    public static MarkdownEditResult InsertMath(string text, int selectionStart, int selectionLength) =>
+        InsertBlock(
+            text,
+            selectionStart,
+            selectionLength,
+            "$$\nE = mc^2\n$$",
+            3,
+            6);
+
+    public static MarkdownEditResult InsertHtmlBlock(string text, int selectionStart, int selectionLength) =>
+        InsertBlock(
+            text,
+            selectionStart,
+            selectionLength,
+            "<details>\n<summary>摘要</summary>\n\n內容\n</details>",
+            0,
+            0);
+
     public static MarkdownEditResult HorizontalRule(string text, int selectionStart, int selectionLength) =>
         InsertBlock(text, selectionStart, selectionLength, "---", 3, 0);
 

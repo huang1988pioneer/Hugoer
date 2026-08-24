@@ -196,6 +196,7 @@
 
                 <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
                     <Button Content="儲存選單" Classes="accent" Command="{Binding SaveCommand}"/>
+                    <TextBlock Text="10 秒未編輯會自動儲存" Classes="caption" VerticalAlignment="Center"/>
                     <Button Content="儲存頁面" Command="{Binding SavePageCommand}"
                             IsEnabled="{Binding HasPageSelection}"/>
                     <TextBlock Text="{Binding StatusMessage}" Classes="muted" VerticalAlignment="Center"/>

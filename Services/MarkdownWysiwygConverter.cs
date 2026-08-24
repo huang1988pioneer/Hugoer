@@ -100,6 +100,15 @@ public static partial class MarkdownWysiwygConverter
                 var level = name[1] - '0';
                 AppendBlock(builder, new string('#', level) + " " + InlinesToString(node).Trim());
                 return;
+            case "div" when IsAlert(node):
+                WriteAlert(node, builder);
+                return;
+            case "div" when IsMathBlock(node):
+                WriteMathBlock(node, builder);
+                return;
+            case "div" when IsFootnotes(node):
+                WriteFootnotes(node, builder);
+                return;
             case "p":
             case "div":
             case "section":
@@ -126,6 +135,12 @@ public static partial class MarkdownWysiwygConverter
                 foreach (var line in quoted.Replace("\r\n", "\n").Split('\n'))
                     quotedBuilder.Append("> ").Append(line).Append('\n');
                 AppendBlock(builder, quotedBuilder.ToString());
+                return;
+            case "dl":
+                WriteDefinitionList(node, builder);
+                return;
+            case "details":
+                WriteDetails(node, builder);
                 return;
             case "ul":
             case "ol":
@@ -335,6 +350,29 @@ public static partial class MarkdownWysiwygConverter
                     return;
                 builder.Append('`').Append(HtmlEntity.DeEntitize(node.InnerText)).Append('`');
                 return;
+            case "sub":
+                WrapInline(node, builder, "~", "~");
+                return;
+            case "sup":
+                if (node.GetAttributeValue("class", "").Contains("footnote-ref", StringComparison.OrdinalIgnoreCase)
+                    || node.SelectSingleNode(".//a[contains(@class,'footnote-ref')]") is not null)
+                {
+                    var footnoteLabel = Regex.Replace(InlinesToString(node), @"[^\dA-Za-z_-]", string.Empty);
+                    if (footnoteLabel.Length > 0)
+                        builder.Append("[^").Append(footnoteLabel).Append(']');
+                    return;
+                }
+                WrapInline(node, builder, "^", "^");
+                return;
+            case "ins":
+                WrapInline(node, builder, "++", "++");
+                return;
+            case "mark":
+                WrapInline(node, builder, "==", "==");
+                return;
+            case "kbd":
+                builder.Append((char)96).Append(HtmlEntity.DeEntitize(node.InnerText)).Append((char)96);
+                return;
             case "a":
                 var href = node.GetAttributeValue("href", "");
                 var label = InlinesToString(node).Trim();
@@ -349,11 +387,7 @@ public static partial class MarkdownWysiwygConverter
                 builder.Append('[').Append(label).Append("](").Append(href).Append(')');
                 return;
             case "img":
-                var src = node.GetAttributeValue("src", "");
-                if (string.IsNullOrWhiteSpace(src))
-                    return;
-                var alt = node.GetAttributeValue("alt", "");
-                builder.Append("![").Append(alt).Append("](").Append(src).Append(')');
+                WriteImage(node, builder);
                 return;
             case "audio":
             case "video":
@@ -362,9 +396,23 @@ public static partial class MarkdownWysiwygConverter
             case "input":
                 return;
             case "span":
+            {
+                var spanClass = node.GetAttributeValue("class", "") ?? string.Empty;
+                if (spanClass.Contains("math-inline", StringComparison.OrdinalIgnoreCase)
+                    || spanClass.Equals("math", StringComparison.OrdinalIgnoreCase))
+                {
+                    var math = HtmlEntity.DeEntitize(node.InnerText ?? string.Empty).Trim();
+                    math = math.Replace("\\(", string.Empty, StringComparison.Ordinal)
+                        .Replace("\\)", string.Empty, StringComparison.Ordinal)
+                        .Trim();
+                    builder.Append('$').Append(math).Append('$');
+                    return;
+                }
+                WriteStyledSpan(node, builder);
+                return;
+            }
             case "font":
             case "u":
-            case "mark":
                 WriteStyledSpan(node, builder);
                 return;
             default:
@@ -452,14 +500,269 @@ public static partial class MarkdownWysiwygConverter
         or "h1" or "h2" or "h3" or "h4" or "h5" or "h6"
         or "ul" or "ol" or "li" or "pre" or "blockquote"
         or "table" or "thead" or "tbody" or "tr" or "hr"
+        or "dl" or "dt" or "dd" or "details" or "summary"
         or "audio" or "video";
+
+    private static void WriteDefinitionList(HtmlNode node, StringBuilder builder)
+    {
+        var term = string.Empty;
+        foreach (var child in node.ChildNodes)
+        {
+            var name = Name(child);
+            if (name == "dt")
+            {
+                term = InlinesToString(child).Trim();
+                continue;
+            }
+
+            if (name != "dd" || term.Length == 0)
+                continue;
+
+            var definition = InlinesToString(child).Trim();
+            if (definition.Length == 0)
+                definition = BlocksToString(child.ChildNodes).Trim();
+            AppendBlock(builder, $"{term}\n   : {definition}");
+            term = string.Empty;
+        }
+    }
+
+    private static void WriteDetails(HtmlNode node, StringBuilder builder)
+    {
+        var summary = node.SelectSingleNode("./summary");
+        var title = summary is null ? "詳細內容" : InlinesToString(summary).Trim();
+        var bodyNodes = node.ChildNodes
+            .Where(child => !string.Equals(Name(child), "summary", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var body = string.Join("\n\n", bodyNodes.Select(child =>
+            Name(child) is "p" or "div" ? InlinesToString(child).Trim() : child.InnerText.Trim()))
+            .Trim();
+        AppendBlock(builder, $"<details>\n<summary>{title}</summary>\n\n{body}\n</details>");
+    }
+
+    private static void WriteAlert(HtmlNode node, StringBuilder builder)
+    {
+        var className = node.GetAttributeValue("class", "") ?? string.Empty;
+        var match = Regex.Match(className, @"markdown-alert-([a-z]+)", RegexOptions.IgnoreCase);
+        var kind = match.Success ? match.Groups[1].Value.ToUpperInvariant() : "NOTE";
+        var body = string.Join("\n\n", node.ChildNodes
+            .Where(child => !Name(child).Equals("p", StringComparison.OrdinalIgnoreCase)
+                || !child.GetAttributeValue("class", "").Contains("markdown-alert-title", StringComparison.OrdinalIgnoreCase))
+            .Select(child => InlinesToString(child).Trim()))
+            .Trim();
+        if (body.Length == 0)
+            body = InlinesToString(node).Trim();
+        var quoted = string.Join('\n', body.Split('\n').Select(line => $"> {line}"));
+        AppendBlock(builder, $"> [!{kind}]\n{quoted}");
+    }
+
+    private static void WriteMathBlock(HtmlNode node, StringBuilder builder)
+    {
+        var value = HtmlEntity.DeEntitize(node.InnerText ?? string.Empty).Trim();
+        value = value.Replace("\\[", string.Empty, StringComparison.Ordinal)
+            .Replace("\\]", string.Empty, StringComparison.Ordinal)
+            .Trim();
+        AppendBlock(builder, $"$$\n{value}\n$$");
+    }
+
+    private static void WriteFootnotes(HtmlNode node, StringBuilder builder)
+    {
+        var items = node.SelectNodes(".//ol/li");
+        if (items is null)
+            return;
+        for (var index = 0; index < items.Count; index++)
+        {
+            var item = items[index];
+            var id = item.GetAttributeValue("id", "");
+            var match = Regex.Match(id, @"(?:fn|footnote)[-_]?(.+)$", RegexOptions.IgnoreCase);
+            var label = match.Success ? match.Groups[1].Value : (index + 1).ToString();
+            var text = InlinesToString(item).Trim();
+            text = Regex.Replace(text, @"\s*↩\s*$", string.Empty).Trim();
+            AppendBlock(builder, $"[^{label}]: {text}");
+        }
+    }
+
+    private static bool IsAlert(HtmlNode node) =>
+        (node.GetAttributeValue("class", "") ?? string.Empty)
+            .Contains("markdown-alert-", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsMathBlock(HtmlNode node)
+    {
+        var className = node.GetAttributeValue("class", "") ?? string.Empty;
+        return className.Contains("math-block", StringComparison.OrdinalIgnoreCase)
+            || className.Contains("math-display", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsFootnotes(HtmlNode node) =>
+        (node.GetAttributeValue("class", "") ?? string.Empty)
+            .Contains("footnotes", StringComparison.OrdinalIgnoreCase);
+
+    private static void WriteImage(HtmlNode node, StringBuilder builder)
+    {
+        var src = ResolveMediaSrc(node);
+        if (string.IsNullOrWhiteSpace(src))
+            return;
+
+        var alt = node.GetAttributeValue("alt", "");
+        var width = ReadImageWidth(node);
+        var align = ReadImageAlign(node);
+        if (width is null && string.IsNullOrEmpty(align))
+        {
+            builder.Append("![").Append(alt).Append("](").Append(src).Append(')');
+            return;
+        }
+
+        builder.Append("<img src=\"").Append(WebUtility.HtmlEncode(src))
+            .Append("\" alt=\"").Append(WebUtility.HtmlEncode(alt)).Append('"');
+        if (width is { } pixels)
+            builder.Append(" width=\"").Append(pixels).Append('"');
+        if (!string.IsNullOrEmpty(align))
+            builder.Append(" data-hugoer-align=\"").Append(align).Append('"');
+        var style = BuildImageStyle(width, align);
+        if (style.Length > 0)
+            builder.Append(" style=\"").Append(style).Append('"');
+        builder.Append(" />");
+    }
+
+    private static int? ReadImageWidth(HtmlNode node)
+    {
+        if (TryParsePx(node.GetAttributeValue("width", ""), out var fromAttr))
+            return fromAttr;
+
+        var style = node.GetAttributeValue("style", "") ?? string.Empty;
+        var match = StyleWidthRegex().Match(style);
+        if (match.Success && TryParsePx(match.Groups["px"].Value, out var fromStyle))
+            return fromStyle;
+        return null;
+    }
+
+    private static string? ReadImageAlign(HtmlNode node)
+    {
+        var marked = node.GetAttributeValue("data-hugoer-align", "");
+        if (IsImageAlign(marked))
+            return marked;
+
+        var style = node.GetAttributeValue("style", "") ?? string.Empty;
+        var className = node.GetAttributeValue("class", "") ?? string.Empty;
+        var combined = style + " " + className;
+        if (LooksFloat(combined, "left") || combined.Contains("wrap-left", StringComparison.OrdinalIgnoreCase))
+            return "wrap-left";
+        if (LooksFloat(combined, "right") || combined.Contains("wrap-right", StringComparison.OrdinalIgnoreCase))
+            return "wrap-right";
+        if (LooksCentered(style))
+            return "center";
+        if (LooksRightAligned(style))
+            return "right";
+        if (LooksLeftAligned(style))
+            return "left";
+
+        var parentStyle = node.ParentNode?.GetAttributeValue("style", "") ?? string.Empty;
+        if (parentStyle.Contains("text-align:center", StringComparison.OrdinalIgnoreCase)
+            || parentStyle.Contains("text-align: center", StringComparison.OrdinalIgnoreCase))
+            return "center";
+        if (parentStyle.Contains("text-align:right", StringComparison.OrdinalIgnoreCase)
+            || parentStyle.Contains("text-align: right", StringComparison.OrdinalIgnoreCase))
+            return "right";
+        if (parentStyle.Contains("text-align:left", StringComparison.OrdinalIgnoreCase)
+            || parentStyle.Contains("text-align: left", StringComparison.OrdinalIgnoreCase))
+            return "left";
+        return null;
+    }
+
+    private static string BuildImageStyle(int? widthPx, string? align)
+    {
+        var parts = new List<string> { "max-width:100%", "height:auto" };
+        if (widthPx is { } width and > 0)
+            parts.Add($"width:{width}px");
+
+        switch (align)
+        {
+            case "center":
+                parts.Add("display:block");
+                parts.Add("float:none");
+                parts.Add("margin:0.5em auto");
+                break;
+            case "right":
+                parts.Add("display:block");
+                parts.Add("float:none");
+                parts.Add("margin:0.5em 0 0.5em auto");
+                break;
+            case "left":
+                parts.Add("display:block");
+                parts.Add("float:none");
+                parts.Add("margin:0.5em auto 0.5em 0");
+                break;
+            case "wrap-left":
+                parts.Add("display:block");
+                parts.Add("float:left");
+                parts.Add("margin:0.25em 1em 0.8em 0");
+                break;
+            case "wrap-right":
+                parts.Add("display:block");
+                parts.Add("float:right");
+                parts.Add("margin:0.25em 0 0.8em 1em");
+                break;
+        }
+
+        return string.Join(";", parts);
+    }
+
+    private static bool IsImageAlign(string value) =>
+        value is "left" or "center" or "right" or "wrap-left" or "wrap-right";
+
+    private static bool LooksFloat(string css, string side) =>
+        System.Text.RegularExpressions.Regex.IsMatch(
+            css, $@"float\s*:\s*{side}", RegexOptions.IgnoreCase);
+
+    private static bool LooksCentered(string style)
+    {
+        if (style.Contains("0.5em auto 0.5em 0", StringComparison.OrdinalIgnoreCase)
+            || style.Contains("0.5em 0 0.5em auto", StringComparison.OrdinalIgnoreCase))
+            return false;
+        return style.Contains("margin:0.5em auto", StringComparison.OrdinalIgnoreCase)
+            || style.Contains("margin: 0.5em auto", StringComparison.OrdinalIgnoreCase)
+            || style.Contains("margin:0 auto", StringComparison.OrdinalIgnoreCase)
+            || style.Contains("margin: 0 auto", StringComparison.OrdinalIgnoreCase)
+            || (style.Contains("margin-left:auto", StringComparison.OrdinalIgnoreCase)
+                && style.Contains("margin-right:auto", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool LooksRightAligned(string style) =>
+        style.Contains("0.5em 0 0.5em auto", StringComparison.OrdinalIgnoreCase);
+
+    private static bool LooksLeftAligned(string style) =>
+        style.Contains("0.5em auto 0.5em 0", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryParsePx(string value, out int pixels)
+    {
+        pixels = 0;
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+        var trimmed = value.Trim();
+        if (trimmed.EndsWith("px", StringComparison.OrdinalIgnoreCase))
+            trimmed = trimmed[..^2].Trim();
+        return int.TryParse(trimmed, out pixels) && pixels > 0;
+    }
 
     private static string MediaHtml(HtmlNode node)
     {
         var name = Name(node);
-        var src = node.GetAttributeValue("src", "");
+        var src = ResolveMediaSrc(node);
         return $"<{name} controls src=\"{src}\"></{name}>";
     }
+
+    private static string ResolveMediaSrc(HtmlNode node)
+    {
+        var marked = node.GetAttributeValue("data-hugoer-src", "");
+        if (!string.IsNullOrWhiteSpace(marked) && !IsTransientPreviewSrc(marked))
+            return marked;
+
+        var src = node.GetAttributeValue("src", "");
+        return IsTransientPreviewSrc(src) ? string.Empty : src;
+    }
+
+    private static bool IsTransientPreviewSrc(string src) =>
+        src.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+        || src.StartsWith("blob:", StringComparison.OrdinalIgnoreCase);
 
     private static bool HasBlockChild(HtmlNode node) =>
         node.ChildNodes.Any(child => child.NodeType == HtmlNodeType.Element && IsBlock(Name(child)));
@@ -548,6 +851,9 @@ public static partial class MarkdownWysiwygConverter
 
     [GeneratedRegex(@"(?:language-|lang-)([A-Za-z0-9_+-]+)")]
     private static partial Regex LanguageClassRegex();
+
+    [GeneratedRegex(@"width\s*:\s*(?<px>\d+)\s*px", RegexOptions.IgnoreCase)]
+    private static partial Regex StyleWidthRegex();
 
     [GeneratedRegex(@"\sdisabled(?:=([""']?)disabled\1|=([""']?)\2)?", RegexOptions.IgnoreCase)]
     private static partial Regex DisabledCheckboxRegex();

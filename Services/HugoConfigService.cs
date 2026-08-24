@@ -139,7 +139,7 @@ public sealed class HugoConfigService
 
         // Markdown and highlighting
         F("markup.defaultMarkdownHandler", "Markdown 處理器", "Markdown 預設處理器；官方建議 goldmark。", ParamFieldKind.String, "Markdown 與語法", "goldmark", "goldmark", $"{Docs}/markup/"),
-        F("markup.goldmark.renderer.unsafe", "允許 Markdown 原始 HTML", "允許內容中的原始 HTML；僅在信任內容來源時啟用。", ParamFieldKind.Bool, "Markdown 與語法", "false", "", $"{Docs}/markup/#renderer"),
+        F("markup.goldmark.renderer.unsafe", "允許 Markdown 原始 HTML", "允許內容中的原始 HTML。Hugoer 的圖片縮放／排版、音訊與影片會寫成 HTML，本機預覽與建置時會開啟此項，否則網站會省略這些內容。", ParamFieldKind.Bool, "Markdown 與語法", "false", "", $"{Docs}/markup/#renderer"),
         F("markup.goldmark.renderer.hardWraps", "換行轉 br", "將段落內換行轉為 br。", ParamFieldKind.Bool, "Markdown 與語法", "false", "", $"{Docs}/markup/#renderer"),
         F("markup.goldmark.parser.autoHeadingID", "自動產生標題 ID", "為 Markdown 標題自動產生 id。", ParamFieldKind.Bool, "Markdown 與語法", "true", "", $"{Docs}/markup/#parser"),
         F("markup.goldmark.parser.autoIDType", "標題 ID 規則", "github、github-ascii 或 blackfriday。", ParamFieldKind.String, "Markdown 與語法", "github", "github", $"{Docs}/markup/#parser"),

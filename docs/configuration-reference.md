@@ -295,7 +295,7 @@ lineNumbersInTable = true
 tabWidth = 4
 ```
 
-`unsafe = true` 是內容信任決策，不能悄悄啟用；它與 `security.allowContent` 不是同一控制項。
+`unsafe = true` 是內容信任決策，與 `security.allowContent` 不是同一控制項。Hugoer 會在建立網站、安裝 Stack、本機預覽與建置時為其管理的網站開啟此項，因為文章編輯器把縮放／排版後的圖片、音訊與影片存成 HTML；關閉時 Hugo Goldmark 會輸出 `<!-- raw HTML omitted -->`。設定仍顯示在「設定檔」。
 
 ## 12. `imaging`
 

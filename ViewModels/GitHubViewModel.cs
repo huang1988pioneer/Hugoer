@@ -1,5 +1,7 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Hugoer.Helpers;
 using Hugoer.Models;
 
 namespace Hugoer.ViewModels;
@@ -14,7 +16,9 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
 
     public GitHubViewModel()
     {
-        Title = "GitHub Pages";
+        Title = "Git 部署";
+        var path = Services.CurrentSitePath;
+        HasLocalSite = !string.IsNullOrWhiteSpace(path) && Directory.Exists(path);
     }
 
     [ObservableProperty]
@@ -39,10 +43,27 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     public partial string RepositoryUrl { get; set; } = string.Empty;
 
     [ObservableProperty]
-    public partial string RepositoryTargetSummary { get; set; } = "貼上既有 GitHub repository 網址後，Hugoer 會先顯示目標與 Pages 網址。";
+    public partial string RepositoryTargetSummary { get; set; } = "貼上 GitHub、GitLab、Codeberg 或 Bitbucket repository / Pages 網址後，Hugoer 會先顯示目標與建議網址。";
 
     [ObservableProperty]
     public partial bool CanConnectRepository { get; set; }
+
+    [ObservableProperty]
+    public partial bool HasLocalSite { get; set; }
+
+    [ObservableProperty]
+    public partial string CloneParent { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+    [ObservableProperty]
+    public partial bool CanCloneToLocal { get; set; }
+
+    [ObservableProperty]
+    public partial bool HasPagesRepositories { get; set; }
+
+    [ObservableProperty]
+    public partial GitHubPagesRepositoryItem? SelectedPagesRepository { get; set; }
+
+    public ObservableCollection<GitHubPagesRepositoryItem> PagesRepositories { get; } = [];
 
     [ObservableProperty]
     public partial bool SyncRecommendedBaseUrl { get; set; } = true;
@@ -70,22 +91,31 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
 
     partial void OnRepositoryUrlChanged(string value)
     {
-        var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(value);
-        CanConnectRepository = target.IsValid;
-        if (!target.IsValid)
-        {
-            RepositoryTargetSummary = string.IsNullOrWhiteSpace(value)
-                ? "貼上既有 GitHub repository 網址後，Hugoer 會先顯示目標與 Pages 網址。"
-                : target.ErrorMessage;
-            return;
-        }
-
-        RepoName = target.Repository!;
-        RepositoryTargetSummary =
-            $"Repository：{target.Owner}/{target.Repository}\n" +
-            $"網站類型：{(target.IsUserOrOrganizationSite ? "使用者／組織網站" : "專案網站")}\n" +
-            $"建議 Pages 網址：{target.PagesUrl}";
+        UpdateRepositoryTarget(value);
     }
+
+    partial void OnCloneParentChanged(string value)
+    {
+        UpdateCloneAvailability();
+        if (!string.IsNullOrWhiteSpace(RepositoryUrl))
+            UpdateRepositoryTarget(RepositoryUrl);
+    }
+
+    partial void OnHasLocalSiteChanged(bool value)
+    {
+        UpdateCloneAvailability();
+        UpdateRepositoryTarget(RepositoryUrl);
+    }
+
+    partial void OnSelectedPagesRepositoryChanged(GitHubPagesRepositoryItem? value)
+    {
+        if (value is null || string.IsNullOrWhiteSpace(value.HtmlUrl))
+            return;
+        if (!string.Equals(RepositoryUrl, value.HtmlUrl, StringComparison.Ordinal))
+            RepositoryUrl = value.HtmlUrl;
+    }
+
+    protected override void OnBusyChanged(bool isBusy) => UpdateCloneAvailability();
 
     public override async Task OnNavigatedToAsync()
     {
@@ -104,11 +134,17 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             GitStatus = gitOk ? "Git：已安裝" : "Git：未找到（請安裝 Git for Windows）";
             GhStatus = ghOk ? "GitHub CLI (gh)：已安裝" : "GitHub CLI：未找到（請安裝 gh）";
 
-            if (!RequireSite(out var site))
+            HasLocalSite = !string.IsNullOrWhiteSpace(Services.CurrentSitePath)
+                           && Directory.Exists(Services.CurrentSitePath);
+            if (!HasLocalSite)
             {
-                RemoteSummary = "尚未選擇網站";
+                RemoteSummary = "尚未選擇本機網站。若 Git 平台已有 Hugo 原始碼 repository，可貼上網址複製到本機。";
+                PagesSummary = "尚未選擇本機網站";
+                UpdateCloneAvailability();
                 return;
             }
+
+            var site = Services.CurrentSitePath!;
 
             if (string.IsNullOrWhiteSpace(RepoName))
                 RepoName = Path.GetFileName(site.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
@@ -117,13 +153,82 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             if (string.IsNullOrWhiteSpace(RepositoryUrl) && !string.IsNullOrWhiteSpace(info.RemoteUrl))
                 RepositoryUrl = info.RemoteUrl;
             RemoteSummary =
-                $"使用者：{info.GhUser ?? "（未登入）"}\n" +
-                $"驗證：{(info.GhAuthenticated ? "已登入" : "未登入")}\n" +
+                $"平台：{info.ProviderName}\n" +
+                $"GitHub 使用者：{info.GhUser ?? "（僅 GitHub 顯示）"}\n" +
+                $"GitHub 驗證：{(info.GhAuthenticated ? "已登入" : "未登入或非 GitHub remote")}\n" +
                 $"分支：{info.Branch ?? "—"}\n" +
                 $"Remote：{info.RemoteUrl ?? "（無 origin）"}\n" +
                 $"Repo：{(info.Owner is null ? "—" : $"{info.Owner}/{info.Repo}")}";
 
             await RefreshPagesStatusAsync();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task BrowseCloneParentAsync()
+    {
+        var folder = await DialogHelper.PickFolderAsync("選擇複製到本機的父資料夾");
+        if (!string.IsNullOrWhiteSpace(folder))
+            CloneParent = folder;
+    }
+
+    [RelayCommand]
+    private async Task ListPagesRepositoriesAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            StatusMessage = "正在列出 GitHub Pages 網站…";
+            var list = await Services.GitHub.ListPagesRepositoriesAsync();
+            ApplyPagesRepositories(list);
+            StatusMessage = list.Message;
+            AppendLog(list.Message);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task CloneSiteToLocalAsync()
+    {
+        var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(RepositoryUrl);
+        if (!target.IsValid)
+        {
+            StatusMessage = target.ErrorMessage;
+            AppendLog(StatusMessage);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(CloneParent))
+        {
+            StatusMessage = "請選擇本機存放資料夾。";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var progress = new Progress<string>(message =>
+            {
+                AppendLog(message);
+                StatusMessage = message;
+            });
+            var result = await Services.GitHub.CloneSiteFromGitHubAsync(RepositoryUrl, CloneParent, progress);
+            if (!string.IsNullOrWhiteSpace(result.CombinedOutput))
+                AppendLog(result.CombinedOutput);
+            StatusMessage = result.Message;
+            if (!result.Succeeded || string.IsNullOrWhiteSpace(result.SitePath))
+                return;
+
+            Services.SetSite(result.SitePath);
+            RepoName = result.Target?.Repository ?? RepoName;
+            await RefreshAsync();
         }
         finally
         {
@@ -145,7 +250,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         IsBusy = true;
         try
         {
-            StatusMessage = "正在確認 GitHub repository 推送權限…";
+            StatusMessage = $"正在確認 {target.ProviderName} repository 推送方式…";
             var access = await Services.GitHub.CheckPushAccessAsync(target);
             AppendLog(access.Message);
             if (!access.HasAccess)
@@ -182,9 +287,9 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                 progress);
             AppendLog(result.CombinedOutput);
             StatusMessage = result.IsPartialSuccess
-                ? "推送成功；請由 Repository 擁有者在 GitHub Pages 設定中選擇 GitHub Actions 來源"
+                ? $"{target.ProviderName} 推送成功；請依平台提示完成 Pages/靜態網站設定"
                 : result.Succeeded
-                    ? "已連結 repository、推送網站並啟用 GitHub Pages"
+                    ? $"已連結 {target.ProviderName} repository 並推送網站"
                     : "連結或部署失敗；請查看操作日誌";
             await RefreshAsync();
             await CheckDeploymentVersionAsync(manual: false, CancellationToken.None);
@@ -241,6 +346,63 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             return;
         }
 
+        var requestedName = RepoName.Trim();
+        var reuseExisting = false;
+        IsBusy = true;
+        try
+        {
+            var info = await Services.GitHub.GetInfoAsync(site);
+            if (!string.IsNullOrWhiteSpace(info.Owner) && !string.IsNullOrWhiteSpace(info.Repo))
+            {
+                if (!info.Repo.Equals(requestedName, StringComparison.OrdinalIgnoreCase))
+                {
+                    StatusMessage =
+                        $"本機已連結 {info.Owner}/{info.Repo}，與要建立的「{requestedName}」不同。Hugoer 不會改指向新 repository。" +
+                        $"若這就是既有的 Hugo 網站，請把名稱改成 {info.Repo}，或用上方「連結既有 Repository」。";
+                    AppendLog(StatusMessage);
+                    return;
+                }
+
+                RepositoryUrl = $"https://github.com/{info.Owner}/{info.Repo}";
+                AppendLog($"本機已連結 {info.Owner}/{info.Repo}，改用安全連結既有 repository 流程。");
+                reuseExisting = true;
+            }
+            else
+            {
+                StatusMessage = $"正在確認 GitHub 上是否已有 {requestedName}…";
+                var lookup = await Services.GitHub.LookupOwnedRepositoryAsync(requestedName);
+                if (!lookup.CheckSucceeded)
+                {
+                    StatusMessage = lookup.Message;
+                    AppendLog(lookup.Message);
+                    return;
+                }
+
+                if (lookup.Exists)
+                {
+                    AppendLog(lookup.Message);
+                    if (!lookup.CanReuse || lookup.Target is not { IsValid: true })
+                    {
+                        StatusMessage = lookup.Message;
+                        return;
+                    }
+
+                    RepositoryUrl = lookup.Target.CanonicalUrl ?? RepositoryUrl;
+                    reuseExisting = true;
+                }
+            }
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+
+        if (reuseExisting)
+        {
+            await ConnectExistingRepositoryAsync();
+            return;
+        }
+
         IsBusy = true;
         try
         {
@@ -250,7 +412,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                 StatusMessage = m;
             });
             var result = await Services.GitHub.CreateRepoAndPushAsync(
-                site, RepoName.Trim(), IsPublicRepo, progress);
+                site, requestedName, IsPublicRepo, progress);
             AppendLog(result.CombinedOutput);
             StatusMessage = result.IsPartialSuccess
                 ? "推送成功；請由 Repository 擁有者在 GitHub Pages 設定中選擇 GitHub Actions 來源"
@@ -284,7 +446,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                 return;
             }
 
-            StatusMessage = "尚未連結 GitHub repository。請先在上方貼上完整 Repository URL，再按「連結、推送並啟用 Pages」。";
+            StatusMessage = "尚未連結 repository。請先在上方貼上完整 Repository URL，再按「連結、推送並設定 Pages」。";
             AppendLog(StatusMessage);
             return;
         }
@@ -393,13 +555,15 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         DeploymentMonitorSchedule = "每 5 分鐘自動檢查 · 正在連線";
         try
         {
-            if (!RequireSite(out var site))
+            if (!HasLocalSite)
             {
                 DeploymentMonitorTitle = "尚未選擇網站";
-                DeploymentMonitorSummary = "請先在「環境」開啟或建立 Hugo 網站。";
+            DeploymentMonitorSummary = "請先在「環境」開啟、建立或從 Git 平台複製 Hugo 網站。";
                 DeploymentMonitorSchedule = "選擇網站後開始每 5 分鐘檢查";
                 return;
             }
+
+            var site = Services.CurrentSitePath!;
 
             if (string.IsNullOrWhiteSpace(PagesUrl))
             {
@@ -492,8 +656,10 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     private async Task AddWorkflowOnlyAsync()
     {
         if (!RequireSite(out var site)) return;
-        await Services.GitHub.EnsureGitHubActionsWorkflowAsync(site);
-        StatusMessage = "已寫入 .github/workflows/hugo.yml";
+        var info = await Services.GitHub.GetInfoAsync(site);
+        var provider = info.Provider ?? GitHostingProvider.GitHub;
+        await Services.GitHub.EnsureHostingWorkflowAsync(site, provider);
+        StatusMessage = $"已寫入 {provider.PagesProductName()} 部署設定";
         AppendLog(StatusMessage);
     }
 
@@ -502,5 +668,44 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         if (string.IsNullOrWhiteSpace(message)) return;
         var line = $"[{DateTime.Now:HH:mm:ss}] {message.Trim()}";
         Log = string.IsNullOrEmpty(Log) ? line : Log + Environment.NewLine + line;
+    }
+
+    private void UpdateRepositoryTarget(string value)
+    {
+        var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(value);
+        CanConnectRepository = target.IsValid;
+        UpdateCloneAvailability();
+        if (!target.IsValid)
+        {
+            RepositoryTargetSummary = string.IsNullOrWhiteSpace(value)
+                ? "貼上 GitHub、GitLab、Codeberg 或 Bitbucket repository / Pages 網址後，Hugoer 會先顯示目標與建議網址。"
+                : target.ErrorMessage;
+            return;
+        }
+
+        RepoName = target.Repository!;
+        var destination = GitHubClonePath.TryGetDestination(CloneParent, target.Repository, out var pathError);
+        var pagesUrl = string.IsNullOrWhiteSpace(target.PagesUrl)
+            ? "此平台/此 repo 沒有可推導的專案 Pages 網址"
+            : target.PagesUrl;
+        RepositoryTargetSummary =
+            $"平台：{target.ProviderName}\n" +
+            $"Repository：{target.Owner}/{target.Repository}\n" +
+            $"網站類型：{(target.IsUserOrOrganizationSite ? "使用者／組織網站" : "專案網站")}\n" +
+            $"建議網址：{pagesUrl}" +
+            (HasLocalSite ? string.Empty : $"\n本機目標：{destination ?? pathError}");
+    }
+
+    private void UpdateCloneAvailability() =>
+        CanCloneToLocal = CanConnectRepository && !string.IsNullOrWhiteSpace(CloneParent) && !IsBusy && !HasLocalSite;
+
+    private void ApplyPagesRepositories(GitHubPagesRepositoryList list)
+    {
+        PagesRepositories.Clear();
+        foreach (var item in list.Repositories)
+            PagesRepositories.Add(item);
+        HasPagesRepositories = PagesRepositories.Count > 0;
+        if (PagesRepositories.Count == 1)
+            SelectedPagesRepository = PagesRepositories[0];
     }
 }
