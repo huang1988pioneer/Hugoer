@@ -18,10 +18,22 @@
                         <StackPanel Spacing="4">
                             <TextBlock Text="{Binding HugoStatus}" FontWeight="SemiBold"/>
                             <TextBlock Text="{Binding HugoPath}" Classes="mono muted" TextWrapping="Wrap"/>
+                            <Border Background="#2A1F10" BorderBrush="#8A5A14" BorderThickness="1"
+                                    CornerRadius="8" Padding="10,7"
+                                    IsVisible="{Binding HugoUpdateAvailable}">
+                                <TextBlock Text="{Binding HugoUpdateMessage}"
+                                           Foreground="#F4C77B"
+                                           FontWeight="SemiBold"
+                                           TextWrapping="Wrap"/>
+                            </Border>
+                            <TextBlock Text="{Binding HugoUpdateMessage}"
+                                       Classes="caption"
+                                       TextWrapping="Wrap"
+                                       IsVisible="{Binding !HugoUpdateAvailable}"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                             <Button Content="重新偵測" Command="{Binding RefreshHugoCommand}"/>
-                            <Button Content="一鍵安裝 Hugo Extended" Classes="accent"
+                            <Button Content="{Binding HugoInstallButtonText}" Classes="accent"
                                     Command="{Binding InstallHugoCommand}"
                                     IsEnabled="{Binding !IsBusy}"/>
                         </StackPanel>

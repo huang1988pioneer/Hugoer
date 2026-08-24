@@ -28,6 +28,7 @@ public sealed class SettingsService
 
             var json = File.ReadAllText(PathHelper.SettingsPath);
             _settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+            _settings.GitProviderSettings ??= [];
         }
         catch
         {
@@ -50,6 +51,28 @@ public sealed class SettingsService
     public void SetMarkdownEditorMode(string mode)
     {
         _settings.MarkdownEditorMode = mode;
+        Save();
+    }
+
+    public GitProviderSettings GetGitProviderSettings(GitHostingProvider provider)
+    {
+        var profile = _settings.GitProviderSettings
+            .FirstOrDefault(item => item.Provider == provider);
+        if (profile is not null)
+            return profile;
+
+        profile = new GitProviderSettings { Provider = provider };
+        _settings.GitProviderSettings.Add(profile);
+        return profile;
+    }
+
+    public void SaveGitProviderSettings(GitProviderSettings profile)
+    {
+        var index = _settings.GitProviderSettings.FindIndex(item => item.Provider == profile.Provider);
+        if (index >= 0)
+            _settings.GitProviderSettings[index] = profile;
+        else
+            _settings.GitProviderSettings.Add(profile);
         Save();
     }
 }

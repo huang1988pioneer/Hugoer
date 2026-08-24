@@ -24,6 +24,18 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
     public partial bool HugoInstalled { get; set; }
 
     [ObservableProperty]
+    public partial string HugoUpdateMessage { get; set; } = "尚未檢查 Hugo 最新版本。";
+
+    [ObservableProperty]
+    public partial bool HugoUpdateAvailable { get; set; }
+
+    [ObservableProperty]
+    public partial bool HugoLatestCheckSucceeded { get; set; }
+
+    [ObservableProperty]
+    public partial string HugoInstallButtonText { get; set; } = "一鍵安裝 Hugo Extended";
+
+    [ObservableProperty]
     public partial string SitePath { get; set; } = string.Empty;
 
     [ObservableProperty]
@@ -95,6 +107,26 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
             HugoStatus = info.StatusMessage;
             HugoPath = info.ExecutablePath ?? string.Empty;
             AppendLog(info.StatusMessage);
+
+            if (info.IsInstalled)
+            {
+                HugoUpdateMessage = "正在檢查 Hugo 最新版本…";
+                var latest = await Services.Hugo.CheckLatestVersionAsync(info.Version);
+                HugoLatestCheckSucceeded = latest.CheckSucceeded;
+                HugoUpdateAvailable = latest.UpdateAvailable;
+                HugoUpdateMessage = latest.Message;
+                HugoInstallButtonText = latest.UpdateAvailable
+                    ? $"更新到 Hugo Extended v{latest.LatestVersion}"
+                    : "一鍵安裝／更新 Hugo Extended";
+                AppendLog(latest.Message);
+            }
+            else
+            {
+                HugoLatestCheckSucceeded = false;
+                HugoUpdateAvailable = false;
+                HugoUpdateMessage = "尚未安裝 Hugo；安裝時會取得最新版 Hugo Extended。";
+                HugoInstallButtonText = "一鍵安裝 Hugo Extended";
+            }
         }
         finally
         {
@@ -106,7 +138,7 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
     private async Task InstallHugoAsync()
     {
         IsBusy = true;
-        StatusMessage = "正在安裝 Hugo…";
+        StatusMessage = HugoInstalled ? "正在更新 Hugo…" : "正在安裝 Hugo…";
         try
         {
             var progress = new Progress<string>(msg =>
@@ -116,7 +148,7 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
             });
             var result = await Services.Hugo.InstallHugoAsync(progress);
             AppendLog(result.CombinedOutput);
-            StatusMessage = result.Succeeded ? "Hugo 安裝完成" : "安裝失敗，請查看日誌";
+            StatusMessage = result.Succeeded ? "Hugo 安裝／更新完成" : "安裝或更新失敗，請查看日誌";
             await RefreshHugoAsync();
         }
         finally

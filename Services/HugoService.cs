@@ -1,5 +1,8 @@
 using System.Diagnostics;
+using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Hugoer.Helpers;
 using Hugoer.Models;
@@ -154,6 +157,21 @@ public sealed partial class HugoService
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
+        progress?.Report("嘗試使用 winget 更新 Hugo Extended…");
+        var upgrade = await ProcessRunner.RunAsync(
+            "winget",
+            "upgrade --id Hugo.Hugo.Extended -e --accept-source-agreements --accept-package-agreements --disable-interactivity",
+            timeoutMs: 300_000,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (upgrade.Succeeded
+            || upgrade.CombinedOutput.Contains("No available upgrade", StringComparison.OrdinalIgnoreCase)
+            || upgrade.CombinedOutput.Contains("No installed package found", StringComparison.OrdinalIgnoreCase))
+        {
+            if (upgrade.Succeeded && !upgrade.CombinedOutput.Contains("No available upgrade", StringComparison.OrdinalIgnoreCase))
+                return upgrade;
+        }
+
         progress?.Report("嘗試使用 winget 安裝 Hugo Extended…");
         var winget = await ProcessRunner.RunAsync(
             "winget",
@@ -182,6 +200,107 @@ public sealed partial class HugoService
 
         progress?.Report("改為下載官方 binary 到本機 tools…");
         return await DownloadHugoBinaryAsync(progress, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<HugoVersionCheck> CheckLatestVersionAsync(
+        string? currentVersion,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Hugoer/1.4");
+
+            var release = await http.GetFromJsonAsync<GitHubRelease>(
+                "https://api.github.com/repos/gohugoio/hugo/releases/latest",
+                cancellationToken).ConfigureAwait(false);
+
+            var latest = NormalizeVersion(release?.TagName);
+            if (string.IsNullOrWhiteSpace(latest))
+            {
+                return new HugoVersionCheck
+                {
+                    CheckSucceeded = false,
+                    CurrentVersion = currentVersion,
+                    Message = "無法解析 Hugo 最新版本資訊。"
+                };
+            }
+
+            var current = NormalizeVersion(currentVersion);
+            if (string.IsNullOrWhiteSpace(current))
+            {
+                return new HugoVersionCheck
+                {
+                    CheckSucceeded = true,
+                    CurrentVersion = currentVersion,
+                    LatestVersion = latest,
+                    ReleaseUrl = release?.HtmlUrl,
+                    UpdateAvailable = false,
+                    Message = $"Hugo 最新版是 v{latest}。尚未偵測到可比較的本機版本。"
+                };
+            }
+
+            var updateAvailable = CompareVersions(current, latest) < 0;
+            return new HugoVersionCheck
+            {
+                CheckSucceeded = true,
+                CurrentVersion = current,
+                LatestVersion = latest,
+                ReleaseUrl = release?.HtmlUrl,
+                UpdateAvailable = updateAvailable,
+                Message = updateAvailable
+                    ? $"可更新：本機 Hugo v{current}，官方最新版 v{latest}。建議更新 Hugo Extended。"
+                    : $"Hugo 已是最新版：v{current}。"
+            };
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            return new HugoVersionCheck
+            {
+                CheckSucceeded = false,
+                CurrentVersion = currentVersion,
+                Message = $"暫時無法檢查 Hugo 最新版：{ex.Message}"
+            };
+        }
+    }
+
+    internal static string? NormalizeVersion(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+            return null;
+
+        var match = SemanticVersionRegex().Match(version);
+        return match.Success
+            ? $"{match.Groups["major"].Value}.{match.Groups["minor"].Value}.{match.Groups["patch"].Value}"
+            : null;
+    }
+
+    internal static int CompareVersions(string? left, string? right)
+    {
+        var leftParts = ParseVersionParts(left);
+        var rightParts = ParseVersionParts(right);
+        for (var index = 0; index < 3; index++)
+        {
+            var comparison = leftParts[index].CompareTo(rightParts[index]);
+            if (comparison != 0)
+                return comparison;
+        }
+
+        return 0;
+    }
+
+    private static int[] ParseVersionParts(string? version)
+    {
+        var normalized = NormalizeVersion(version);
+        if (normalized is null)
+            return [0, 0, 0];
+
+        return normalized
+            .Split('.')
+            .Select(part => int.TryParse(part, out var value) ? value : 0)
+            .Concat([0, 0, 0])
+            .Take(3)
+            .ToArray();
     }
 
     private async Task<CommandResult> DownloadHugoBinaryAsync(
@@ -784,6 +903,9 @@ public sealed partial class HugoService
     [GeneratedRegex(@"hugo\s+v?([0-9]+\.[0-9]+\.[0-9]+[^\s]*)", RegexOptions.IgnoreCase)]
     private static partial Regex VersionRegex();
 
+    [GeneratedRegex(@"v?(?<major>[0-9]+)\.(?<minor>[0-9]+)\.(?<patch>[0-9]+)", RegexOptions.IgnoreCase)]
+    private static partial Regex SemanticVersionRegex();
+
     [GeneratedRegex(@"""browser_download_url"":\s*""(https:[^""]*hugo_extended_[^""]*windows-amd64\.zip)""", RegexOptions.IgnoreCase)]
     private static partial Regex AssetRegex();
 
@@ -803,4 +925,13 @@ public sealed partial class HugoService
 public sealed record HugoServerStartResult(Process? Process, string Message, string Url)
 {
     public bool Succeeded => Process is not null;
+}
+
+internal sealed class GitHubRelease
+{
+    [JsonPropertyName("tag_name")]
+    public string? TagName { get; init; }
+
+    [JsonPropertyName("html_url")]
+    public string? HtmlUrl { get; init; }
 }

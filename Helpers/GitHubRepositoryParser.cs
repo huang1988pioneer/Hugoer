@@ -76,6 +76,16 @@ public static partial class GitHubRepositoryParser
         if (provider is null)
             return Invalid(UnsupportedUrlMessage);
 
+        // Bitbucket's Source page URL appends /src/<branch>/... to the repository URL.
+        // Treat it as the repository the user is viewing instead of rejecting a URL
+        // copied directly from the browser address bar.
+        if (provider == GitHostingProvider.Bitbucket
+            && segments.Length >= 3
+            && segments[2].Equals("src", StringComparison.OrdinalIgnoreCase))
+        {
+            segments = segments[..2];
+        }
+
         var minimumSegments = provider == GitHostingProvider.GitLab ? 2 : 2;
         if (segments.Length < minimumSegments)
             return Invalid("網址必須指向 repository 首頁，不可包含空白或不完整路徑。");

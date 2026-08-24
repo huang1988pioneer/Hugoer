@@ -40,6 +40,21 @@ try
     Assert(missing.State == DeploymentVersionState.Previous,
         $"Expected Previous for a missing marker, received {missing.State}: {missing.Message}");
 
+    var unauthorized = DeploymentMonitorService.BuildUnavailableMessage(
+        HttpStatusCode.Unauthorized,
+        "https://group5923835.gitlab.io/fengtusama.gitlab.io/");
+    Assert(unauthorized.Contains("GitLab Pages", StringComparison.Ordinal)
+           && unauthorized.Contains("Pages access control", StringComparison.Ordinal)
+           && unauthorized.Contains("Everyone", StringComparison.Ordinal),
+        $"Protected GitLab Pages must explain visibility/access control settings: {unauthorized}");
+
+    var forbidden = DeploymentMonitorService.BuildUnavailableMessage(
+        HttpStatusCode.Forbidden,
+        "https://group5923835.gitlab.io/fengtusama.gitlab.io/");
+    Assert(forbidden.Contains("HTTP 403", StringComparison.Ordinal)
+           && forbidden.Contains("公開", StringComparison.Ordinal),
+        $"Forbidden GitLab Pages must produce an actionable public-access message: {forbidden}");
+
     Console.WriteLine("DEPLOYMENT_MONITOR_HARNESS_OK");
 }
 finally
@@ -75,9 +90,8 @@ sealed class SingleResponseServer : IDisposable
         }
 
         var payload = Encoding.UTF8.GetBytes(body);
-        var reason = statusCode == HttpStatusCode.OK ? "OK" : "Not Found";
         var headers = Encoding.ASCII.GetBytes(
-            $"HTTP/1.1 {(int)statusCode} {reason}\r\n" +
+            $"HTTP/1.1 {(int)statusCode} {statusCode}\r\n" +
             "Content-Type: application/json; charset=utf-8\r\n" +
             $"Content-Length: {payload.Length}\r\n" +
             "Connection: close\r\n\r\n");

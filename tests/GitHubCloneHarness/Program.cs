@@ -83,6 +83,16 @@ Assert(bitbucket.IsValid && bitbucket.Provider == GitHostingProvider.Bitbucket,
 Assert(bitbucket.IsUserOrOrganizationSite && bitbucket.PagesUrl == "https://octocat.bitbucket.io/",
     "Bitbucket workspace static site URL must be derived for workspace.bitbucket.io repository.");
 
+var bitbucketSourcePage = GitHubRepositoryParser.Parse(
+    "https://bitbucket.org/fengtusama/fengtusama.bitbucket.io/src/main/");
+Assert(bitbucketSourcePage.IsValid && bitbucketSourcePage.Provider == GitHostingProvider.Bitbucket,
+    "Bitbucket source page URL must normalize to its repository.");
+Assert(bitbucketSourcePage.Owner == "fengtusama"
+       && bitbucketSourcePage.Repository == "fengtusama.bitbucket.io",
+    "Bitbucket source page URL must ignore the source branch path.");
+Assert(bitbucketSourcePage.CanonicalUrl == "https://bitbucket.org/fengtusama/fengtusama.bitbucket.io.git",
+    "Bitbucket source page URL must produce the canonical Git remote.");
+
 var issues = GitHubRepositoryParser.Parse("https://github.com/octocat/hello-world/issues");
 Assert(!issues.IsValid, "repository subpaths must be rejected.");
 

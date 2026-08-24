@@ -9,16 +9,57 @@ namespace Hugoer.ViewModels;
 public partial class GitHubViewModel : PageViewModelBase, IDisposable
 {
     private static readonly TimeSpan DeploymentCheckInterval = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan[] PostPushDeploymentCheckDelays =
+    [
+        TimeSpan.FromSeconds(5),
+        TimeSpan.FromSeconds(10),
+        TimeSpan.FromSeconds(20)
+    ];
     private readonly SemaphoreSlim _deploymentCheckGate = new(1, 1);
     private CancellationTokenSource? _deploymentMonitorCts;
     private DeploymentVersionState? _lastDeploymentState;
     private string? _lastExpectedDeploymentId;
+    private GitHostingProvider _lastDeploymentProvider = GitHostingProvider.GitHub;
+    private string? _lastDeploymentPagesUrl;
+    private GitHostingProvider _activeProvider = GitHostingProvider.GitHub;
+    private bool _switchingProviderSettings;
+    private bool _providerWasSelectedByUser;
+
+    public IReadOnlyList<GitHostingProviderOption> ProviderOptions { get; } =
+    [
+        new()
+        {
+            Provider = GitHostingProvider.GitHub,
+            DisplayName = "GitHub",
+            Hint = "使用 gh CLI 或 Git credential manager；可自動設定 GitHub Pages。"
+        },
+        new()
+        {
+            Provider = GitHostingProvider.GitLab,
+            DisplayName = "GitLab",
+            Hint = "使用 Git 憑證；推送時可自動加入 GitLab Pages CI。"
+        },
+        new()
+        {
+            Provider = GitHostingProvider.Codeberg,
+            DisplayName = "Codeberg",
+            Hint = "使用 Git 憑證；推送後依 Codeberg Pages 設定提示完成部署。"
+        },
+        new()
+        {
+            Provider = GitHostingProvider.Bitbucket,
+            DisplayName = "Bitbucket",
+            Hint = "使用 Git 憑證；推送後依 Bitbucket 靜態網站設定提示完成部署。"
+        }
+    ];
 
     public GitHubViewModel()
     {
         Title = "Git 部署";
         var path = Services.CurrentSitePath;
         HasLocalSite = !string.IsNullOrWhiteSpace(path) && Directory.Exists(path);
+        SelectedProvider = ProviderOptions[0];
+        LoadProviderSettings(GitHostingProvider.GitHub);
     }
 
     [ObservableProperty]
@@ -41,6 +82,24 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
 
     [ObservableProperty]
     public partial string RepositoryUrl { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial GitHostingProviderOption? SelectedProvider { get; set; }
+
+    [ObservableProperty]
+    public partial string ProviderAccount { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string ProviderPagesUrl { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string ProviderHint { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string ProviderSettingsStatus { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial bool IsGitHubProvider { get; set; } = true;
 
     [ObservableProperty]
     public partial string RepositoryTargetSummary { get; set; } = "貼上 GitHub、GitLab、Codeberg 或 Bitbucket repository / Pages 網址後，Hugoer 會先顯示目標與建議網址。";
@@ -92,7 +151,23 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     partial void OnRepositoryUrlChanged(string value)
     {
         UpdateRepositoryTarget(value);
+        PersistProviderSettings();
     }
+
+    partial void OnSelectedProviderChanged(GitHostingProviderOption? value)
+    {
+        if (value is null || _switchingProviderSettings || value.Provider == _activeProvider)
+            return;
+
+        _providerWasSelectedByUser = true;
+        PersistProviderSettings();
+        LoadProviderSettings(value.Provider);
+    }
+
+    partial void OnProviderAccountChanged(string value) => PersistProviderSettings();
+    partial void OnProviderPagesUrlChanged(string value) => PersistProviderSettings();
+    partial void OnSyncRecommendedBaseUrlChanged(bool value) => PersistProviderSettings();
+    partial void OnCommitMessageChanged(string value) => PersistProviderSettings();
 
     partial void OnCloneParentChanged(string value)
     {
@@ -150,15 +225,22 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                 RepoName = Path.GetFileName(site.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
             var info = await Services.GitHub.GetInfoAsync(site);
+            if (GitProviderSelectionPolicy.ShouldAdoptDetectedProvider(
+                    _providerWasSelectedByUser,
+                    info.Provider,
+                    _activeProvider))
+            {
+                var detectedProvider = info.Provider!.Value;
+                LoadProviderSettings(detectedProvider);
+            }
             if (string.IsNullOrWhiteSpace(RepositoryUrl) && !string.IsNullOrWhiteSpace(info.RemoteUrl))
                 RepositoryUrl = info.RemoteUrl;
-            RemoteSummary =
-                $"平台：{info.ProviderName}\n" +
-                $"GitHub 使用者：{info.GhUser ?? "（僅 GitHub 顯示）"}\n" +
-                $"GitHub 驗證：{(info.GhAuthenticated ? "已登入" : "未登入或非 GitHub remote")}\n" +
-                $"分支：{info.Branch ?? "—"}\n" +
-                $"Remote：{info.RemoteUrl ?? "（無 origin）"}\n" +
-                $"Repo：{(info.Owner is null ? "—" : $"{info.Owner}/{info.Repo}")}";
+            RemoteSummary = GitProviderStatusFormatter.BuildRemoteSummary(
+                info,
+                _activeProvider,
+                _providerWasSelectedByUser,
+                GetActiveRepositoryTarget(),
+                ProviderAccount);
 
             await RefreshPagesStatusAsync();
         }
@@ -204,6 +286,11 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             AppendLog(StatusMessage);
             return;
         }
+        if (target.Provider != _activeProvider)
+        {
+            StatusMessage = $"請先切換到 {target.ProviderName} 設定，再複製此 repository。";
+            return;
+        }
 
         if (string.IsNullOrWhiteSpace(CloneParent))
         {
@@ -244,6 +331,11 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         if (!target.IsValid)
         {
             StatusMessage = target.ErrorMessage;
+            return;
+        }
+        if (target.Provider != _activeProvider)
+        {
+            StatusMessage = $"請先切換到 {target.ProviderName} 設定，再連結此 repository。";
             return;
         }
 
@@ -292,7 +384,8 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                     ? $"已連結 {target.ProviderName} repository 並推送網站"
                     : "連結或部署失敗；請查看操作日誌";
             await RefreshAsync();
-            await CheckDeploymentVersionAsync(manual: false, CancellationToken.None);
+            if (result.Succeeded)
+                await CheckDeploymentVersionAfterPushAsync(CancellationToken.None);
         }
         finally
         {
@@ -420,7 +513,8 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                     ? "已推送並嘗試啟用 GitHub Pages"
                     : "部署過程有錯誤，請查看日誌";
             await RefreshAsync();
-            await CheckDeploymentVersionAsync(manual: false, CancellationToken.None);
+            if (result.Succeeded)
+                await CheckDeploymentVersionAfterPushAsync(CancellationToken.None);
         }
         finally
         {
@@ -474,7 +568,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             StatusMessage = result.Succeeded ? "推送完成" : "推送失敗";
             await RefreshPagesStatusAsync();
             if (result.Succeeded)
-                await CheckDeploymentVersionAsync(manual: false, CancellationToken.None);
+                await CheckDeploymentVersionAfterPushAsync(CancellationToken.None);
         }
         finally
         {
@@ -489,7 +583,14 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         IsBusy = true;
         try
         {
-            await Services.GitHub.EnsureGitHubActionsWorkflowAsync(site);
+            await Services.GitHub.EnsureHostingWorkflowAsync(site, _activeProvider);
+            if (_activeProvider != GitHostingProvider.GitHub)
+            {
+                await RefreshPagesStatusAsync();
+                AppendLog(StatusMessage);
+                return;
+            }
+
             var result = await Services.GitHub.EnablePagesFromActionsAsync(site);
             AppendLog(result.CombinedOutput);
             StatusMessage = result.Succeeded ? "已請求啟用 GitHub Pages" : "啟用失敗";
@@ -506,7 +607,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     {
         if (!RequireSite(out var site)) return;
 
-        var status = await Services.GitHub.GetPagesStatusAsync(site);
+        var status = await Services.GitHub.GetPagesStatusAsync(site, GetActiveRepositoryTarget());
         PagesUrl = status.HtmlUrl;
         PagesSummary =
             $"啟用：{(status.Enabled ? "是" : "否")}\n" +
@@ -550,6 +651,8 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     {
         if (!await _deploymentCheckGate.WaitAsync(0, cancellationToken)) return;
 
+        var providerAtStart = _activeProvider;
+        var pagesUrlAtStart = PagesUrl;
         IsCheckingDeployment = true;
         DeploymentMonitorTitle = "正在檢查線上版本…";
         DeploymentMonitorSchedule = "每 5 分鐘自動檢查 · 正在連線";
@@ -567,14 +670,20 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
 
             if (string.IsNullOrWhiteSpace(PagesUrl))
             {
-                var pages = await Services.GitHub.GetPagesStatusAsync(site, cancellationToken);
+                var pages = await Services.GitHub.GetPagesStatusAsync(site, GetActiveRepositoryTarget(), cancellationToken);
                 PagesUrl = pages.HtmlUrl;
+                pagesUrlAtStart = PagesUrl;
             }
 
-            var result = await Services.DeploymentMonitor.CheckAsync(site, PagesUrl, cancellationToken);
+            var result = await Services.DeploymentMonitor.CheckAsync(site, pagesUrlAtStart, cancellationToken);
+            if (!IsCurrentDeploymentTarget(providerAtStart, pagesUrlAtStart))
+                return;
+
             var stateChanged = result.State != _lastDeploymentState
                                || !string.Equals(result.ExpectedDeploymentId, _lastExpectedDeploymentId,
-                                   StringComparison.Ordinal);
+                                   StringComparison.Ordinal)
+                               || _lastDeploymentProvider != providerAtStart
+                               || !string.Equals(_lastDeploymentPagesUrl, pagesUrlAtStart, StringComparison.OrdinalIgnoreCase);
 
             DeploymentMonitorTitle = result.State switch
             {
@@ -607,6 +716,8 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
 
             _lastDeploymentState = result.State;
             _lastExpectedDeploymentId = result.ExpectedDeploymentId;
+            _lastDeploymentProvider = providerAtStart;
+            _lastDeploymentPagesUrl = pagesUrlAtStart;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -623,6 +734,27 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         {
             IsCheckingDeployment = false;
             _deploymentCheckGate.Release();
+        }
+    }
+
+    private async Task CheckDeploymentVersionAfterPushAsync(CancellationToken cancellationToken)
+    {
+        await CheckDeploymentVersionAsync(manual: false, cancellationToken);
+        if (_lastDeploymentState == DeploymentVersionState.Latest)
+            return;
+
+        for (var attempt = 0; attempt < PostPushDeploymentCheckDelays.Length; attempt++)
+        {
+            var delay = PostPushDeploymentCheckDelays[attempt];
+            DeploymentMonitorTitle = "等待 Pages 發布最新內容…";
+            DeploymentMonitorSummary = $"{_activeProvider.PagesProductName()} 可能還在更新快取；Hugoer 會在 {delay.TotalSeconds:0} 秒後再次檢查。";
+            DeploymentMonitorSchedule = $"推送後快速檢查 · 第 {attempt + 2} 次";
+            StatusMessage = "網站已推送，正在等待線上版本更新。";
+
+            await Task.Delay(delay, cancellationToken);
+            await CheckDeploymentVersionAsync(manual: true, cancellationToken);
+            if (_lastDeploymentState == DeploymentVersionState.Latest)
+                return;
         }
     }
 
@@ -656,8 +788,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     private async Task AddWorkflowOnlyAsync()
     {
         if (!RequireSite(out var site)) return;
-        var info = await Services.GitHub.GetInfoAsync(site);
-        var provider = info.Provider ?? GitHostingProvider.GitHub;
+        var provider = GetActiveRepositoryTarget()?.Provider ?? _activeProvider;
         await Services.GitHub.EnsureHostingWorkflowAsync(site, provider);
         StatusMessage = $"已寫入 {provider.PagesProductName()} 部署設定";
         AppendLog(StatusMessage);
@@ -670,16 +801,82 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         Log = string.IsNullOrEmpty(Log) ? line : Log + Environment.NewLine + line;
     }
 
+    [RelayCommand]
+    private void SaveProviderSettings()
+    {
+        PersistProviderSettings();
+        ProviderSettingsStatus = $"已儲存 {SelectedProvider?.DisplayName ?? _activeProvider.DisplayName()} 設定";
+        StatusMessage = ProviderSettingsStatus;
+    }
+
+    private void LoadProviderSettings(GitHostingProvider provider)
+    {
+        _switchingProviderSettings = true;
+        try
+        {
+            _activeProvider = provider;
+            var profile = Services.Settings.GetGitProviderSettings(provider);
+            var option = ProviderOptions.First(item => item.Provider == provider);
+            SelectedProvider = option;
+            ProviderHint = option.Hint;
+            IsGitHubProvider = provider == GitHostingProvider.GitHub;
+            ProviderAccount = profile.AccountOrWorkspace;
+            ProviderPagesUrl = profile.PagesUrl;
+            SyncRecommendedBaseUrl = profile.SyncRecommendedBaseUrl;
+            CommitMessage = profile.CommitMessage;
+            RepositoryUrl = profile.RepositoryUrl;
+            PagesUrl = string.IsNullOrWhiteSpace(profile.PagesUrl) ? null : profile.PagesUrl;
+            HasPagesRepositories = provider == GitHostingProvider.GitHub && PagesRepositories.Count > 0;
+            ProviderSettingsStatus = $"已載入 {option.DisplayName} 的獨立設定";
+            ResetDeploymentMonitorForProvider(option.DisplayName);
+        }
+        finally
+        {
+            _switchingProviderSettings = false;
+        }
+
+        UpdateRepositoryTarget(RepositoryUrl);
+    }
+
+    private GitHubRepositoryTarget? GetActiveRepositoryTarget()
+    {
+        var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(RepositoryUrl);
+        return target.IsValid && target.Provider == _activeProvider ? target : null;
+    }
+
+    private void PersistProviderSettings()
+    {
+        if (_switchingProviderSettings)
+            return;
+
+        var profile = Services.Settings.GetGitProviderSettings(_activeProvider);
+        profile.RepositoryUrl = RepositoryUrl.Trim();
+        profile.AccountOrWorkspace = ProviderAccount.Trim();
+        profile.PagesUrl = ProviderPagesUrl.Trim();
+        profile.SyncRecommendedBaseUrl = SyncRecommendedBaseUrl;
+        profile.CommitMessage = string.IsNullOrWhiteSpace(CommitMessage)
+            ? "Update site via Hugoer"
+            : CommitMessage.Trim();
+        Services.Settings.SaveGitProviderSettings(profile);
+    }
+
     private void UpdateRepositoryTarget(string value)
     {
         var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(value);
-        CanConnectRepository = target.IsValid;
+        CanConnectRepository = target.IsValid && target.Provider == _activeProvider;
         UpdateCloneAvailability();
         if (!target.IsValid)
         {
             RepositoryTargetSummary = string.IsNullOrWhiteSpace(value)
                 ? "貼上 GitHub、GitLab、Codeberg 或 Bitbucket repository / Pages 網址後，Hugoer 會先顯示目標與建議網址。"
                 : target.ErrorMessage;
+            return;
+        }
+
+        if (target.Provider != _activeProvider)
+        {
+            RepositoryTargetSummary =
+                $"這個網址屬於 {target.ProviderName}，目前選擇的是 {_activeProvider.DisplayName()}。請先切換上方 Git 平台，再使用此網址。";
             return;
         }
 
@@ -699,12 +896,29 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     private void UpdateCloneAvailability() =>
         CanCloneToLocal = CanConnectRepository && !string.IsNullOrWhiteSpace(CloneParent) && !IsBusy && !HasLocalSite;
 
+    private bool IsCurrentDeploymentTarget(GitHostingProvider provider, string? pagesUrl) =>
+        _activeProvider == provider
+        && string.Equals(PagesUrl, pagesUrl, StringComparison.OrdinalIgnoreCase);
+
+    private void ResetDeploymentMonitorForProvider(string providerName)
+    {
+        _lastDeploymentState = null;
+        _lastExpectedDeploymentId = null;
+        _lastDeploymentProvider = _activeProvider;
+        _lastDeploymentPagesUrl = PagesUrl;
+        DeploymentMonitorTitle = $"等待 {providerName} 部署";
+        DeploymentMonitorSummary = string.IsNullOrWhiteSpace(PagesUrl)
+            ? $"尚未取得 {providerName} Pages 網址；推送後 Hugoer 會重新檢查。"
+            : $"目前監控 {providerName}：{PagesUrl}";
+        DeploymentMonitorSchedule = "每 5 分鐘自動檢查";
+    }
+
     private void ApplyPagesRepositories(GitHubPagesRepositoryList list)
     {
         PagesRepositories.Clear();
         foreach (var item in list.Repositories)
             PagesRepositories.Add(item);
-        HasPagesRepositories = PagesRepositories.Count > 0;
+        HasPagesRepositories = IsGitHubProvider && PagesRepositories.Count > 0;
         if (PagesRepositories.Count == 1)
             SelectedPagesRepository = PagesRepositories[0];
     }

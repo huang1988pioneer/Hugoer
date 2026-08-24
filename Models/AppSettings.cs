@@ -9,6 +9,8 @@ public sealed class AppSettings
     public string ThemeVariant { get; set; } = "Default";
     /// <summary>Last Markdown editor mode: Wysiwyg or Source.</summary>
     public string MarkdownEditorMode { get; set; } = "Wysiwyg";
+    /// <summary>Independent connection preferences for each Git hosting provider.</summary>
+    public List<GitProviderSettings> GitProviderSettings { get; set; } = [];
 }
 
 public enum MarkdownEditorMode
@@ -33,6 +35,16 @@ public sealed class HugoInfo
     public string? ExecutablePath { get; init; }
     public bool IsExtended { get; init; }
     public string StatusMessage { get; init; } = string.Empty;
+}
+
+public sealed class HugoVersionCheck
+{
+    public bool CheckSucceeded { get; init; }
+    public string? CurrentVersion { get; init; }
+    public string? LatestVersion { get; init; }
+    public string? ReleaseUrl { get; init; }
+    public bool UpdateAvailable { get; init; }
+    public string Message { get; init; } = string.Empty;
 }
 
 public sealed class SiteInfo
@@ -164,6 +176,23 @@ public static class GitHostingProviderExtensions
         GitHostingProvider.Bitbucket => "Bitbucket Static Website",
         _ => "Pages"
     };
+}
+
+public sealed class GitProviderSettings
+{
+    public GitHostingProvider Provider { get; set; }
+    public string RepositoryUrl { get; set; } = string.Empty;
+    public string AccountOrWorkspace { get; set; } = string.Empty;
+    public string PagesUrl { get; set; } = string.Empty;
+    public bool SyncRecommendedBaseUrl { get; set; } = true;
+    public string CommitMessage { get; set; } = "Update site via Hugoer";
+}
+
+public sealed class GitHostingProviderOption
+{
+    public required GitHostingProvider Provider { get; init; }
+    public required string DisplayName { get; init; }
+    public string Hint { get; init; } = string.Empty;
 }
 
 public sealed class GitHubRepositoryTarget

@@ -91,7 +91,7 @@ public sealed class DeploymentMonitorService
             if (!response.IsSuccessStatusCode)
             {
                 return Unavailable(expected, checkedAt,
-                    $"暫時無法檢查線上版本（HTTP {(int)response.StatusCode}）。5 分鐘後會自動重試。");
+                    BuildUnavailableMessage(response.StatusCode, pagesUrl));
             }
 
             var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -168,6 +168,25 @@ public sealed class DeploymentMonitorService
             $"{MarkerFileName}?deployment={Uri.EscapeDataString(expectedId)}&checked={DateTimeOffset.UtcNow.ToUnixTimeSeconds()}");
         return true;
     }
+
+    public static string BuildUnavailableMessage(HttpStatusCode statusCode, string? pagesUrl = null)
+    {
+        if (statusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+            && IsGitLabPagesUrl(pagesUrl))
+        {
+            return
+                $"GitLab Pages 已回應 HTTP {(int)statusCode}，代表網站目前需要登入或沒有公開存取權限。" +
+                "請到 GitLab 專案的 Settings > General > Visibility, project features, permissions，" +
+                "將 Pages access control 設為 Everyone，或把專案/Pages 調整為可公開瀏覽；" +
+                "GitLab Pages 快取更新通常需要不到 1 分鐘，之後 Hugoer 會自動重試。";
+        }
+
+        return $"暫時無法檢查線上版本（HTTP {(int)statusCode}）。5 分鐘後會自動重試。";
+    }
+
+    private static bool IsGitLabPagesUrl(string? pagesUrl) =>
+        Uri.TryCreate(pagesUrl?.Trim(), UriKind.Absolute, out var uri)
+        && uri.Host.EndsWith(".gitlab.io", StringComparison.OrdinalIgnoreCase);
 
     private static DeploymentCheckResult Previous(
         DeploymentMarker expected,
