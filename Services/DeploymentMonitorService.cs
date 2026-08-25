@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Hugoer.Helpers;
 using Hugoer.Models;
 
 namespace Hugoer.Services;
@@ -63,7 +64,7 @@ public sealed class DeploymentMonitorService
             return new DeploymentCheckResult
             {
                 State = DeploymentVersionState.NotConfigured,
-                Message = "尚未取得有效的 GitHub Pages 網址，無法檢查線上版本。",
+                Message = "尚未取得有效的 Pages 網址，無法檢查線上版本。",
                 ExpectedDeploymentId = expected.DeploymentId,
                 CheckedAt = checkedAt
             };
@@ -86,6 +87,14 @@ public sealed class DeploymentMonitorService
             {
                 return Previous(expected, null, checkedAt,
                     "線上網站仍是上一版本；尚未找到最新部署標記。");
+            }
+
+            if (PagesAccessStatus.TryCreateProtectedSiteMessage(
+                    response.StatusCode,
+                    response.Headers.Location,
+                    out var protectedSiteMessage))
+            {
+                return Unavailable(expected, checkedAt, protectedSiteMessage);
             }
 
             if (!response.IsSuccessStatusCode)
@@ -122,7 +131,7 @@ public sealed class DeploymentMonitorService
                     CheckedAt = checkedAt
                 }
                 : Previous(expected, live.DeploymentId, checkedAt,
-                    "線上網站仍是上一版本；GitHub Pages 尚在部署最新內容。");
+                    "線上網站仍是上一版本；Pages 尚在部署最新內容。");
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -171,7 +180,7 @@ public sealed class DeploymentMonitorService
 
     public static string BuildUnavailableMessage(HttpStatusCode statusCode, string? pagesUrl = null)
     {
-        if (statusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+        if (PagesAccessStatus.TryCreateProtectedSiteMessage(statusCode, location: null, out var protectedSiteMessage)
             && IsGitLabPagesUrl(pagesUrl))
         {
             return
@@ -180,6 +189,9 @@ public sealed class DeploymentMonitorService
                 "將 Pages access control 設為 Everyone，或把專案/Pages 調整為可公開瀏覽；" +
                 "GitLab Pages 快取更新通常需要不到 1 分鐘，之後 Hugoer 會自動重試。";
         }
+
+        if (!string.IsNullOrWhiteSpace(protectedSiteMessage))
+            return protectedSiteMessage;
 
         return $"暫時無法檢查線上版本（HTTP {(int)statusCode}）。5 分鐘後會自動重試。";
     }
@@ -214,7 +226,8 @@ public sealed class DeploymentMonitorService
 
     private static HttpClient CreateHttpClient()
     {
-        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+        var handler = new HttpClientHandler { AllowAutoRedirect = false };
+        var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("Hugoer-Deployment-Monitor/1.0");
         return client;
     }

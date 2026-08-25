@@ -29,7 +29,7 @@ public abstract partial class PageViewModelBase : ViewModelBase
         sitePath = Services.CurrentSitePath ?? string.Empty;
         if (string.IsNullOrWhiteSpace(sitePath) || !Directory.Exists(sitePath))
         {
-            StatusMessage = "請先在「環境設定」開啟、建立，或從 GitHub 複製 Hugo 網站。";
+            StatusMessage = "請先在「環境設定」開啟、建立，或從 Git 平台複製 Hugo 網站。";
             return false;
         }
 

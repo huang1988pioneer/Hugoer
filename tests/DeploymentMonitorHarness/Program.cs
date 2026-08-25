@@ -55,6 +55,14 @@ try
            && forbidden.Contains("公開", StringComparison.Ordinal),
         $"Forbidden GitLab Pages must produce an actionable public-access message: {forbidden}");
 
+    Assert(Hugoer.Helpers.PagesAccessStatus.TryCreateProtectedSiteMessage(
+            HttpStatusCode.Found,
+            new Uri("https://projects.gitlab.io/auth?domain=https://group5923835.gitlab.io"),
+            out var authRedirect),
+        "GitLab Pages auth redirects must be classified as protected.");
+    Assert(authRedirect.Contains("導向 GitLab Pages 驗證", StringComparison.Ordinal),
+        $"GitLab Pages auth redirects must explain access control: {authRedirect}");
+
     Console.WriteLine("DEPLOYMENT_MONITOR_HARNESS_OK");
 }
 finally

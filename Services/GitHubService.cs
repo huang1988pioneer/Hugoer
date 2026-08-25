@@ -8,10 +8,14 @@ namespace Hugoer.Services;
 public sealed partial class GitHubService
 {
     private readonly DeploymentMonitorService _deploymentMonitor;
+    private readonly HugoService? _hugo;
 
-    public GitHubService(DeploymentMonitorService? deploymentMonitor = null)
+    public GitHubService(
+        DeploymentMonitorService? deploymentMonitor = null,
+        HugoService? hugo = null)
     {
         _deploymentMonitor = deploymentMonitor ?? new DeploymentMonitorService();
+        _hugo = hugo;
     }
 
     public static GitHubRepositoryTarget ParseRepositoryTarget(string? input) =>
@@ -114,8 +118,15 @@ public sealed partial class GitHubService
 
         if (target.Provider != GitHostingProvider.GitHub)
         {
-            return (true,
-                $"{target.ProviderName} 不使用 GitHub CLI 驗證權限；Hugoer 會以一般 git push 測試目前憑證是否可推送。");
+            if (string.IsNullOrWhiteSpace(target.CanonicalUrl))
+                return (false, "找不到可檢查的 repository 網址。");
+
+            var access = await ProcessRunner.RunAsync(
+                "git",
+                GitHostingAccessChecks.LsRemoteHeadArguments(target),
+                timeoutMs: 60_000,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            return GitHostingAccessChecks.FromLsRemoteResult(target, access);
         }
 
         var result = await ProcessRunner.RunAsync(
@@ -560,10 +571,6 @@ Thumbs.db
         if (!target.IsValid || string.IsNullOrWhiteSpace(target.CanonicalUrl))
             return new CommandResult { ExitCode = -1, StdErr = target.ErrorMessage };
 
-        if (target.Provider == GitHostingProvider.Bitbucket)
-            return await PublishBitbucketStaticWebsiteAsync(sitePath, target, progress, cancellationToken)
-                .ConfigureAwait(false);
-
         progress?.Report("初始化本機 Git repository…");
         var init = await InitRepoAsync(sitePath, cancellationToken).ConfigureAwait(false);
         if (!init.Succeeded) return init;
@@ -594,43 +601,63 @@ Thumbs.db
         progress?.Report("抓取遠端預設分支…");
         var fetch = await ProcessRunner.RunAsync(
             "git", "fetch origin --prune", sitePath, 120_000, cancellationToken).ConfigureAwait(false);
-        if (!fetch.Succeeded) return fetch;
+        if (!fetch.Succeeded)
+            return GitHostingProcessErrors.WithRepositoryAccessHint(target.Provider, "抓取遠端預設分支", fetch);
 
         var remoteHead = await ProcessRunner.RunAsync(
             "git", "ls-remote --symref origin HEAD", sitePath, 30_000, cancellationToken).ConfigureAwait(false);
         var branchMatch = RemoteHeadRegex().Match(remoteHead.StdOut);
-        var remoteBranch = branchMatch.Success ? branchMatch.Groups["branch"].Value : "main";
+        var remoteBranch = StaticPagesDeployment.ResolveSourceBranch(
+            target,
+            branchMatch.Success ? branchMatch.Groups["branch"].Value : null);
         if (!GitBranchRegex().IsMatch(remoteBranch))
             return new CommandResult { ExitCode = -1, StdErr = "遠端預設分支名稱格式不安全，已停止操作。" };
-        var remoteHasCommit = RemoteHeadCommitRegex().IsMatch(remoteHead.StdOut);
+
+        var remoteRef = await ProcessRunner.RunAsync(
+            "git",
+            $"rev-parse --verify \"refs/remotes/origin/{remoteBranch}\"",
+            sitePath,
+            10_000,
+            cancellationToken).ConfigureAwait(false);
+        var remoteHasCommit = remoteRef.Succeeded || RemoteHeadCommitRegex().IsMatch(remoteHead.StdOut);
+        if (target.Provider == GitHostingProvider.Codeberg
+            && branchMatch.Success
+            && branchMatch.Groups["branch"].Value.Equals(
+                StaticPagesDeployment.CodebergPagesBranch, StringComparison.OrdinalIgnoreCase))
+        {
+            remoteHasCommit = remoteRef.Succeeded;
+        }
 
         var localHead = await ProcessRunner.RunAsync(
             "git", "rev-parse --verify HEAD", sitePath, 10_000, cancellationToken).ConfigureAwait(false);
-        if (remoteHasCommit && !localHead.Succeeded)
+        if (StaticPagesDeployment.ShouldPushSourceBranch(target))
         {
-            progress?.Report($"以遠端 {remoteBranch} 為基準，保留本機未追蹤網站檔案…");
-            var checkout = await ProcessRunner.RunAsync(
-                "git", $"checkout -B \"{remoteBranch}\" --track \"origin/{remoteBranch}\"",
-                sitePath, 30_000, cancellationToken).ConfigureAwait(false);
-            if (!checkout.Succeeded)
+            if (remoteHasCommit && !localHead.Succeeded)
             {
-                return new CommandResult
+                progress?.Report($"以遠端 {remoteBranch} 為基準，保留本機未追蹤網站檔案…");
+                var checkout = await ProcessRunner.RunAsync(
+                    "git", $"checkout -B \"{remoteBranch}\" --track \"origin/{remoteBranch}\"",
+                    sitePath, 30_000, cancellationToken).ConfigureAwait(false);
+                if (!checkout.Succeeded)
                 {
-                    ExitCode = checkout.ExitCode,
-                    StdErr = $"遠端檔案與本機未追蹤檔案衝突，已停止連結；沒有強制覆蓋。\n{checkout.CombinedOutput}"
-                };
+                    return new CommandResult
+                    {
+                        ExitCode = checkout.ExitCode,
+                        StdErr = $"遠端檔案與本機未追蹤檔案衝突，已停止連結；沒有強制覆蓋。\n{checkout.CombinedOutput}"
+                    };
+                }
             }
-        }
-        else if (remoteHasCommit && localHead.Succeeded)
-        {
-            var merge = await MergeOriginBranchForPushAsync(sitePath, remoteBranch, progress, cancellationToken)
-                .ConfigureAwait(false);
-            if (!merge.Succeeded)
-                return new CommandResult
-                {
-                    ExitCode = merge.ExitCode,
-                    StdErr = $"遠端內容與本機內容發生合併衝突，已中止合併且未推送。\n{merge.CombinedOutput}"
-                };
+            else if (remoteHasCommit && localHead.Succeeded)
+            {
+                var merge = await MergeOriginBranchForPushAsync(sitePath, remoteBranch, progress, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!merge.Succeeded)
+                    return new CommandResult
+                    {
+                        ExitCode = merge.ExitCode,
+                        StdErr = $"遠端內容與本機內容發生合併衝突，已中止合併且未推送。\n{merge.CombinedOutput}"
+                    };
+            }
         }
 
         progress?.Report($"加入 {target.PagesProductName} 部署設定並提交網站…");
@@ -640,24 +667,47 @@ Thumbs.db
         var commit = await CommitAllAsync(sitePath, commitMessage, cancellationToken).ConfigureAwait(false);
         if (!commit.Succeeded) return commit;
 
-        var push = await PushHeadToOriginBranchAsync(
+        if (StaticPagesDeployment.ShouldPushSourceBranch(target))
+        {
+            progress?.Report($"確認 {target.ProviderName} 推送權限…");
+            var dryRun = await ProcessRunner.RunAsync(
+                "git",
+                GitHostingAccessChecks.PushDryRunArguments(remoteBranch),
                 sitePath,
-                remoteBranch,
-                $"推送到 {target.Owner}/{target.Repository}…",
-                progress,
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (!push.Succeeded) return push;
+                60_000,
+                cancellationToken).ConfigureAwait(false);
+            if (!dryRun.Succeeded)
+                return GitHostingProcessErrors.WithRepositoryAccessHint(target.Provider, "推送", dryRun);
+
+            var push = await PushHeadToOriginBranchAsync(
+                    sitePath,
+                    remoteBranch,
+                    $"推送到 {target.Owner}/{target.Repository}…",
+                    progress,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!push.Succeeded)
+                return GitHostingProcessErrors.WithRepositoryAccessHint(target.Provider, "推送", push);
+        }
+
+        if (StaticPagesDeployment.ShouldPublishOutputBranch(target))
+        {
+            var published = await PublishStaticOutputBranchAsync(
+                    sitePath,
+                    target,
+                    progress,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!published.Succeeded) return published;
+            if (target.Provider != GitHostingProvider.GitHub)
+                return published;
+        }
 
         if (target.Provider == GitHostingProvider.GitHub)
         {
             progress?.Report("啟用 GitHub Pages（Actions）…");
             return await EnablePagesFromActionsAsync(sitePath, cancellationToken).ConfigureAwait(false);
         }
-
-        if (target.Provider == GitHostingProvider.Codeberg)
-            return await PublishCodebergPagesBranchAsync(sitePath, target, progress, cancellationToken)
-                .ConfigureAwait(false);
 
         return ProviderPushResult(target);
     }
@@ -669,16 +719,10 @@ Thumbs.db
         CancellationToken cancellationToken = default)
     {
         var info = await GetInfoAsync(sitePath, cancellationToken).ConfigureAwait(false);
-        var provider = info.Provider ?? GitHostingProvider.GitHub;
-
-        if (provider == GitHostingProvider.Bitbucket
-            && !string.IsNullOrWhiteSpace(info.RemoteUrl))
-        {
-            var target = ParseRemoteTarget(info.RemoteUrl);
-            if (target.IsValid)
-                return await PublishBitbucketStaticWebsiteAsync(sitePath, target, progress, cancellationToken)
-                    .ConfigureAwait(false);
-        }
+        var target = !string.IsNullOrWhiteSpace(info.RemoteUrl)
+            ? ParseRemoteTarget(info.RemoteUrl)
+            : new GitHubRepositoryTarget { IsValid = false };
+        var provider = target.IsValid ? target.Provider : info.Provider ?? GitHostingProvider.GitHub;
 
         progress?.Report("提交變更…");
         await EnsureHostingWorkflowAsync(sitePath, provider, cancellationToken).ConfigureAwait(false);
@@ -687,108 +731,97 @@ Thumbs.db
         var commit = await CommitAllAsync(sitePath, commitMessage, cancellationToken).ConfigureAwait(false);
         progress?.Report(commit.CombinedOutput);
 
-        var branch = string.IsNullOrWhiteSpace(info.Branch) ? "main" : info.Branch;
+        var branch = target.IsValid
+            ? StaticPagesDeployment.ResolveSourceBranch(target, info.Branch)
+            : (string.IsNullOrWhiteSpace(info.Branch) ? "main" : info.Branch);
         if (!GitBranchRegex().IsMatch(branch))
             return new CommandResult { ExitCode = -1, StdErr = "目前分支名稱格式不安全，已停止推送。" };
 
-        var sync = await SyncOriginBranchBeforePushAsync(sitePath, branch, progress, cancellationToken)
-            .ConfigureAwait(false);
-        if (!sync.Succeeded) return sync;
-
-        var push = await PushHeadToOriginBranchAsync(
-                sitePath,
-                branch,
-                "git push…",
-                progress,
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (!push.Succeeded)
-            return push;
-
-        if (provider == GitHostingProvider.Codeberg
-            && !string.IsNullOrWhiteSpace(info.RemoteUrl))
+        CommandResult sourcePush = new() { ExitCode = 0, StdOut = commit.CombinedOutput };
+        if (!target.IsValid || StaticPagesDeployment.ShouldPushSourceBranch(target))
         {
-            var target = ParseRemoteTarget(info.RemoteUrl);
-            if (target.IsValid)
-                return await PublishCodebergPagesBranchAsync(sitePath, target, progress, cancellationToken)
-                    .ConfigureAwait(false);
+            var sync = await SyncOriginBranchBeforePushAsync(sitePath, branch, progress, cancellationToken)
+                .ConfigureAwait(false);
+            if (!sync.Succeeded) return sync;
+
+            sourcePush = await PushHeadToOriginBranchAsync(
+                    sitePath,
+                    branch,
+                    "git push…",
+                    progress,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!sourcePush.Succeeded)
+                return target.IsValid
+                    ? GitHostingProcessErrors.WithRepositoryAccessHint(target.Provider, "推送", sourcePush)
+                    : sourcePush;
         }
 
-        return push;
+        if (target.IsValid && StaticPagesDeployment.ShouldPublishOutputBranch(target))
+            return await PublishStaticOutputBranchAsync(sitePath, target, progress, cancellationToken)
+                .ConfigureAwait(false);
+
+        return sourcePush;
     }
 
-    private async Task<CommandResult> PublishBitbucketStaticWebsiteAsync(
+    private async Task<CommandResult> PublishStaticOutputBranchAsync(
         string sitePath,
         GitHubRepositoryTarget target,
         IProgress<string>? progress,
         CancellationToken cancellationToken)
     {
-        if (!target.IsUserOrOrganizationSite)
+        var outputBranch = StaticPagesDeployment.OutputBranchFor(target);
+        if (string.IsNullOrWhiteSpace(outputBranch) || string.IsNullOrWhiteSpace(target.CanonicalUrl))
         {
             return new CommandResult
             {
                 ExitCode = -1,
-                StdErr = "Bitbucket Cloud 靜態網站 repository 必須命名為 <workspace>.bitbucket.io。請改用正確的 Bitbucket Pages repository。"
+                StdErr = $"這個 {target.ProviderName} repository 沒有可自動發布的靜態網站分支。"
             };
         }
 
-        var pagesUrl = target.PagesUrl;
-        if (string.IsNullOrWhiteSpace(pagesUrl))
-        {
-            return new CommandResult
-            {
-                ExitCode = -1,
-                StdErr = "無法推算 Bitbucket 靜態網站網址，請確認 repository 是否為 <workspace>.bitbucket.io。"
-            };
-        }
-
-        progress?.Report("建立 Bitbucket 靜態網站輸出…");
-        var build = await ProcessRunner.RunAsync(
-            "hugo",
-            $"--gc --minify --baseURL {QuoteArg(pagesUrl)}",
-            sitePath,
-            180_000,
-            cancellationToken).ConfigureAwait(false);
+        progress?.Report($"建立 {target.PagesProductName} 靜態輸出…");
+        var extraArgs = string.IsNullOrWhiteSpace(target.PagesUrl)
+            ? "--gc --minify"
+            : $"--gc --minify --baseURL {QuoteArg(target.PagesUrl)}";
+        var build = await BuildSiteOutputAsync(sitePath, extraArgs, cancellationToken).ConfigureAwait(false);
         if (!build.Succeeded)
         {
             return new CommandResult
             {
                 ExitCode = build.ExitCode,
-                StdErr = $"Bitbucket 靜態網站輸出建置失敗。\n{build.CombinedOutput}"
+                StdErr = $"{target.PagesProductName} 靜態輸出建置失敗。\n{build.CombinedOutput}"
             };
         }
 
-        var publicDir = Path.Combine(sitePath, "public");
-        if (!File.Exists(Path.Combine(publicDir, "index.html")))
-        {
-            return new CommandResult
-            {
-                ExitCode = -1,
-                StdErr = "Bitbucket 靜態網站需要 public/index.html，但 Hugo build 後沒有找到這個檔案。"
-            };
-        }
+        if (!StaticPagesDeployment.TryFindOutputDirectory(sitePath, out var publicDir, out var outputError))
+            return new CommandResult { ExitCode = -1, StdErr = outputError };
 
-        var tempRoot = Path.Combine(Path.GetTempPath(), $"hugoer-bitbucket-pages-{Guid.NewGuid():N}");
+        CopyDeploymentMarkerToOutput(sitePath, publicDir);
+
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"hugoer-{target.Provider.ToString().ToLowerInvariant()}-pages-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempRoot);
         try
         {
             var init = await ProcessRunner.RunAsync(
-                "git", "init -b main", tempRoot, 30_000, cancellationToken).ConfigureAwait(false);
+                "git", $"init -b {QuoteArg(outputBranch)}", tempRoot, 30_000, cancellationToken)
+                .ConfigureAwait(false);
             if (!init.Succeeded) return init;
 
             var addRemote = await ProcessRunner.RunAsync(
-                "git", $"remote add origin {QuoteArg(target.CanonicalUrl!)}",
+                "git", $"remote add origin {QuoteArg(target.CanonicalUrl)}",
                 tempRoot,
                 15_000,
                 cancellationToken).ConfigureAwait(false);
             if (!addRemote.Succeeded) return addRemote;
 
-            var fetchMain = await ProcessRunner.RunAsync(
-                "git", "fetch origin main", tempRoot, 60_000, cancellationToken).ConfigureAwait(false);
-            if (fetchMain.Succeeded)
+            var fetch = await ProcessRunner.RunAsync(
+                "git", $"fetch origin {QuoteArg(outputBranch)}", tempRoot, 60_000, cancellationToken)
+                .ConfigureAwait(false);
+            if (fetch.Succeeded)
             {
                 var checkout = await ProcessRunner.RunAsync(
-                    "git", "checkout -B main FETCH_HEAD", tempRoot, 30_000, cancellationToken)
+                    "git", $"checkout -B {QuoteArg(outputBranch)} FETCH_HEAD", tempRoot, 30_000, cancellationToken)
                     .ConfigureAwait(false);
                 if (!checkout.Succeeded) return checkout;
             }
@@ -796,33 +829,86 @@ Thumbs.db
             ClearDirectoryExceptGit(tempRoot);
             CopyDirectory(publicDir, tempRoot);
 
-            progress?.Report("提交 Bitbucket 靜態網站檔案…");
+            progress?.Report($"提交 {target.PagesProductName} 靜態檔到 {outputBranch} 分支…");
             var commit = await CommitAllAsync(
                 tempRoot,
-                "Publish Bitbucket static website via Hugoer",
+                $"Publish {target.PagesProductName} via Hugoer",
                 cancellationToken).ConfigureAwait(false);
             if (!commit.Succeeded) return commit;
 
-            progress?.Report("推送 Bitbucket 靜態網站到 main 分支…");
+            progress?.Report($"確認 {target.ProviderName} {outputBranch} 分支推送權限…");
+            var dryRun = await ProcessRunner.RunAsync(
+                "git",
+                GitHostingAccessChecks.PushDryRunArguments(outputBranch),
+                tempRoot,
+                60_000,
+                cancellationToken).ConfigureAwait(false);
+            if (!dryRun.Succeeded)
+                return GitHostingProcessErrors.WithRepositoryAccessHint(
+                    target.Provider, $"推送 {outputBranch} 分支", dryRun);
+
+            progress?.Report($"推送 {target.PagesProductName} 靜態檔到 {outputBranch} 分支…");
             var push = await ProcessRunner.RunAsync(
-                "git", "push -u origin HEAD:main", tempRoot, 180_000, cancellationToken)
+                "git", $"push -u origin HEAD:{QuoteArg(outputBranch)}", tempRoot, 180_000, cancellationToken)
                 .ConfigureAwait(false);
             if (!push.Succeeded)
-                return WithGitPushHint(push);
+                return GitHostingProcessErrors.WithRepositoryAccessHint(
+                    target.Provider, $"推送 {outputBranch} 分支", push);
 
             return new CommandResult
             {
                 ExitCode = 0,
-                StdOut =
-                    $"已推送 Bitbucket 靜態網站：{target.NameWithOwner}\n" +
-                    $"網站網址：{pagesUrl}\n" +
-                    "Bitbucket Cloud 會直接從 repository 根目錄提供 index.html；更新可能因快取最多延遲約 15 分鐘。"
+                StdOut = BuildStaticPublishMessage(target, outputBranch)
             };
         }
         finally
         {
             TryDeleteDirectory(tempRoot);
         }
+    }
+
+    private async Task<CommandResult> BuildSiteOutputAsync(
+        string sitePath,
+        string extraArgs,
+        CancellationToken cancellationToken)
+    {
+        if (_hugo is not null)
+            return await _hugo.BuildAsync(sitePath, extraArgs, cancellationToken).ConfigureAwait(false);
+
+        return await ProcessRunner.RunAsync(
+            "hugo",
+            $"build {extraArgs}",
+            sitePath,
+            180_000,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string BuildStaticPublishMessage(GitHubRepositoryTarget target, string outputBranch)
+    {
+        var url = string.IsNullOrWhiteSpace(target.PagesUrl) ? "（請依平台後台確認）" : target.PagesUrl;
+        return target.Provider switch
+        {
+            GitHostingProvider.Codeberg =>
+                $"已推送到 Codeberg：{target.NameWithOwner}\n" +
+                $"已將 Hugo 靜態輸出推送到 Codeberg Pages 的 {outputBranch} 分支。\n" +
+                $"網站網址：{url}\n" +
+                "若尚未設定 Webhook，請在 Codeberg repo Settings > Webhooks 新增 Forgejo webhook，Target URL 使用 Pages 網址，Branch filter 設為 pages。",
+            GitHostingProvider.Bitbucket =>
+                $"已推送 Bitbucket 靜態網站：{target.NameWithOwner}\n" +
+                $"網站網址：{url}\n" +
+                "Bitbucket Cloud 會直接從 repository 根目錄提供 index.html；更新可能因快取最多延遲約 15 分鐘。",
+            _ => $"已推送 {target.ProviderName} 靜態輸出到 {outputBranch} 分支。\n網站網址：{url}"
+        };
+    }
+
+    private static void CopyDeploymentMarkerToOutput(string sitePath, string outputDirectory)
+    {
+        var source = Path.Combine(sitePath, "static", DeploymentMonitorService.MarkerFileName);
+        if (!File.Exists(source))
+            return;
+
+        Directory.CreateDirectory(outputDirectory);
+        File.Copy(source, Path.Combine(outputDirectory, DeploymentMonitorService.MarkerFileName), overwrite: true);
     }
 
     private async Task<CommandResult> SyncOriginBranchBeforePushAsync(
@@ -912,98 +998,9 @@ Thumbs.db
         return retry.Succeeded ? retry : WithGitPushHint(retry);
     }
 
-    private async Task<CommandResult> PublishCodebergPagesBranchAsync(
-        string sitePath,
-        GitHubRepositoryTarget target,
-        IProgress<string>? progress,
-        CancellationToken cancellationToken)
+    private static CommandResult WithGitPushHint(CommandResult result, GitHostingProvider? provider = null)
     {
-        progress?.Report("建立 Codeberg Pages 靜態輸出…");
-        var build = await ProcessRunner.RunAsync(
-            "hugo",
-            "build",
-            sitePath,
-            180_000,
-            cancellationToken).ConfigureAwait(false);
-        if (!build.Succeeded)
-        {
-            return new CommandResult
-            {
-                ExitCode = build.ExitCode,
-                StdErr = $"Codeberg Pages 靜態輸出建置失敗。\n{build.CombinedOutput}"
-            };
-        }
-
-        var publicDir = Path.Combine(sitePath, "public");
-        if (!File.Exists(Path.Combine(publicDir, "index.html")))
-        {
-            return new CommandResult
-            {
-                ExitCode = -1,
-                StdErr = "Codeberg Pages 發布需要 public/index.html，但 Hugo build 後沒有找到這個檔案。"
-            };
-        }
-
-        var tempRoot = Path.Combine(Path.GetTempPath(), $"hugoer-codeberg-pages-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(tempRoot);
-        try
-        {
-            var init = await ProcessRunner.RunAsync(
-                "git", "init -b pages", tempRoot, 30_000, cancellationToken).ConfigureAwait(false);
-            if (!init.Succeeded) return init;
-
-            var addRemote = await ProcessRunner.RunAsync(
-                "git", $"remote add origin {QuoteArg(target.CanonicalUrl!)}",
-                tempRoot,
-                15_000,
-                cancellationToken).ConfigureAwait(false);
-            if (!addRemote.Succeeded) return addRemote;
-
-            var fetchPages = await ProcessRunner.RunAsync(
-                "git", "fetch origin pages", tempRoot, 60_000, cancellationToken).ConfigureAwait(false);
-            if (fetchPages.Succeeded)
-            {
-                var checkout = await ProcessRunner.RunAsync(
-                    "git", "checkout -B pages FETCH_HEAD", tempRoot, 30_000, cancellationToken)
-                    .ConfigureAwait(false);
-                if (!checkout.Succeeded) return checkout;
-            }
-
-            ClearDirectoryExceptGit(tempRoot);
-            CopyDirectory(publicDir, tempRoot);
-
-            progress?.Report("提交 Codeberg Pages 靜態檔到 pages 分支…");
-            var commit = await CommitAllAsync(
-                tempRoot,
-                "Publish Codeberg Pages via Hugoer",
-                cancellationToken).ConfigureAwait(false);
-            if (!commit.Succeeded) return commit;
-
-            progress?.Report("推送 Codeberg Pages 靜態檔到 pages 分支…");
-            var push = await ProcessRunner.RunAsync(
-                "git", "push -u origin HEAD:pages", tempRoot, 180_000, cancellationToken)
-                .ConfigureAwait(false);
-            if (!push.Succeeded)
-                return WithGitPushHint(push);
-
-            return new CommandResult
-            {
-                ExitCode = 0,
-                StdOut =
-                    $"已推送到 Codeberg：{target.NameWithOwner}\n" +
-                    "已將 Hugo 靜態輸出推送到 Codeberg Pages 的 pages 分支。\n" +
-                    "若尚未設定 Webhook，請在 Codeberg repo Settings > Webhooks 新增 Forgejo webhook，Target URL 使用 Pages 網址，Branch filter 設為 pages。"
-            };
-        }
-        finally
-        {
-            TryDeleteDirectory(tempRoot);
-        }
-    }
-
-    private static CommandResult WithGitPushHint(CommandResult result)
-    {
-        var hint = GitPushFailureClassifier.ToUserMessage(result.CombinedOutput);
+        var hint = GitPushFailureClassifier.ToUserMessage(result.CombinedOutput, provider);
         if (string.Equals(hint, result.CombinedOutput, StringComparison.Ordinal))
             return result;
 
@@ -1087,13 +1084,21 @@ Thumbs.db
         CancellationToken cancellationToken = default)
     {
         var info = await GetInfoAsync(sitePath, cancellationToken).ConfigureAwait(false);
-        if (info.Provider is { } provider && provider != GitHostingProvider.GitHub)
+        var target = !string.IsNullOrWhiteSpace(info.RemoteUrl)
+            ? ParseRemoteTarget(info.RemoteUrl)
+            : new GitHubRepositoryTarget { IsValid = false };
+        if (target.IsValid && target.Provider != GitHostingProvider.GitHub)
         {
+            await EnsureHostingWorkflowAsync(sitePath, target.Provider, cancellationToken).ConfigureAwait(false);
+            if (StaticPagesDeployment.ShouldPublishOutputBranch(target))
+                return await PublishStaticOutputBranchAsync(sitePath, target, progress: null, cancellationToken)
+                    .ConfigureAwait(false);
+
             return new CommandResult
             {
                 ExitCode = 0,
                 IsPartialSuccess = true,
-                StdOut = $"{provider.PagesProductName()} 不能用 GitHub CLI 自動啟用。{ProviderManualSetupMessage(provider)}"
+                StdOut = ProviderManualSetupMessage(target.Provider)
             };
         }
 
@@ -1186,12 +1191,14 @@ Thumbs.db
             var target = !string.IsNullOrWhiteSpace(info.RemoteUrl)
                 ? ParseRemoteTarget(info.RemoteUrl)
                 : new GitHubRepositoryTarget { IsValid = false };
-            return new GitHubPagesStatus
-            {
-                Enabled = false,
-                HtmlUrl = target.PagesUrl,
-                Message = $"{provider.PagesProductName()} 狀態查詢尚未接入平台 API。{ProviderManualSetupMessage(provider)}"
-            };
+            return ProviderPagesStatus(target.IsValid
+                ? target
+                : new GitHubRepositoryTarget
+                {
+                    IsValid = false,
+                    Provider = provider,
+                    PagesUrl = null
+                });
         }
 
         if (string.IsNullOrWhiteSpace(info.Owner) || string.IsNullOrWhiteSpace(info.Repo))
@@ -1300,12 +1307,26 @@ Thumbs.db
         return await GetPagesStatusAsync(sitePath, cancellationToken).ConfigureAwait(false);
     }
 
-    private static GitHubPagesStatus ProviderPagesStatus(GitHubRepositoryTarget target) => new()
+    private static GitHubPagesStatus ProviderPagesStatus(GitHubRepositoryTarget target)
     {
-        Enabled = false,
-        HtmlUrl = target.PagesUrl,
-        Message = $"{target.PagesProductName} 狀態查詢尚未接入平台 API。{ProviderManualSetupMessage(target.Provider)}"
-    };
+        var hasUrl = !string.IsNullOrWhiteSpace(target.PagesUrl);
+        return new GitHubPagesStatus
+        {
+            Enabled = hasUrl,
+            HtmlUrl = target.PagesUrl,
+            Status = hasUrl ? "configured" : "manual",
+            BuildType = target.Provider switch
+            {
+                GitHostingProvider.GitLab => "gitlab-ci",
+                GitHostingProvider.Codeberg => "pages-branch",
+                GitHostingProvider.Bitbucket => target.IsUserOrOrganizationSite ? "static-root" : "git-push",
+                _ => null
+            },
+            Message = hasUrl
+                ? $"{target.PagesProductName} 建議網址：{target.PagesUrl}\n{ProviderManualSetupMessage(target.Provider)}"
+                : ProviderManualSetupMessage(target.Provider)
+        };
+    }
 
     public async Task<CommandResult> OpenGhAuthLoginAsync(CancellationToken cancellationToken = default)
     {
@@ -1522,7 +1543,9 @@ Thumbs.db
     private static CommandResult ProviderPushResult(GitHubRepositoryTarget target) => new()
     {
         ExitCode = 0,
-        IsPartialSuccess = target.Provider is GitHostingProvider.Codeberg or GitHostingProvider.Bitbucket,
+        IsPartialSuccess = target.Provider is GitHostingProvider.GitLab
+                           or GitHostingProvider.Codeberg
+                           or GitHostingProvider.Bitbucket,
         StdOut =
             $"已推送到 {target.ProviderName}：{target.NameWithOwner}\n" +
             ProviderManualSetupMessage(target.Provider)
@@ -1534,9 +1557,11 @@ Thumbs.db
             "已加入 .gitlab-ci.yml；GitLab 會透過 CI/CD 的 pages job 發布 public/。請到 GitLab Pipelines/Pages 查看部署結果。" +
             "若開啟網站出現 401/403，請到 Settings > General > Visibility, project features, permissions，將 Pages access control 設為 Everyone，或把專案/Pages 調整為可公開瀏覽。",
         GitHostingProvider.Codeberg =>
-            "Codeberg Pages 需要 pages branch 與 Webhook / Forgejo Actions 設定。Hugoer 已加入 docs/codeberg-pages.md 操作提示，請依 Codeberg Pages 後台完成一次設定。",
+            "Hugoer 會把 Hugo 原始碼推到預設分支，並把靜態輸出推到 pages 分支。" +
+            "請在 Codeberg repo Settings > Webhooks 新增 Forgejo webhook，Target URL 使用 Pages 網址，Branch filter 設為 pages。",
         GitHostingProvider.Bitbucket =>
-            "Bitbucket Cloud 的靜態網站使用 <workspace>.bitbucket.io repository，Hugoer 會建置 Hugo 並把 public/ 靜態檔推送到 repository 根目錄。",
+            "Bitbucket Cloud 靜態網站必須使用 <workspace>.bitbucket.io repository；Hugoer 會建置 Hugo 並把 public/ 靜態檔推送到該 repository 根目錄。" +
+            "其他 Bitbucket repository 會以一般 git push 保存 Hugo 原始碼。",
         _ => "請到平台後台查看部署結果。"
     };
 
@@ -1698,7 +1723,7 @@ pages:
     private const string CodebergPagesNotes = """
 # Codeberg Pages deployment notes
 
-Hugoer can clone and push this repository to Codeberg. When you deploy, Hugoer also builds the Hugo site and pushes the generated static files to the `pages` branch.
+Hugoer clones and pushes Hugo source to the default branch (`main`), then builds the site and publishes `public/` to the `pages` branch.
 
 Codeberg Pages still needs one platform-side setup:
 
@@ -1706,19 +1731,21 @@ Codeberg Pages still needs one platform-side setup:
 2. Repository site: publish from a branch named `pages`, and set the Pages webhook target to `https://<user>.codeberg.page/<repository>/`.
 3. After the webhook or Forgejo Actions workflow is configured on Codeberg, push updates from Hugoer again.
 
-Hugoer keeps Hugo source in the normal Git branch and publishes build output to the `pages` branch.
+If the remote HEAD is already `pages`, Hugoer keeps Hugo source on `main` and does not merge the static `pages` branch into the source tree.
 """;
 
     private const string BitbucketPagesNotes = """
 # Bitbucket static website deployment notes
 
-Hugoer can clone and push this repository to Bitbucket. Bitbucket Cloud static websites are workspace-level sites:
+Hugoer can clone and push this repository to Bitbucket.
+
+Bitbucket Cloud static websites are workspace-level sites:
 
 1. The repository that serves the website must be named `<workspace>.bitbucket.io`.
 2. The live URL is `https://<workspace>.bitbucket.io/`.
-3. Hugoer builds the Hugo site and publishes the generated `public/` output to the website repository root.
+3. Hugoer builds the Hugo site and publishes the generated `public/` output to the website repository root. Local Hugo source stays on this computer unless you also keep a separate source repository.
 
-Bitbucket does not provide GitHub-style per-project Pages URLs.
+Other Bitbucket repositories receive a normal `git push` of the Hugo source. Bitbucket does not provide GitHub-style per-project Pages URLs.
 """;
 
     [GeneratedRegex(@"github\.com[:/](?<owner>[^/]+)/(?<repo>[^/\s]+?)(?:\.git)?/?$", RegexOptions.IgnoreCase)]

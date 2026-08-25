@@ -42,6 +42,12 @@ public partial class ContentViewModel : PageViewModelBase
         "未設定日期"
     ];
 
+    public IReadOnlyList<string> ExportTargetOptions { get; } =
+    [
+        "Hexo",
+        "Jekyll"
+    ];
+
     [ObservableProperty]
     public partial ContentItem? SelectedFile { get; set; }
 
@@ -82,6 +88,9 @@ public partial class ContentViewModel : PageViewModelBase
 
     [ObservableProperty]
     public partial string StatusFilter { get; set; } = "全部文章";
+
+    [ObservableProperty]
+    public partial string ExportTarget { get; set; } = "Hexo";
 
     [ObservableProperty]
     public partial string FileCountLabel { get; set; } = "0 篇";
@@ -550,6 +559,128 @@ public partial class ContentViewModel : PageViewModelBase
         catch (Exception ex)
         {
             StatusMessage = ex.Message;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ExportSelectedAsync()
+    {
+        if (!RequireSite(out var site))
+            return;
+        if (SelectedFile is null || SelectedFile.IsDirectory)
+        {
+            StatusMessage = "請先選擇文章";
+            return;
+        }
+
+        var target = StaticSiteDetector.Parse(ExportTarget);
+        if (target is not StaticSiteKind.Hexo and not StaticSiteKind.Jekyll)
+        {
+            StatusMessage = "請選擇 Hexo 或 Jekyll 作為匯出格式。";
+            return;
+        }
+
+        var folder = await DialogHelper.PickFolderAsync($"選擇 {ExportTarget} 匯出資料夾");
+        if (string.IsNullOrWhiteSpace(folder))
+            return;
+
+        if (IsDirty)
+            await SaveCoreAsync(refreshList: false, auto: false);
+
+        await ExportArticlesAsync(
+            site,
+            [
+                new ArticleExportInput
+                {
+                    FullPath = SelectedFile.FullPath,
+                    RelativePath = SelectedFile.RelativePath,
+                    Markdown = EditorText
+                }
+            ],
+            target,
+            folder);
+    }
+
+    [RelayCommand]
+    private async Task ExportAllAsync()
+    {
+        if (!RequireSite(out var site))
+            return;
+
+        var target = StaticSiteDetector.Parse(ExportTarget);
+        if (target is not StaticSiteKind.Hexo and not StaticSiteKind.Jekyll)
+        {
+            StatusMessage = "請選擇 Hexo 或 Jekyll 作為匯出格式。";
+            return;
+        }
+
+        if (IsDirty)
+            await SaveCoreAsync(refreshList: false, auto: false);
+
+        var selectedPath = SelectedFile?.FullPath;
+        var articles = Services.Content.ListArticles(site)
+            .Select(item => new ArticleExportInput
+            {
+                FullPath = item.FullPath,
+                RelativePath = item.RelativePath,
+                Markdown = selectedPath is not null
+                           && item.FullPath.Equals(selectedPath, StringComparison.OrdinalIgnoreCase)
+                    ? EditorText
+                    : null
+            })
+            .ToList();
+        if (articles.Count == 0)
+        {
+            StatusMessage = "沒有可匯出的文章。";
+            return;
+        }
+
+        var folder = await DialogHelper.PickFolderAsync($"選擇 {ExportTarget} 匯出資料夾");
+        if (string.IsNullOrWhiteSpace(folder))
+            return;
+
+        await ExportArticlesAsync(site, articles, target, folder);
+    }
+
+    private async Task ExportArticlesAsync(
+        string site,
+        IReadOnlyList<ArticleExportInput> articles,
+        StaticSiteKind target,
+        string folder)
+    {
+        IsBusy = true;
+        try
+        {
+            StatusMessage = $"正在匯出為 {StaticSiteDetector.DisplayName(target)} 相容格式…";
+            var result = await Task.Run(() =>
+                Services.SiteMigration.ExportArticles(site, articles, target, folder));
+            StatusMessage = result.Message;
+            if (result.Succeeded && Directory.Exists(result.DestinationPath))
+                TryOpenFolder(result.DestinationPath);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "匯出失敗：" + ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private static void TryOpenFolder(string path)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // The status message already contains the destination path.
         }
     }
 

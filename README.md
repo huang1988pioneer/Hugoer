@@ -9,7 +9,8 @@
 | **環境** | 偵測／一鍵安裝 Hugo Extended、建立新站、開啟既有站、本機預覽、`hugo build` |
 | **設定檔** | 網站基本欄位、**圖形化 params 表單**（Hugo / Stack 常用參數）、原始 TOML |
 | **主題** | 一鍵安裝 **Stack** 及其他熱門主題、切換 theme、編輯主題設定 |
-| **文章** | 只管理 `content/post` 等部落格文章、新增文章、**Markdown 即時預覽** |
+| **文章** | 只管理 `content/post` 等部落格文章、新增文章、**Markdown 即時預覽**、匯出 **Hexo／Jekyll 相容** Markdown |
+| **遷移** | **Hexo／Jekyll → Hugo**、**Hugo → Hexo／Jekyll** 網站遷移（文章、頁面、靜態檔與基本設定） |
 | **選單** | 與文章分開：圖形化編輯 `menu.main` / `menu.social`、網站頁面（關於／歸檔／搜尋） |
 | **GitHub** | `gh` 登入、建立 repo、推送、GitHub Actions、啟用／查詢 Pages、每 5 分鐘監控線上部署版本 |
 
@@ -72,10 +73,11 @@ vpk pack --packId Hugoer --packVersion 1.4.0 --packDir .\dist\publish\win-x64 --
 2. **環境** → 建立新網站（或開啟既有資料夾）  
 3. **主題** → 一鍵安裝 Stack  
 4. **設定檔** →「網站基本」改 baseURL / title；「Params 表單」調描述、色系、widgets 等  
-5. **文章** → 新增／編輯部落格文章，右側即時預覽  
+5. **文章** → 新增／編輯部落格文章，右側即時預覽；可把單篇或全部文章匯出成 Hexo／Jekyll 相容的 `_posts` Markdown  
    **選單** → 編輯 Home／Archives／Search 等導覽，與文章分開  
-6. **GitHub** → `gh auth login` → 建立 Repo + 推送 + 啟用 Pages  
-7. **GitHub** → 查看「線上版本監控」；Hugoer 每 5 分鐘確認 Pages 是否已更新至本次推送版本
+6. **遷移** → 從 Hexo 或 Jekyll 匯入成 Hugo，或把目前 Hugo 網站輸出成 Hexo／Jekyll  
+7. **GitHub** → `gh auth login` → 建立 Repo + 推送 + 啟用 Pages  
+8. **GitHub** → 查看「線上版本監控」；Hugoer 每 5 分鐘確認 Pages 是否已更新至本次推送版本
 
 ## 專案結構
 

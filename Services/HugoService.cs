@@ -453,8 +453,14 @@ public sealed partial class HugoService
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
+    public Task<CommandResult> BuildAsync(
+        string sitePath,
+        CancellationToken cancellationToken = default) =>
+        BuildAsync(sitePath, extraArgs: null, cancellationToken);
+
     public async Task<CommandResult> BuildAsync(
         string sitePath,
+        string? extraArgs,
         CancellationToken cancellationToken = default)
     {
         await RepairDuplicateRootTomlKeysAsync(sitePath, cancellationToken).ConfigureAwait(false);
@@ -467,9 +473,10 @@ public sealed partial class HugoService
         if (!hugo.IsInstalled || string.IsNullOrWhiteSpace(hugo.ExecutablePath))
             return new CommandResult { ExitCode = -1, StdErr = "請先安裝 Hugo。" };
 
+        var args = string.IsNullOrWhiteSpace(extraArgs) ? "build" : $"build {extraArgs.Trim()}";
         return await ProcessRunner.RunAsync(
             hugo.ExecutablePath,
-            "build",
+            args,
             sitePath,
             timeoutMs: 180_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);

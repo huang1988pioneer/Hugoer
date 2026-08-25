@@ -37,19 +37,19 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         {
             Provider = GitHostingProvider.GitLab,
             DisplayName = "GitLab",
-            Hint = "使用 Git 憑證；推送時可自動加入 GitLab Pages CI。"
+            Hint = "使用 Git 憑證；推送時會加入 GitLab Pages CI（.gitlab-ci.yml）。"
         },
         new()
         {
             Provider = GitHostingProvider.Codeberg,
             DisplayName = "Codeberg",
-            Hint = "使用 Git 憑證；推送後依 Codeberg Pages 設定提示完成部署。"
+            Hint = "使用 Git 憑證；原始碼推到預設分支，靜態輸出推到 pages 分支。"
         },
         new()
         {
             Provider = GitHostingProvider.Bitbucket,
             DisplayName = "Bitbucket",
-            Hint = "使用 Git 憑證；推送後依 Bitbucket 靜態網站設定提示完成部署。"
+            Hint = "使用 Git 憑證；workspace.bitbucket.io 發布靜態網站，其他 repo 推送 Hugo 原始碼。"
         }
     ];
 
@@ -99,7 +99,10 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     public partial string ProviderSettingsStatus { get; set; } = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsNonGitHubProvider))]
     public partial bool IsGitHubProvider { get; set; } = true;
+
+    public bool IsNonGitHubProvider => !IsGitHubProvider;
 
     [ObservableProperty]
     public partial string RepositoryTargetSummary { get; set; } = "貼上 GitHub、GitLab、Codeberg 或 Bitbucket repository / Pages 網址後，Hugoer 會先顯示目標與建議網址。";
@@ -150,6 +153,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
 
     partial void OnRepositoryUrlChanged(string value)
     {
+        MaybeAdoptProviderFromUrl(value);
         UpdateRepositoryTarget(value);
         PersistProviderSettings();
     }
@@ -234,7 +238,11 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                 LoadProviderSettings(detectedProvider);
             }
             if (string.IsNullOrWhiteSpace(RepositoryUrl) && !string.IsNullOrWhiteSpace(info.RemoteUrl))
-                RepositoryUrl = info.RemoteUrl;
+            {
+                var originTarget = Hugoer.Services.GitHubService.ParseRepositoryTarget(info.RemoteUrl);
+                if (!originTarget.IsValid || originTarget.Provider == _activeProvider)
+                    RepositoryUrl = info.RemoteUrl;
+            }
             RemoteSummary = GitProviderStatusFormatter.BuildRemoteSummary(
                 info,
                 _activeProvider,
@@ -286,6 +294,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             AppendLog(StatusMessage);
             return;
         }
+        MaybeAdoptProviderFromUrl(RepositoryUrl);
         if (target.Provider != _activeProvider)
         {
             StatusMessage = $"請先切換到 {target.ProviderName} 設定，再複製此 repository。";
@@ -333,6 +342,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             StatusMessage = target.ErrorMessage;
             return;
         }
+        MaybeAdoptProviderFromUrl(RepositoryUrl);
         if (target.Provider != _activeProvider)
         {
             StatusMessage = $"請先切換到 {target.ProviderName} 設定，再連結此 repository。";
@@ -584,16 +594,13 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         try
         {
             await Services.GitHub.EnsureHostingWorkflowAsync(site, _activeProvider);
-            if (_activeProvider != GitHostingProvider.GitHub)
-            {
-                await RefreshPagesStatusAsync();
-                AppendLog(StatusMessage);
-                return;
-            }
-
             var result = await Services.GitHub.EnablePagesFromActionsAsync(site);
             AppendLog(result.CombinedOutput);
-            StatusMessage = result.Succeeded ? "已請求啟用 GitHub Pages" : "啟用失敗";
+            StatusMessage = result.IsPartialSuccess
+                ? $"{_activeProvider.PagesProductName()} 已推送；請依平台提示完成設定"
+                : result.Succeeded
+                    ? $"已請求啟用 {_activeProvider.PagesProductName()}"
+                    : "啟用失敗";
             await RefreshPagesStatusAsync();
         }
         finally
@@ -608,7 +615,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         if (!RequireSite(out var site)) return;
 
         var status = await Services.GitHub.GetPagesStatusAsync(site, GetActiveRepositoryTarget());
-        PagesUrl = status.HtmlUrl;
+        PagesUrl = !string.IsNullOrWhiteSpace(ProviderPagesUrl) ? ProviderPagesUrl : status.HtmlUrl;
         PagesSummary =
             $"啟用：{(status.Enabled ? "是" : "否")}\n" +
             $"狀態：{status.Status ?? "—"}\n" +
@@ -809,8 +816,23 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         StatusMessage = ProviderSettingsStatus;
     }
 
-    private void LoadProviderSettings(GitHostingProvider provider)
+    private void MaybeAdoptProviderFromUrl(string value)
     {
+        if (_switchingProviderSettings)
+            return;
+
+        var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(value);
+        if (!target.IsValid || target.Provider == _activeProvider)
+            return;
+
+        _providerWasSelectedByUser = true;
+        AdoptProvider(target.Provider, keepRepositoryUrl: true);
+        ProviderSettingsStatus = $"已依網址切換到 {target.ProviderName}";
+    }
+
+    private void AdoptProvider(GitHostingProvider provider, bool keepRepositoryUrl)
+    {
+        var urlToKeep = RepositoryUrl;
         _switchingProviderSettings = true;
         try
         {
@@ -821,20 +843,31 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             ProviderHint = option.Hint;
             IsGitHubProvider = provider == GitHostingProvider.GitHub;
             ProviderAccount = profile.AccountOrWorkspace;
-            ProviderPagesUrl = profile.PagesUrl;
+            ProviderPagesUrl = string.IsNullOrWhiteSpace(profile.PagesUrl)
+                ? ProviderPagesUrl
+                : profile.PagesUrl;
             SyncRecommendedBaseUrl = profile.SyncRecommendedBaseUrl;
-            CommitMessage = profile.CommitMessage;
-            RepositoryUrl = profile.RepositoryUrl;
-            PagesUrl = string.IsNullOrWhiteSpace(profile.PagesUrl) ? null : profile.PagesUrl;
+            if (!string.IsNullOrWhiteSpace(profile.CommitMessage))
+                CommitMessage = profile.CommitMessage;
+            if (!keepRepositoryUrl)
+                RepositoryUrl = profile.RepositoryUrl;
+            else
+                RepositoryUrl = urlToKeep;
+            if (!string.IsNullOrWhiteSpace(ProviderPagesUrl))
+                PagesUrl = ProviderPagesUrl;
             HasPagesRepositories = provider == GitHostingProvider.GitHub && PagesRepositories.Count > 0;
-            ProviderSettingsStatus = $"已載入 {option.DisplayName} 的獨立設定";
             ResetDeploymentMonitorForProvider(option.DisplayName);
         }
         finally
         {
             _switchingProviderSettings = false;
         }
+    }
 
+    private void LoadProviderSettings(GitHostingProvider provider)
+    {
+        AdoptProvider(provider, keepRepositoryUrl: false);
+        ProviderSettingsStatus = $"已載入 {SelectedProvider?.DisplayName ?? provider.DisplayName()} 的獨立設定";
         UpdateRepositoryTarget(RepositoryUrl);
     }
 
@@ -850,7 +883,9 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             return;
 
         var profile = Services.Settings.GetGitProviderSettings(_activeProvider);
-        profile.RepositoryUrl = RepositoryUrl.Trim();
+        var parsed = Hugoer.Services.GitHubService.ParseRepositoryTarget(RepositoryUrl);
+        if (!parsed.IsValid || parsed.Provider == _activeProvider)
+            profile.RepositoryUrl = RepositoryUrl.Trim();
         profile.AccountOrWorkspace = ProviderAccount.Trim();
         profile.PagesUrl = ProviderPagesUrl.Trim();
         profile.SyncRecommendedBaseUrl = SyncRecommendedBaseUrl;
@@ -881,10 +916,16 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         }
 
         RepoName = target.Repository!;
+        if (string.IsNullOrWhiteSpace(ProviderPagesUrl) && !string.IsNullOrWhiteSpace(target.PagesUrl))
+            ProviderPagesUrl = target.PagesUrl;
+        if (string.IsNullOrWhiteSpace(ProviderAccount) && !string.IsNullOrWhiteSpace(target.Owner))
+            ProviderAccount = target.Owner;
         var destination = GitHubClonePath.TryGetDestination(CloneParent, target.Repository, out var pathError);
-        var pagesUrl = string.IsNullOrWhiteSpace(target.PagesUrl)
-            ? "此平台/此 repo 沒有可推導的專案 Pages 網址"
-            : target.PagesUrl;
+        var pagesUrl = string.IsNullOrWhiteSpace(ProviderPagesUrl)
+            ? (string.IsNullOrWhiteSpace(target.PagesUrl)
+                ? "此平台/此 repo 沒有可推導的專案 Pages 網址"
+                : target.PagesUrl)
+            : ProviderPagesUrl;
         RepositoryTargetSummary =
             $"平台：{target.ProviderName}\n" +
             $"Repository：{target.Owner}/{target.Repository}\n" +

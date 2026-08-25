@@ -30,10 +30,14 @@ public static class GitProviderStatusFormatter
                 originNote;
         }
 
+        var accountLine = activeProvider == GitHostingProvider.GitHub
+            ? $"GitHub 使用者：{info.GhUser ?? "（未登入 gh）"}\n" +
+              $"GitHub 驗證：{(info.GhAuthenticated ? "已登入" : "未登入")}\n"
+            : $"帳號 / Workspace：{(string.IsNullOrWhiteSpace(providerAccount) ? info.Owner ?? "—" : providerAccount.Trim())}\n";
+
         return
-            $"平台：{info.ProviderName}\n" +
-            $"GitHub 使用者：{info.GhUser ?? "（僅 GitHub 顯示）"}\n" +
-            $"GitHub 驗證：{(info.GhAuthenticated ? "已登入" : "未登入或非 GitHub remote")}\n" +
+            $"平台：{activeProvider.DisplayName()}\n" +
+            accountLine +
             $"分支：{info.Branch ?? "—"}\n" +
             $"Remote：{info.RemoteUrl ?? "（無 origin）"}\n" +
             $"Repo：{(info.Owner is null ? "—" : $"{info.Owner}/{info.Repo}")}";

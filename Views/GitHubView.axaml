@@ -8,7 +8,7 @@
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="24">
         <StackPanel Spacing="16" MaxWidth="980">
             <TextBlock Text="Git 部署" Classes="pageTitle"/>
-            <TextBlock Text="將 Hugo 網站推到 GitHub、GitLab、Codeberg 或 Bitbucket。GitHub 可自動啟用 Pages；GitLab 會加入 CI；Codeberg/Bitbucket 會提供平台設定提示。"
+            <TextBlock Text="將 Hugo 網站推到 GitHub、GitLab、Codeberg 或 Bitbucket。貼上該平台網址會自動切換。GitHub 可自動啟用 Pages；GitLab 加入 CI；Codeberg 發布 pages 分支；Bitbucket 靜態網站發布到 workspace.bitbucket.io。"
                        Classes="muted" TextWrapping="Wrap"/>
 
             <Border Classes="card">
@@ -57,6 +57,10 @@
                                  Text="{Binding RepositoryUrl}"
                                  PlaceholderText="目前所選平台的 repository / Pages 網址"
                                  FontFamily="Consolas, Cascadia Mono, monospace"/>
+                        <TextBlock Grid.Row="2" Text="Commit 訊息" VerticalAlignment="Center"/>
+                        <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3"
+                                 Text="{Binding CommitMessage}"
+                                 PlaceholderText="Update site via Hugoer"/>
                     </Grid>
 
                     <StackPanel Orientation="Horizontal" Spacing="10">
@@ -209,30 +213,40 @@
                 </Grid>
             </Border>
 
+            <Border Classes="card" IsVisible="{Binding HasLocalSite}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="建置並推送更新" Classes="sectionTitle"/>
+                    <TextBlock Text="{Binding ProviderHint}" Classes="muted" TextWrapping="Wrap"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="建置、提交並推送更新" Classes="accent"
+                                Command="{Binding PushCommand}"
+                                IsEnabled="{Binding !IsBusy}"/>
+                    </StackPanel>
+                    <TextBlock Classes="caption" TextWrapping="Wrap"
+                               Text="GitHub 使用 Actions 建置 Pages；GitLab 使用 .gitlab-ci.yml 的 pages job；Codeberg 會把靜態輸出推到 pages 分支；Bitbucket 靜態網站則推到 workspace.bitbucket.io 的根目錄。"/>
+                </StackPanel>
+            </Border>
+
             <Border Classes="card" IsVisible="{Binding IsGitHubProvider}">
                 <StackPanel Spacing="12">
                     <TextBlock Text="建立新的 GitHub Repository" Classes="sectionTitle"/>
-                    <Grid ColumnDefinitions="120,*" RowDefinitions="Auto,Auto,Auto">
+                    <Grid ColumnDefinitions="120,*" RowDefinitions="Auto,Auto">
                         <TextBlock Text="Repo 名稱" VerticalAlignment="Center" Margin="0,0,0,8"/>
                         <TextBox Grid.Column="1" Text="{Binding RepoName}"
                                  PlaceholderText="my-hugo-site（只填名稱；已有的 Hugo repo 會改為連結）" Margin="0,0,0,8"/>
-                        <TextBlock Grid.Row="1" Text="可見性" VerticalAlignment="Center" Margin="0,0,0,8"/>
+                        <TextBlock Grid.Row="1" Text="可見性" VerticalAlignment="Center"/>
                         <CheckBox Grid.Row="1" Grid.Column="1" Content="Public repository"
-                                  IsChecked="{Binding IsPublicRepo}" Margin="0,0,0,8"/>
-                        <TextBlock Grid.Row="2" Text="Commit 訊息" VerticalAlignment="Center"/>
-                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding CommitMessage}"/>
+                                  IsChecked="{Binding IsPublicRepo}"/>
                     </Grid>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <Button Content="建立新 Repo + 推送 + 啟用 Pages" Classes="accent"
                                 Command="{Binding CreateAndDeployCommand}"
                                 IsEnabled="{Binding !IsBusy}"/>
-                        <Button Content="建置、提交並推送更新" Command="{Binding PushCommand}"
-                                IsEnabled="{Binding !IsBusy}"/>
                     </StackPanel>
                     <TextBlock Classes="caption" TextWrapping="Wrap"
                                Text="若 GitHub 上已有同名 repository，且是 Hugo 網站（或空的／只有 README），會改走「連結既有」：保留遠端內容、衝突即停、不 force push。名稱被其他專案占用時會拒絕建立。"/>
                     <TextBlock Classes="caption" TextWrapping="Wrap"
-                               Text="自動建立新 repository 目前只支援 GitHub：寫入 .github/workflows/hugo.yml → git commit/push → GitHub Actions 建置並部署到 GitHub Pages。GitLab、Codeberg、Bitbucket 請先在平台建立 repository，再用上方「連結既有」。"/>
+                               Text="自動建立新 repository 目前只支援 GitHub。GitLab、Codeberg、Bitbucket 請先在平台建立 repository，貼上網址後用上方「連結、推送並設定 Pages」。"/>
                 </StackPanel>
             </Border>
 

@@ -83,6 +83,12 @@ Assert(bitbucket.IsValid && bitbucket.Provider == GitHostingProvider.Bitbucket,
 Assert(bitbucket.IsUserOrOrganizationSite && bitbucket.PagesUrl == "https://octocat.bitbucket.io/",
     "Bitbucket workspace static site URL must be derived for workspace.bitbucket.io repository.");
 
+var bitbucketSourceRepo = GitHubRepositoryParser.Parse("https://bitbucket.org/fengtusama/hugo-source");
+Assert(bitbucketSourceRepo.IsValid && bitbucketSourceRepo.Provider == GitHostingProvider.Bitbucket,
+    "regular Bitbucket repository URL must parse.");
+Assert(!bitbucketSourceRepo.IsUserOrOrganizationSite && bitbucketSourceRepo.PagesUrl is null,
+    "regular Bitbucket repositories are source hosting and have no project Pages URL.");
+
 var bitbucketSourcePage = GitHubRepositoryParser.Parse(
     "https://bitbucket.org/fengtusama/fengtusama.bitbucket.io/src/main/");
 Assert(bitbucketSourcePage.IsValid && bitbucketSourcePage.Provider == GitHostingProvider.Bitbucket,

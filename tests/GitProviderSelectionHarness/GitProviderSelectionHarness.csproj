@@ -12,6 +12,10 @@
     <Compile Include="..\..\Helpers\GitLabPagesWorkflowPolicy.cs" Link="Helpers\GitLabPagesWorkflowPolicy.cs" />
     <Compile Include="..\..\Helpers\GitHubRepositoryParser.cs" Link="Helpers\GitHubRepositoryParser.cs" />
     <Compile Include="..\..\Helpers\GitRemoteSafety.cs" Link="Helpers\GitRemoteSafety.cs" />
+    <Compile Include="..\..\Helpers\GitHostingAccessChecks.cs" Link="Helpers\GitHostingAccessChecks.cs" />
+    <Compile Include="..\..\Helpers\GitHostingProcessErrors.cs" Link="Helpers\GitHostingProcessErrors.cs" />
+    <Compile Include="..\..\Helpers\StaticPagesDeployment.cs" Link="Helpers\StaticPagesDeployment.cs" />
+    <Compile Include="..\..\Helpers\PagesAccessStatus.cs" Link="Helpers\PagesAccessStatus.cs" />
     <Compile Include="..\..\Models\AppSettings.cs" Link="Models\AppSettings.cs" />
   </ItemGroup>
 </Project>

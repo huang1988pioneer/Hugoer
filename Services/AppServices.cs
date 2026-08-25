@@ -11,6 +11,7 @@ public sealed class AppServices
     public ContentService Content { get; } = new();
     public MenuService Menus { get; } = new();
     public FrontMatterService FrontMatter { get; } = new();
+    public SiteMigrationService SiteMigration { get; } = new();
     public DeploymentMonitorService DeploymentMonitor { get; } = new();
     public GitHubService GitHub { get; }
 
@@ -22,7 +23,7 @@ public sealed class AppServices
     private AppServices()
     {
         Hugo = new HugoService(Settings);
-        GitHub = new GitHubService(DeploymentMonitor);
+        GitHub = new GitHubService(DeploymentMonitor, Hugo);
         Settings.Load();
         CurrentSitePath = Settings.Current.LastSitePath;
     }

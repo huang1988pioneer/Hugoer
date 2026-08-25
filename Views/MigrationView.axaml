@@ -1,0 +1,108 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hugoer.ViewModels"
+             x:Class="Hugoer.Views.MigrationView"
+             x:DataType="vm:MigrationViewModel">
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="24">
+        <StackPanel Spacing="16" MaxWidth="980">
+            <TextBlock Text="網站遷移" Classes="pageTitle"/>
+            <TextBlock Text="把 Hexo 或 Jekyll 網站轉成 Hugo，或把目前的 Hugo 網站轉成 Hexo／Jekyll。文章會改寫成目標引擎的 YAML front matter 與資料夾結構；主題、佈局與外掛無法轉換。"
+                       Classes="muted" TextWrapping="Wrap"/>
+
+            <Border Classes="card" BorderBrush="#0E7490" BorderThickness="1">
+                <StackPanel Spacing="12">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Spacing="3">
+                            <TextBlock Text="來源網站" Classes="sectionTitle"/>
+                            <TextBlock Text="選擇 Hexo、Jekyll 或 Hugo 原始碼資料夾。可使用目前已開啟的網站。"
+                                       Classes="caption" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <Border Grid.Column="1" Classes="pill" Padding="10,4" VerticalAlignment="Top">
+                            <TextBlock Text="{Binding DetectedKindLabel}" Foreground="#67D8FF"
+                                       FontWeight="SemiBold" FontSize="12"/>
+                        </Border>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Text="{Binding SourcePath}"
+                                 PlaceholderText="來源網站資料夾"
+                                 FontFamily="Consolas, Cascadia Mono, monospace"/>
+                        <Button Grid.Column="1" Content="瀏覽…" Margin="8,0,0,0"
+                                Command="{Binding BrowseSourceCommand}"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <TextBlock Text="來源引擎" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding SourceKindOptions}"
+                                  SelectedItem="{Binding SourceKind}"
+                                  HorizontalAlignment="Left" MinWidth="180"/>
+                        <Button Grid.Column="2" Content="使用目前網站"
+                                Command="{Binding UseCurrentSiteCommand}"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="目標網站" Classes="sectionTitle"/>
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                        <TextBlock Text="目標引擎" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding DestinationKindOptions}"
+                                  SelectedItem="{Binding DestinationKind}"
+                                  HorizontalAlignment="Left" MinWidth="180"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Text="{Binding DestinationParent}"
+                                 PlaceholderText="輸出父資料夾"/>
+                        <Button Grid.Column="1" Content="選擇…" Margin="8,0,0,0"
+                                Command="{Binding BrowseDestinationParentCommand}"/>
+                    </Grid>
+
+                    <TextBox Text="{Binding DestinationName}"
+                             PlaceholderText="新資料夾名稱，例如 my-blog-hugo"/>
+
+                    <Border Background="#101720" BorderBrush="#2A3648" BorderThickness="1"
+                            CornerRadius="8" Padding="12">
+                        <TextBlock Text="{Binding MigrationPlanText}" TextWrapping="Wrap"
+                                   Classes="muted" LineHeight="20"/>
+                    </Border>
+
+                    <CheckBox Content="遷移完成後開啟為目前 Hugo 網站"
+                              IsChecked="{Binding OpenAfterMigrate}"
+                              IsVisible="{Binding ShowOpenAfterMigrate}"/>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="開始遷移" Classes="accent"
+                                Command="{Binding MigrateCommand}"
+                                IsEnabled="{Binding CanMigrate}"/>
+                        <Button Content="開啟目標資料夾"
+                                Command="{Binding OpenMigratedSiteCommand}"
+                                IsEnabled="{Binding CanOpenMigratedSite}"/>
+                    </StackPanel>
+                    <TextBlock Text="目標必須是空資料夾。只轉換文章、頁面與靜態檔；請在目標引擎重新安裝主題。"
+                               Classes="caption" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="遷移日誌" Classes="sectionTitle"/>
+                    <TextBox Text="{Binding Log}"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             Classes="logBox"
+                             MinHeight="160"
+                             MaxHeight="260"
+                             TextWrapping="Wrap"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             FontFamily="Consolas, Cascadia Mono, monospace"/>
+                    <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

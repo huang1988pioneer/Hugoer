@@ -77,18 +77,207 @@ public sealed partial class FrontMatterService
     private static Dictionary<string, string> ParseYamlFields(string frontMatter)
     {
         var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var line in frontMatter.Split('\n'))
-        {
-            var separator = line.IndexOf(':');
-            if (separator <= 0 || line.TrimStart().StartsWith('#')) continue;
+        var lines = (frontMatter ?? string.Empty)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n');
+        string? pendingKey = null;
+        var pendingIndent = 0;
+        var pendingList = new List<string>();
+        var pendingIsList = false;
+        var pendingIsMap = false;
 
-            var key = line[..separator].Trim();
-            var value = line[(separator + 1)..].Trim();
+        void FlushPending()
+        {
+            if (pendingKey is null)
+                return;
+
+            if (pendingIsList && pendingList.Count > 0)
+            {
+                fields[pendingKey] = string.Join(", ", pendingList);
+                if (IsImageParentKey(pendingKey))
+                    fields.TryAdd("image", pendingList[0]);
+            }
+
+            pendingKey = null;
+            pendingIndent = 0;
+            pendingList.Clear();
+            pendingIsList = false;
+            pendingIsMap = false;
+        }
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var raw = lines[i];
+            if (string.IsNullOrWhiteSpace(raw))
+                continue;
+
+            var indent = raw.Length - raw.TrimStart().Length;
+            var trimmed = raw.Trim();
+            if (trimmed.StartsWith('#'))
+                continue;
+
+            if (pendingKey is not null
+                && trimmed.StartsWith("- ", StringComparison.Ordinal)
+                && indent >= pendingIndent
+                && (indent > pendingIndent || !pendingIsMap))
+            {
+                pendingIsList = true;
+                var item = Unquote(StripYamlInlineComment(trimmed[2..].Trim()));
+                if (!string.IsNullOrWhiteSpace(item))
+                    pendingList.Add(item);
+                continue;
+            }
+
+            if (pendingKey is not null && indent > pendingIndent && !trimmed.StartsWith('-'))
+            {
+                var nestedSeparator = trimmed.IndexOf(':');
+                if (nestedSeparator > 0)
+                {
+                    pendingIsMap = true;
+                    var nestedKey = trimmed[..nestedSeparator].Trim();
+                    var nestedValue = Unquote(StripYamlInlineComment(trimmed[(nestedSeparator + 1)..].Trim()));
+                    ApplyNestedYamlField(fields, pendingKey, nestedKey, nestedValue);
+                    continue;
+                }
+            }
+
+            FlushPending();
+
+            var separator = trimmed.IndexOf(':');
+            if (separator <= 0)
+                continue;
+
+            var key = trimmed[..separator].Trim();
+            if (!IsYamlKey(key))
+                continue;
+
+            var value = StripYamlInlineComment(trimmed[(separator + 1)..].Trim());
+            if (value is "|" or ">" or "|-" or "|+" or ">-" or ">+")
+            {
+                var block = ReadYamlBlock(lines, ref i, indent);
+                if (!string.IsNullOrWhiteSpace(block))
+                    fields[key] = block;
+                continue;
+            }
+
+            if (string.IsNullOrEmpty(value))
+            {
+                pendingKey = key;
+                pendingIndent = indent;
+                continue;
+            }
+
             fields[key] = Unquote(value);
         }
 
+        FlushPending();
         return fields;
     }
+
+    private static void ApplyNestedYamlField(
+        IDictionary<string, string> fields,
+        string parent,
+        string child,
+        string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || string.IsNullOrWhiteSpace(child))
+            return;
+
+        if ((IsImageParentKey(parent) && IsImageChildKey(child))
+            || child.Equals("image", StringComparison.OrdinalIgnoreCase)
+            || child.Equals("path", StringComparison.OrdinalIgnoreCase)
+            || child.Equals("src", StringComparison.OrdinalIgnoreCase))
+        {
+            fields.TryAdd("image", value);
+        }
+
+        if ((child.Equals("caption", StringComparison.OrdinalIgnoreCase)
+             || child.Equals("description", StringComparison.OrdinalIgnoreCase)
+             || child.Equals("alt", StringComparison.OrdinalIgnoreCase))
+            && !fields.ContainsKey("description"))
+        {
+            fields["description"] = value;
+        }
+    }
+
+    private static string ReadYamlBlock(string[] lines, ref int index, int parentIndent)
+    {
+        var parts = new List<string>();
+        while (index + 1 < lines.Length)
+        {
+            var next = lines[index + 1];
+            if (string.IsNullOrWhiteSpace(next))
+            {
+                index++;
+                if (parts.Count > 0)
+                    parts.Add(string.Empty);
+                continue;
+            }
+
+            var indent = next.Length - next.TrimStart().Length;
+            if (indent <= parentIndent)
+                break;
+
+            index++;
+            parts.Add(next.Trim());
+        }
+
+        return string.Join('\n', parts).Trim();
+    }
+
+    private static string StripYamlInlineComment(string value)
+    {
+        var inSingle = false;
+        var inDouble = false;
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (c == '"' && !inSingle && (i == 0 || value[i - 1] != '\\'))
+                inDouble = !inDouble;
+            else if (c == '\'' && !inDouble)
+                inSingle = !inSingle;
+            else if (c == '#' && !inSingle && !inDouble && (i == 0 || char.IsWhiteSpace(value[i - 1])))
+                return value[..i].TrimEnd();
+        }
+
+        return value;
+    }
+
+    private static bool IsYamlKey(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return false;
+
+        foreach (var c in key)
+        {
+            if (char.IsLetterOrDigit(c) || c is '_' or '-')
+                continue;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsImageParentKey(string key) =>
+        key.Equals("image", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("cover", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("thumbnail", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("banner", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("photo", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("photos", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("header", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("og_image", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("feature", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("featured_image", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsImageChildKey(string key) =>
+        key.Equals("image", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("path", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("src", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("url", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("feature", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("thumbnail", StringComparison.OrdinalIgnoreCase);
 
     private static Dictionary<string, string> ParseTomlFields(string frontMatter)
     {

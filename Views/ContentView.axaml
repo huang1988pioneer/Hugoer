@@ -11,7 +11,7 @@
         <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
             <StackPanel Spacing="8">
                 <TextBlock Text="文章" Classes="pageTitle"/>
-                <TextBlock Text="只管理部落格文章。支援 CommonMark、GFM 與 Markdig 進階語法；完整語法可在「原始碼」模式編輯。網站導覽請到「選單」分頁。"
+                <TextBlock Text="只管理部落格文章。支援 CommonMark、GFM 與 Markdig 進階語法；完整語法可在「原始碼」模式編輯。可匯出成 Hexo／Jekyll 相容 Markdown。網站導覽請到「選單」分頁。"
                            Classes="muted" TextWrapping="Wrap"/>
             </StackPanel>
             <TextBlock Grid.Column="1" Text="{Binding ContentSummary}" Classes="muted"
@@ -92,6 +92,17 @@
                                     IsVisible="{Binding HasActiveFilters}"/>
                             <Button Content="刪除" Command="{Binding DeleteSelectedCommand}"
                                     IsEnabled="{Binding HasSelection}"/>
+                        </StackPanel>
+                        <TextBlock Text="匯出至 Hexo／Jekyll" Classes="caption" Margin="0,6,0,0"/>
+                        <ComboBox ItemsSource="{Binding ExportTargetOptions}"
+                                  SelectedItem="{Binding ExportTarget}"
+                                  ToolTip.Tip="匯出 YAML Markdown，檔名為 YYYY-MM-DD-slug.md，可放入 Hexo source/_posts 或 Jekyll _posts"/>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Content="匯出選中" Command="{Binding ExportSelectedCommand}"
+                                    IsEnabled="{Binding HasSelection}"
+                                    ToolTip.Tip="把目前文章存成 Hexo 或 Jekyll 相容的 Markdown"/>
+                            <Button Content="匯出全部" Command="{Binding ExportAllCommand}"
+                                    ToolTip.Tip="把網站全部文章匯出成 Hexo 或 Jekyll 相容格式"/>
                         </StackPanel>
                     </StackPanel>
                     <Grid>

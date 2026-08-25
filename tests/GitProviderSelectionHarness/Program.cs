@@ -103,10 +103,11 @@ Assert(
     "GitLab CI using the floating hugomods/hugo image must be rewritten to the pinned Hugo workflow.");
 
 var pinnedGitLabWorkflow = """
-image: alpine:latest
+image: debian:bookworm-slim
 
 variables:
-  HUGO_VERSION: "0.164.0"
+  HUGO_VERSION: "0.165.0"
+  GIT_SUBMODULE_STRATEGY: recursive
 
 pages:
   script:
@@ -114,7 +115,98 @@ pages:
 """;
 Assert(
     !GitLabPagesWorkflowPolicy.ShouldRewrite(pinnedGitLabWorkflow),
-    "Pinned GitLab CI workflow for Hugo 0.164.0 must be kept.");
+    "Pinned GitLab CI workflow for Hugo 0.165.0 must be kept.");
+
+var codebergPages = new GitHubRepositoryTarget
+{
+    IsValid = true,
+    Provider = GitHostingProvider.Codeberg,
+    Owner = "fengtusama",
+    Repository = "pages",
+    CanonicalUrl = "https://codeberg.org/fengtusama/pages.git",
+    PagesUrl = "https://fengtusama.codeberg.page/",
+    IsUserOrOrganizationSite = true
+};
+Assert(StaticPagesDeployment.ShouldPublishOutputBranch(codebergPages),
+    "Codeberg Pages must publish the generated static output branch.");
+Assert(StaticPagesDeployment.OutputBranchFor(codebergPages) == "pages",
+    "Codeberg Pages output branch must be pages.");
+Assert(StaticPagesDeployment.ShouldPushSourceBranch(codebergPages),
+    "Codeberg should still keep Hugo source on main.");
+Assert(StaticPagesDeployment.ResolveSourceBranch(codebergPages, "pages") == "main",
+    "A Codeberg pages HEAD must not be treated as the Hugo source branch.");
+
+var bitbucketSite = new GitHubRepositoryTarget
+{
+    IsValid = true,
+    Provider = GitHostingProvider.Bitbucket,
+    Owner = "fengtusama",
+    Repository = "fengtusama.bitbucket.io",
+    CanonicalUrl = "https://bitbucket.org/fengtusama/fengtusama.bitbucket.io.git",
+    PagesUrl = "https://fengtusama.bitbucket.io/",
+    IsUserOrOrganizationSite = true
+};
+Assert(StaticPagesDeployment.ShouldPublishOutputBranch(bitbucketSite),
+    "Bitbucket workspace sites must publish static output to the website repository.");
+Assert(!StaticPagesDeployment.ShouldPushSourceBranch(bitbucketSite),
+    "Bitbucket workspace sites must not push Hugo source onto the live website branch.");
+
+var bitbucketSource = new GitHubRepositoryTarget
+{
+    IsValid = true,
+    Provider = GitHostingProvider.Bitbucket,
+    Owner = "fengtusama",
+    Repository = "hugo-source",
+    CanonicalUrl = "https://bitbucket.org/fengtusama/hugo-source.git"
+};
+Assert(!StaticPagesDeployment.ShouldPublishOutputBranch(bitbucketSource),
+    "A regular Bitbucket repository is source hosting, not a static website.");
+Assert(StaticPagesDeployment.ShouldPushSourceBranch(bitbucketSource),
+    "A regular Bitbucket repository should receive the Hugo source branch.");
+
+var gitLabTarget = new GitHubRepositoryTarget
+{
+    IsValid = true,
+    Provider = GitHostingProvider.GitLab,
+    Owner = "group5923835",
+    Repository = "fengtusama.gitlab.io",
+    CanonicalUrl = "https://gitlab.com/group5923835/fengtusama.gitlab.io.git"
+};
+Assert(
+    GitHostingAccessChecks.LsRemoteHeadArguments(gitLabTarget)
+    == "ls-remote --symref \"https://gitlab.com/group5923835/fengtusama.gitlab.io.git\" HEAD",
+    "non-GitHub access check should verify the selected repository through git ls-remote.");
+Assert(
+    GitHostingAccessChecks.PushDryRunArguments("main") == "push --dry-run -u origin HEAD:\"main\"",
+    "non-GitHub push should verify write access with git push --dry-run.");
+
+var accessFailure = GitHostingAccessChecks.FromLsRemoteResult(
+    gitLabTarget,
+    new CommandResult
+    {
+        ExitCode = 128,
+        StdErr = "remote: The project you were looking for could not be found or you don't have permission to view it."
+    });
+Assert(!accessFailure.HasAccess, "failed GitLab ls-remote should block the App push flow early.");
+Assert(accessFailure.Message.Contains("GitLab 無法存取", StringComparison.Ordinal),
+    "failed GitLab ls-remote should explain that the App needs command-line Git access.");
+
+var accessSuccess = GitHostingAccessChecks.FromLsRemoteResult(
+    gitLabTarget,
+    new CommandResult { ExitCode = 0, StdOut = "ref: refs/heads/main\tHEAD" });
+Assert(accessSuccess.HasAccess, "successful GitLab ls-remote should allow the App push flow.");
+
+Assert(PagesAccessStatus.TryCreateProtectedSiteMessage(
+        System.Net.HttpStatusCode.Found,
+        new Uri("https://projects.gitlab.io/auth?domain=https://group5923835.gitlab.io"),
+        out var authRedirectMessage),
+    "GitLab Pages auth redirects should be classified as protected site access.");
+Assert(authRedirectMessage.Contains("導向 GitLab Pages 驗證", StringComparison.Ordinal),
+    "GitLab Pages auth redirects should explain the GitLab Pages access-control state.");
+
+Assert(
+    !GitPushFailureClassifier.IsNonFastForwardRejection(permissionOutput),
+    "Permission/not-found output must not be treated as a fetch-first rejection.");
 
 Console.WriteLine("GIT_PROVIDER_SELECTION_HARNESS_OK");
 

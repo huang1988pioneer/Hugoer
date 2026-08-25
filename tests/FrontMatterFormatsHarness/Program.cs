@@ -35,6 +35,33 @@ Assert(mixedDocument.Body.Trim() == "Ox Alpha", "Duplicated front matter must be
 var previewBody = MarkdownPreviewService.StripFrontMatter(mixed).Trim();
 Assert(previewBody == "Ox Alpha", $"Preview body should only contain Markdown content, got: {previewBody}");
 
+var yamlLists = """
+---
+title: Nested
+categories:
+  - alpha
+  - beta
+tags:
+- one
+- two
+cover:
+  image: /image/hero.jpg
+  caption: Hero
+description: |
+  line one
+  line two
+---
+
+Body
+""";
+var yamlDocument = service.Parse(yamlLists);
+Assert(yamlDocument.Fields["title"] == "Nested", "YAML title");
+Assert(yamlDocument.Fields["categories"] == "alpha, beta", "YAML block categories");
+Assert(yamlDocument.Fields["tags"] == "one, two", "YAML unindented tags");
+Assert(yamlDocument.Fields["image"] == "/image/hero.jpg", "Nested cover.image flattens to image");
+Assert(yamlDocument.Fields["description"].Contains("line one", StringComparison.Ordinal), "YAML block scalar description");
+Assert(yamlDocument.Body.Trim() == "Body", "YAML body");
+
 Console.WriteLine("FRONT_MATTER_FORMATS_HARNESS_OK");
 
 static void Assert(bool condition, string message)
