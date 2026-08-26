@@ -32,6 +32,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         AppServices.Instance.SiteChanged += (_, _) => UpdateSiteBanner();
         AppServices.Instance.AppStatusChanged += (_, message) => AppStatus = message;
         UpdateSiteBanner();
+        _ = RefreshCodeStatisticsAsync();
         _ = SelectedNav.Page.OnNavigatedToAsync();
     }
 
@@ -57,6 +58,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     public partial string AppStatus { get; set; } = "就緒";
 
+    [ObservableProperty]
+    public partial string CodeStatisticsSummary { get; set; } = "計算中…";
+
+    [ObservableProperty]
+    public partial string CodeStatisticsDetails { get; set; } = "正在掃描應用程式來源…";
+
     partial void OnSelectedNavChanged(NavItem? value)
     {
         if (value is null) return;
@@ -67,6 +74,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     [RelayCommand]
     private void GoToSetup() => SelectedNav = NavItems[0];
+
+    private async Task RefreshCodeStatisticsAsync()
+    {
+        var stats = await CodeStatisticsService.CountAsync();
+        CodeStatisticsSummary = stats.Summary;
+        CodeStatisticsDetails = stats.Details;
+    }
 
     private void UpdateSiteBanner()
     {

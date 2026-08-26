@@ -25,11 +25,21 @@
                         <TextBlock Text="{Binding SiteBanner}" Classes="muted" TextWrapping="NoWrap"/>
                     </Border>
                 </StackPanel>
-                <TextBlock Grid.Column="1"
-                           Text="{Binding AppStatus}"
-                           Classes="muted"
-                           VerticalAlignment="Center"
-                           Margin="12,0,0,0"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <Border Classes="codeStats" Padding="10,5"
+                            ToolTip.Tip="{Binding CodeStatisticsDetails}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="程式碼統計" Classes="caption"
+                                       Foreground="#9EDFF2" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding CodeStatisticsSummary}"
+                                       Foreground="#FFFFFF" FontSize="15" FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="{Binding AppStatus}"
+                               Classes="muted"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
             </Grid>
         </Border>
 
