@@ -1,9 +1,9 @@
 ; Inno Setup 6 script for Hugoer
 ; Build via scripts/publish.ps1 (auto) or:
-;   ISCC installer\hugoer.iss /DMyAppVersion=1.5.0 /DMyPublishDir=..\dist\publish\win-x64
+;   ISCC installer\hugoer.iss /DMyAppVersion=1.5.1 /DMyPublishDir=..\dist\publish\win-x64
 
 #ifndef MyAppVersion
-  #define MyAppVersion "1.5.0"
+  #define MyAppVersion "1.5.1"
 #endif
 #ifndef MyPublishDir
   #define MyPublishDir "..\dist\publish\win-x64"
