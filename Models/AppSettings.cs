@@ -11,6 +11,8 @@ public sealed class AppSettings
     public string MarkdownEditorMode { get; set; } = "Wysiwyg";
     /// <summary>Independent connection preferences for each Git hosting provider.</summary>
     public List<GitProviderSettings> GitProviderSettings { get; set; } = [];
+    /// <summary>Recently used repositories across all Git hosting providers, newest first.</summary>
+    public List<RecentRepositoryEntry> RecentRepositories { get; set; } = [];
 }
 
 public enum MarkdownEditorMode
@@ -240,6 +242,28 @@ public sealed class GitHubPagesRepositoryItem
     public string NameWithOwner { get; init; } = string.Empty;
     public string HtmlUrl { get; init; } = string.Empty;
     public string DisplayName { get; init; } = string.Empty;
+}
+
+public sealed class RecentRepositoryEntry
+{
+    public GitHostingProvider Provider { get; set; }
+    public string Owner { get; set; } = string.Empty;
+    public string Repository { get; set; } = string.Empty;
+    /// <summary>遠端 repository 網址（Git 平台上的來源，例如 https://github.com/owner/repo）。</summary>
+    public string CanonicalUrl { get; set; } = string.Empty;
+    /// <summary>最終發布網址（例如 GitHub/GitLab/Codeberg/Bitbucket Pages 網址），與遠端 repository 網址不同。</summary>
+    public string? PagesUrl { get; set; }
+    /// <summary>本機資料夾路徑；可能與 repository 名稱不同（例如使用者自行改名的資料夾）。</summary>
+    public string? LocalPath { get; set; }
+    public DateTimeOffset LastUsedUtc { get; set; }
+    [JsonIgnore]
+    public string DisplayName => $"{Owner}/{Repository} · {Provider.DisplayName()}";
+    [JsonIgnore]
+    public string RemoteSummary => $"遠端：{CanonicalUrl}";
+    [JsonIgnore]
+    public string LocalSummary => string.IsNullOrWhiteSpace(LocalPath) ? "本地：尚未複製到本機" : $"本地：{LocalPath}";
+    [JsonIgnore]
+    public string PagesSummary => string.IsNullOrWhiteSpace(PagesUrl) ? "發布網址：無" : $"發布網址：{PagesUrl}";
 }
 
 public sealed class GitHubPagesRepositoryList

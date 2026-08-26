@@ -60,6 +60,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         HasLocalSite = !string.IsNullOrWhiteSpace(path) && Directory.Exists(path);
         SelectedProvider = ProviderOptions[0];
         LoadProviderSettings(GitHostingProvider.GitHub);
+        ReloadRecentRepositories();
     }
 
     [ObservableProperty]
@@ -128,6 +129,14 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     public ObservableCollection<GitHubPagesRepositoryItem> PagesRepositories { get; } = [];
 
     [ObservableProperty]
+    public partial bool HasRecentRepositories { get; set; }
+
+    [ObservableProperty]
+    public partial RecentRepositoryEntry? SelectedRecentRepository { get; set; }
+
+    public ObservableCollection<RecentRepositoryEntry> RecentRepositories { get; } = [];
+
+    [ObservableProperty]
     public partial bool SyncRecommendedBaseUrl { get; set; } = true;
 
     [ObservableProperty]
@@ -192,6 +201,14 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             return;
         if (!string.Equals(RepositoryUrl, value.HtmlUrl, StringComparison.Ordinal))
             RepositoryUrl = value.HtmlUrl;
+    }
+
+    partial void OnSelectedRecentRepositoryChanged(RecentRepositoryEntry? value)
+    {
+        if (value is null || string.IsNullOrWhiteSpace(value.CanonicalUrl))
+            return;
+        if (!string.Equals(RepositoryUrl, value.CanonicalUrl, StringComparison.Ordinal))
+            RepositoryUrl = value.CanonicalUrl;
     }
 
     protected override void OnBusyChanged(bool isBusy) => UpdateCloneAvailability();
@@ -324,6 +341,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
 
             Services.SetSite(result.SitePath);
             RepoName = result.Target?.Repository ?? RepoName;
+            RecordRecentRepository(result.Target, result.SitePath);
             await RefreshAsync();
         }
         finally
@@ -396,6 +414,8 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                 : result.Succeeded
                     ? $"已連結 {target.ProviderName} repository 並推送網站"
                     : "連結或部署失敗；請查看操作日誌";
+            if (result.Succeeded || result.IsPartialSuccess)
+                RecordRecentRepository(target, site);
             await RefreshAsync();
             if (result.Succeeded)
                 await CheckDeploymentVersionAfterPushAsync(CancellationToken.None);
@@ -526,6 +546,8 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                     ? "已推送並嘗試啟用 GitHub Pages"
                     : "部署過程有錯誤，請查看日誌";
             await RefreshAsync();
+            if (result.Succeeded || result.IsPartialSuccess)
+                RecordRecentRepository(GetActiveRepositoryTarget(), site);
             if (result.Succeeded)
                 await CheckDeploymentVersionAfterPushAsync(CancellationToken.None);
         }
@@ -582,6 +604,8 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             var result = await Services.GitHub.PushAsync(site, pushMsg, progress);
             AppendLog(result.CombinedOutput);
             StatusMessage = result.Succeeded ? "推送完成" : "推送失敗";
+            if (result.Succeeded)
+                RecordRecentRepository(Hugoer.Services.GitHubService.ParseRepositoryTarget(info.RemoteUrl), site);
             await RefreshPagesStatusAsync();
             if (result.Succeeded)
                 await CheckDeploymentVersionAfterPushAsync(CancellationToken.None);

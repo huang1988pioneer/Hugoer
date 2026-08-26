@@ -12,6 +12,8 @@ public sealed class SettingsService
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
+    private const int MaxRecentRepositories = 10;
+
     private AppSettings _settings = new();
 
     public AppSettings Current => _settings;
@@ -29,6 +31,7 @@ public sealed class SettingsService
             var json = File.ReadAllText(PathHelper.SettingsPath);
             _settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
             _settings.GitProviderSettings ??= [];
+            _settings.RecentRepositories ??= [];
         }
         catch
         {
@@ -73,6 +76,65 @@ public sealed class SettingsService
             _settings.GitProviderSettings[index] = profile;
         else
             _settings.GitProviderSettings.Add(profile);
+        Save();
+    }
+
+    public IReadOnlyList<RecentRepositoryEntry> GetRecentRepositories() => _settings.RecentRepositories;
+
+    // Local path and remote repository are tracked separately: an existing entry keeps its
+    // previously known local path / Pages URL when a new usage doesn't supply one.
+    public void AddRecentRepository(GitHubRepositoryTarget target, string? localPath = null)
+    {
+        if (!target.IsValid
+            || string.IsNullOrWhiteSpace(target.Owner)
+            || string.IsNullOrWhiteSpace(target.Repository)
+            || string.IsNullOrWhiteSpace(target.CanonicalUrl))
+            return;
+
+        var existing = _settings.RecentRepositories.FirstOrDefault(item =>
+            item.Provider == target.Provider
+            && string.Equals(item.Owner, target.Owner, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(item.Repository, target.Repository, StringComparison.OrdinalIgnoreCase));
+
+        var resolvedLocalPath = string.IsNullOrWhiteSpace(localPath) ? existing?.LocalPath : localPath;
+        var resolvedPagesUrl = string.IsNullOrWhiteSpace(target.PagesUrl) ? existing?.PagesUrl : target.PagesUrl;
+
+        _settings.RecentRepositories.RemoveAll(item =>
+            item.Provider == target.Provider
+            && string.Equals(item.Owner, target.Owner, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(item.Repository, target.Repository, StringComparison.OrdinalIgnoreCase));
+
+        _settings.RecentRepositories.Insert(0, new RecentRepositoryEntry
+        {
+            Provider = target.Provider,
+            Owner = target.Owner,
+            Repository = target.Repository,
+            CanonicalUrl = target.CanonicalUrl,
+            PagesUrl = resolvedPagesUrl,
+            LocalPath = resolvedLocalPath,
+            LastUsedUtc = DateTimeOffset.UtcNow
+        });
+
+        if (_settings.RecentRepositories.Count > MaxRecentRepositories)
+            _settings.RecentRepositories.RemoveRange(
+                MaxRecentRepositories,
+                _settings.RecentRepositories.Count - MaxRecentRepositories);
+
+        Save();
+    }
+
+    public void RemoveRecentRepository(RecentRepositoryEntry entry)
+    {
+        _settings.RecentRepositories.RemoveAll(item =>
+            item.Provider == entry.Provider
+            && string.Equals(item.Owner, entry.Owner, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(item.Repository, entry.Repository, StringComparison.OrdinalIgnoreCase));
+        Save();
+    }
+
+    public void ClearRecentRepositories()
+    {
+        _settings.RecentRepositories.Clear();
         Save();
     }
 }

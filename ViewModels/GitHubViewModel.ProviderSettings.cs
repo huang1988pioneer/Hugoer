@@ -160,12 +160,15 @@ public partial class GitHubViewModel
                 ? "此平台/此 repo 沒有可推導的專案 Pages 網址"
                 : target.PagesUrl)
             : ProviderPagesUrl;
+        var localLine = HasLocalSite
+            ? $"本地資料夾（現在）：{Services.CurrentSitePath}"
+            : $"本地資料夾（複製後）：{destination ?? pathError}";
         RepositoryTargetSummary =
             $"平台：{target.ProviderName}\n" +
-            $"Repository：{target.Owner}/{target.Repository}\n" +
+            $"遠端 Repository：{target.Owner}/{target.Repository}（{target.CanonicalUrl}）\n" +
+            $"{localLine}\n" +
             $"網站類型：{(target.IsUserOrOrganizationSite ? "使用者／組織網站" : "專案網站")}\n" +
-            $"建議網址：{pagesUrl}" +
-            (HasLocalSite ? string.Empty : $"\n本機目標：{destination ?? pathError}");
+            $"最終發布網址（Pages）：{pagesUrl}";
     }
 
     private void UpdateCloneAvailability() =>
@@ -196,5 +199,36 @@ public partial class GitHubViewModel
         HasPagesRepositories = IsGitHubProvider && PagesRepositories.Count > 0;
         if (PagesRepositories.Count == 1)
             SelectedPagesRepository = PagesRepositories[0];
+    }
+
+    private void RecordRecentRepository(GitHubRepositoryTarget? target, string? localPath = null)
+    {
+        if (target is not { IsValid: true })
+            return;
+        Services.Settings.AddRecentRepository(target, localPath);
+        ReloadRecentRepositories();
+    }
+
+    private void ReloadRecentRepositories()
+    {
+        RecentRepositories.Clear();
+        foreach (var item in Services.Settings.GetRecentRepositories())
+            RecentRepositories.Add(item);
+        HasRecentRepositories = RecentRepositories.Count > 0;
+        SelectedRecentRepository = null;
+    }
+
+    [RelayCommand]
+    private void RemoveRecentRepository(RecentRepositoryEntry entry)
+    {
+        Services.Settings.RemoveRecentRepository(entry);
+        ReloadRecentRepositories();
+    }
+
+    [RelayCommand]
+    private void ClearRecentRepositories()
+    {
+        Services.Settings.ClearRecentRepositories();
+        ReloadRecentRepositories();
     }
 }

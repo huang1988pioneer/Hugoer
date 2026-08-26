@@ -92,6 +92,26 @@
                              PlaceholderText="https://github.com/owner/repo、https://gitlab.com/owner/repo、https://codeberg.org/owner/repo、https://bitbucket.org/workspace/repo"
                              FontFamily="Consolas, Cascadia Mono, monospace"/>
 
+                    <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasRecentRepositories}">
+                        <ComboBox ItemsSource="{Binding RecentRepositories}"
+                                  SelectedItem="{Binding SelectedRecentRepository}"
+                                  HorizontalAlignment="Stretch"
+                                  PlaceholderText="最近使用的 repository（本地與遠端分開顯示）">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="models:RecentRepositoryEntry">
+                                    <StackPanel Spacing="2" Margin="0,4">
+                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding RemoteSummary}" Classes="caption" FontSize="11" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding LocalSummary}" Classes="caption" FontSize="11" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding PagesSummary}" Classes="caption" FontSize="11" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Grid.Column="1" Content="清除紀錄" Margin="8,0,0,0"
+                                Command="{Binding ClearRecentRepositoriesCommand}"/>
+                    </Grid>
+
                     <ComboBox ItemsSource="{Binding PagesRepositories}"
                               SelectedItem="{Binding SelectedPagesRepository}"
                               IsVisible="{Binding HasPagesRepositories}"
@@ -146,6 +166,26 @@
                     <TextBox Text="{Binding RepositoryUrl}"
                              PlaceholderText="https://github.com/owner/repo、https://gitlab.com/owner/repo、https://codeberg.org/owner/repo、https://bitbucket.org/workspace/repo"
                              FontFamily="Consolas, Cascadia Mono, monospace"/>
+
+                    <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasRecentRepositories}">
+                        <ComboBox ItemsSource="{Binding RecentRepositories}"
+                                  SelectedItem="{Binding SelectedRecentRepository}"
+                                  HorizontalAlignment="Stretch"
+                                  PlaceholderText="最近使用的 repository（本地與遠端分開顯示）">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="models:RecentRepositoryEntry">
+                                    <StackPanel Spacing="2" Margin="0,4">
+                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding RemoteSummary}" Classes="caption" FontSize="11" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding LocalSummary}" Classes="caption" FontSize="11" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding PagesSummary}" Classes="caption" FontSize="11" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Grid.Column="1" Content="清除紀錄" Margin="8,0,0,0"
+                                Command="{Binding ClearRecentRepositoriesCommand}"/>
+                    </Grid>
 
                     <Border Background="#101720" BorderBrush="#2A3648" BorderThickness="1"
                             CornerRadius="8" Padding="12">
