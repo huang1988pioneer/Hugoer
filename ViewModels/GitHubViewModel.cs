@@ -134,7 +134,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     public partial bool IsPublicRepo { get; set; } = true;
 
     [ObservableProperty]
-    public partial string CommitMessage { get; set; } = "Update site via Hugoer";
+    public partial string CommitMessage { get; set; } = string.Empty;
 
     [ObservableProperty]
     public partial string Log { get; set; } = string.Empty;
@@ -382,10 +382,13 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                 AppendLog(message);
                 StatusMessage = message;
             });
+            var autoMsg = string.IsNullOrWhiteSpace(CommitMessage)
+                ? await Services.GitHub.NextDatedCommitMessageAsync(site, "Publish site via Hugoer")
+                : CommitMessage.Trim();
             var result = await Services.GitHub.ConnectExistingRepositoryAndPushAsync(
                 site,
                 target,
-                string.IsNullOrWhiteSpace(CommitMessage) ? "Publish site via Hugoer" : CommitMessage.Trim(),
+                autoMsg,
                 progress);
             AppendLog(result.CombinedOutput);
             StatusMessage = result.IsPartialSuccess
@@ -573,7 +576,10 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                 AppendLog(m);
                 StatusMessage = m;
             });
-            var result = await Services.GitHub.PushAsync(site, CommitMessage, progress);
+            var pushMsg = string.IsNullOrWhiteSpace(CommitMessage)
+                ? await Services.GitHub.NextDatedCommitMessageAsync(site)
+                : CommitMessage.Trim();
+            var result = await Services.GitHub.PushAsync(site, pushMsg, progress);
             AppendLog(result.CombinedOutput);
             StatusMessage = result.Succeeded ? "推送完成" : "推送失敗";
             await RefreshPagesStatusAsync();

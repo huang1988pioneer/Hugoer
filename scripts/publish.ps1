@@ -10,10 +10,10 @@
 
 .EXAMPLE
   .\scripts\publish.ps1
-  .\scripts\publish.ps1 -Version 1.4.0 -Runtime win-x64
+  .\scripts\publish.ps1 -Version 1.5.0 -Runtime win-x64
 #>
 param(
-    [string]$Version = "1.4.0",
+    [string]$Version = "1.5.0",
     [string]$Runtime = "win-x64",
     [switch]$SkipInstaller
 )
