@@ -77,6 +77,34 @@ var rendered = MarkdownPreviewService.ToHtmlFragment("這是 **粗體** 與 *斜
 AssertContains(rendered, "<strong>粗體</strong>");
 AssertContains(rendered, "<em>斜體</em>");
 
+var videoShortcode = MarkdownPreviewService.ToHtmlFragment(
+    "{{< embed-video src=\"/videos/a.mp4\" width=\"100%\" >}}");
+AssertContains(videoShortcode, "<video controls width=\"100%\" src=\"/videos/a.mp4\"></video>");
+
+var audioShortcode = MarkdownPreviewService.ToHtmlFragment("{{< embed-audio src=\"/music/a.mp3\" >}}");
+AssertContains(audioShortcode, "<audio controls src=\"/music/a.mp3\"></audio>");
+
+var pdfShortcode = MarkdownPreviewService.ToHtmlFragment("{{< embed-pdf src=\"/pdf/a.pdf\" >}}");
+AssertContains(pdfShortcode, "hugoer-pdf-embed");
+AssertContains(pdfShortcode, "<iframe src=\"/pdf/a.pdf\" loading=\"lazy\"></iframe>");
+
+var unrelatedShortcode = MarkdownPreviewService.ToHtmlFragment("{{< youtube id=\"abc123\" >}}");
+AssertContains(unrelatedShortcode, "youtube");
+AssertContains(unrelatedShortcode, "abc123");
+Assert(!unrelatedShortcode.Contains("<video", StringComparison.Ordinal), "Unrelated shortcodes must not turn into a video tag.");
+
+var imageAsVideo = MarkdownPreviewService.ToHtmlFragment("![影片](/videos/a.mp4)");
+AssertContains(imageAsVideo, "<video");
+AssertContains(imageAsVideo, "/videos/a.mp4");
+Assert(!imageAsVideo.Contains("<img", StringComparison.Ordinal), imageAsVideo);
+
+var imageAsPdf = MarkdownPreviewService.ToHtmlFragment("![文件](/pdf/a.pdf)");
+AssertContains(imageAsPdf, "hugoer-pdf-embed");
+
+var linkToPdf = MarkdownPreviewService.ToHtmlFragment("[說明文件](/pdf/manual.pdf)");
+AssertContains(linkToPdf, "<a href=\"/pdf/manual.pdf\">說明文件</a>");
+AssertContains(linkToPdf, "hugoer-pdf-embed");
+
 var shell = MarkdownPreviewService.PreviewShellDocument();
 AssertContains(shell, "hugoerSetPreview");
 AssertContains(shell, "hugoerApplyMedia");

@@ -8,6 +8,8 @@
   <ItemGroup>
     <Compile Include="..\..\Services\FrontMatterService.cs" Link="Services\FrontMatterService.cs" />
     <Compile Include="..\..\Services\MarkdownPreviewService.cs" Link="Services\MarkdownPreviewService.cs" />
+    <Compile Include="..\..\Services\MarkdownPreviewService.Media.cs" Link="Services\MarkdownPreviewService.Media.cs" />
+    <Compile Include="..\..\Services\MediaAssetService.cs" Link="Services\MediaAssetService.cs" />
     <PackageReference Include="Markdig" Version="1.3.2" />
   </ItemGroup>
 </Project>

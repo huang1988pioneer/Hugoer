@@ -45,13 +45,15 @@ public static partial class MarkdownPreviewService
         var bodyMd = StripFrontMatter(markdown);
         if (string.IsNullOrWhiteSpace(bodyMd))
             return string.Empty;
-        return Markdown.ToHtml(bodyMd, Pipeline).Trim();
+        bodyMd = ConvertMediaShortcodesToHtml(bodyMd);
+        var html = Markdown.ToHtml(bodyMd, Pipeline).Trim();
+        return EmbedMediaLinks(html);
     }
 
     public static string ToHtmlDocument(string markdown, string? title = null)
     {
-        var bodyMd = StripFrontMatter(markdown);
-        var bodyHtml = Markdown.ToHtml(bodyMd, Pipeline);
+        var bodyMd = ConvertMediaShortcodesToHtml(StripFrontMatter(markdown));
+        var bodyHtml = EmbedMediaLinks(Markdown.ToHtml(bodyMd, Pipeline));
         var pageTitle = string.IsNullOrWhiteSpace(title) ? "Preview" : title;
 
         var sb = new StringBuilder();
@@ -97,12 +99,13 @@ public static partial class MarkdownPreviewService
         sb.AppendLine("}");
         sb.AppendLine("function hugoerApplyMedia(root) {");
         sb.AppendLine("  if (!root) return;");
-        sb.AppendLine("  root.querySelectorAll('img[src], audio[src], video[src], source[src]').forEach(function (el) {");
-        sb.AppendLine("    var src = el.getAttribute('src');");
-        sb.AppendLine("    if (!src || /^(data:|blob:|https?:|file:)/i.test(src)) return;");
-        sb.AppendLine("    var mapped = hugoerLookupMedia(src);");
+        sb.AppendLine("  root.querySelectorAll('img[src], audio[src], video[src], source[src], iframe[src], embed[src], object[data], a[href]').forEach(function (el) {");
+        sb.AppendLine("    var attr = el.hasAttribute('src') ? 'src' : (el.hasAttribute('data') ? 'data' : 'href');");
+        sb.AppendLine("    var raw = el.getAttribute(attr);");
+        sb.AppendLine("    if (!raw || /^(data:|blob:|https?:|file:|#)/i.test(raw)) return;");
+        sb.AppendLine("    var mapped = hugoerLookupMedia(raw);");
         sb.AppendLine("    if (!mapped) return;");
-        sb.AppendLine("    el.setAttribute('src', mapped);");
+        sb.AppendLine("    el.setAttribute(attr, mapped);");
         sb.AppendLine("  });");
         sb.AppendLine("}");
         sb.AppendLine("window.hugoerSetPreview = function (html, media) {");
@@ -212,6 +215,10 @@ summary { cursor: pointer; color: #7cdaf9; font-weight: 650; }
 .markdown-alert-important { border-color: #735ca8; }
 .markdown-alert-warning { border-color: #8a6b2d; }
 .markdown-alert-caution { border-color: #9a4d57; }
+.hugoer-pdf-embed { margin: 1em 0; }
+.hugoer-pdf-embed iframe { width: 100%; height: 640px; border: 1px solid #2a3648; border-radius: 8px; background: #fff; }
+.hugoer-pdf-fallback { margin-top: 0.4em; font-size: 0.85em; color: #9aa8b7; }
+.hugoer-pdf-fallback a { color: #5ec8f0; }
 .footnotes { border-top: 1px solid #2a3648; margin-top: 1.5em; padding-top: 0.75em; color: #b7c4d0; font-size: 0.9em; }
 .footnote-ref, .footnote-backref { color: #5ec8f0; }
 pre code { display: block; white-space: pre; }
