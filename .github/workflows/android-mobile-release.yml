@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - "mobile-v*"
+  pull_request:
+    paths:
+      - "mobile/android/**"
+      - ".github/workflows/android-mobile-release.yml"
   workflow_dispatch:
 
 permissions:
