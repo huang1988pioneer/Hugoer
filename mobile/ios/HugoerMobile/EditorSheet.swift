@@ -24,6 +24,9 @@ struct ArticleEditorView: View {
                         Text("預覽").tag(true)
                     }
                     .pickerStyle(.segmented)
+                    Text(article.path)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     TextField("標題", text: $title)
                         .textFieldStyle(.roundedBorder)
                         .font(.title3.weight(.semibold))
@@ -45,7 +48,6 @@ struct ArticleEditorView: View {
                 .padding(20)
             }
             .navigationTitle("編輯文章")
-            .navigationSubtitle(article.path)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("關閉") { dismiss() }

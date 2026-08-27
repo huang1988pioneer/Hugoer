@@ -38,7 +38,6 @@ struct OverviewView: View {
                 .padding(.bottom, 28)
             }
             .navigationTitle("站點總覽")
-            .navigationSubtitle(store.site.repository)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -150,6 +149,9 @@ struct ArticlesView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
+                    Text("\(store.articles.count) 篇 · repository content")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                     HStack(spacing: 8) {
                         ForEach([ArticleStatus?](arrayLiteral: nil) + ArticleStatus.allCases.map(Optional.some), id: \.self) { option in
                             FilterChip(
@@ -179,7 +181,6 @@ struct ArticlesView: View {
                 .padding(.bottom, 28)
             }
             .navigationTitle("文章")
-            .navigationSubtitle("\(store.articles.count) 篇 · repository content")
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜尋文章")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -266,7 +267,6 @@ struct DeployView: View {
                 .padding(.bottom, 28)
             }
             .navigationTitle("發布")
-            .navigationSubtitle("GitHub Pages")
             .alert("發布到 GitHub Pages？", isPresented: $showPublishConfirmation) {
                 Button("確認發布") {
                     Task { await store.triggerDeployment() }
@@ -318,7 +318,6 @@ struct MoreView: View {
                 }
             }
             .navigationTitle("更多")
-            .navigationSubtitle("沿用桌面工作台的完整能力")
         }
     }
 }
