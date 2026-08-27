@@ -438,6 +438,9 @@ Thumbs.db
         if (string.IsNullOrWhiteSpace(status.StdOut))
             return new CommandResult { ExitCode = 0, StdOut = "沒有需要提交的變更。" };
 
+        var resolvedMessage = IsAutomaticCommitMessage(message)
+            ? await NextDatedCommitMessageAsync(sitePath, cancellationToken: cancellationToken)
+            : message.Trim();
         var env = new Dictionary<string, string?>();
         var email = await ProcessRunner.RunAsync("git", "config user.email", sitePath, 10_000, cancellationToken)
             .ConfigureAwait(false);
@@ -451,7 +454,7 @@ Thumbs.db
 
         return await ProcessRunner.RunAsync(
             "git",
-            ["commit", "-m", message],
+            ["commit", "-m", resolvedMessage],
             workingDirectory: sitePath,
             timeoutMs: 60_000,
             cancellationToken: cancellationToken,

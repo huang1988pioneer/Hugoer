@@ -94,10 +94,13 @@ public static partial class GitHubRepositoryParser
         if (provider == GitHostingProvider.GitLab && ContainsRepositorySubPath(segments))
             return Invalid("網址必須指向 repository 首頁，不可包含 issues、settings、-/tree 等子路徑。");
 
+        if (!TryDecodeSegments(segments, out var decodedSegments))
+            return Invalid("網址包含無效的 URL 編碼。");
+
         return CreateTarget(
             provider.Value,
-            string.Join('/', segments[..^1].Select(Uri.UnescapeDataString)),
-            Uri.UnescapeDataString(segments[^1]));
+            string.Join('/', decodedSegments[..^1]),
+            decodedSegments[^1]);
     }
 
     private static bool TryParsePagesUrl(string value, out GitHubRepositoryTarget target)
@@ -122,7 +125,10 @@ public static partial class GitHubRepositoryParser
             return false;
 
         var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        target = CreateTargetFromPagesUrl(provider.Value, uri.Host, segments.Select(Uri.UnescapeDataString).ToArray());
+        if (!TryDecodeSegments(segments, out var decodedSegments))
+            return false;
+
+        target = CreateTargetFromPagesUrl(provider.Value, uri.Host, decodedSegments);
         return true;
     }
 
@@ -321,6 +327,22 @@ public static partial class GitHubRepositoryParser
     private static bool ContainsRepositorySubPath(IReadOnlyList<string> segments) =>
         segments.Any(segment =>
             segment is "-" or "issues" or "merge_requests" or "settings" or "pipelines" or "actions");
+
+    private static bool TryDecodeSegments(
+        IReadOnlyList<string> segments,
+        out string[] decoded)
+    {
+        try
+        {
+            decoded = segments.Select(Uri.UnescapeDataString).ToArray();
+            return true;
+        }
+        catch (UriFormatException)
+        {
+            decoded = [];
+            return false;
+        }
+    }
 
     private static Uri UpgradeToHttps(Uri uri)
     {
