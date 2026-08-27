@@ -32,6 +32,8 @@ public sealed class MarkdownWysiwygEditor : UserControl
     private bool _loadedHtml;
     private string? _initError;
     private TaskCompletionSource<string>? _flushWaiter;
+    private readonly SemaphoreSlim _flushGate = new(1, 1);
+    private readonly SemaphoreSlim _pushGate = new(1, 1);
 
     public event EventHandler? MarkdownChanged;
     public event EventHandler? SaveRequested;
@@ -99,34 +101,54 @@ public sealed class MarkdownWysiwygEditor : UserControl
             return;
         var script =
             $"window.hugoerCommand({JsonSerializer.Serialize(command)}, {JsonSerializer.Serialize(argument ?? string.Empty)})";
-        await _webView.InvokeScript(script);
+        await TryInvokeScriptAsync(script);
     }
 
     public async Task AddMediaAsync(IReadOnlyDictionary<string, string> media)
     {
         if (!_ready || _webView is null || media.Count == 0)
             return;
-        await _webView.InvokeScript($"window.hugoerAddMedia({JsonSerializer.Serialize(media)})");
+        await TryInvokeScriptAsync($"window.hugoerAddMedia({JsonSerializer.Serialize(media)})");
     }
 
     public async Task FocusEditorAsync()
     {
         if (!_ready || _webView is null)
             return;
-        await _webView.InvokeScript("window.hugoerFocus()");
+        await TryInvokeScriptAsync("window.hugoerFocus()");
     }
 
     public async Task FlushAsync()
     {
-        if (!_ready || _webView is null)
-            return;
+        await _flushGate.WaitAsync().ConfigureAwait(true);
+        try
+        {
+            if (!_ready || _webView is null)
+                return;
 
-        _flushWaiter = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        await _webView.InvokeScript("window.hugoerFlush()");
-        var completed = await Task.WhenAny(_flushWaiter.Task, Task.Delay(750));
-        if (completed == _flushWaiter.Task)
-            ApplyHtml(_flushWaiter.Task.Result, notify: true);
-        _flushWaiter = null;
+            var waiter = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _flushWaiter = waiter;
+            try
+            {
+                await _webView.InvokeScript("window.hugoerFlush()");
+                var completed = await Task.WhenAny(waiter.Task, Task.Delay(750));
+                if (completed == waiter.Task)
+                    ApplyHtml(await waiter.Task.ConfigureAwait(true), notify: true);
+            }
+            catch (Exception ex)
+            {
+                ShowFailure("WYSIWYG 編輯器同步失敗。已可改用原始碼模式。", ex.Message);
+            }
+            finally
+            {
+                if (ReferenceEquals(_flushWaiter, waiter))
+                    _flushWaiter = null;
+            }
+        }
+        finally
+        {
+            _flushGate.Release();
+        }
     }
 
     private void OnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
@@ -164,8 +186,15 @@ public sealed class MarkdownWysiwygEditor : UserControl
         _webView.IsVisible = true;
         _placeholder.IsVisible = false;
         _ready = true;
-        await _webView.InvokeScript("window.hugoerFocus()");
-        PushMarkdownToWebView();
+        try
+        {
+            await _webView.InvokeScript("window.hugoerFocus()");
+            PushMarkdownToWebView();
+        }
+        catch (Exception ex)
+        {
+            ShowFailure("WYSIWYG 編輯器初始化失敗。已可改用原始碼模式。", ex.Message);
+        }
     }
 
     private void OnWebMessageReceived(object? sender, WebMessageReceivedEventArgs e)
@@ -239,17 +268,51 @@ public sealed class MarkdownWysiwygEditor : UserControl
             MarkdownChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private void PushMarkdownToWebView()
+    private void PushMarkdownToWebView() => _ = PushMarkdownToWebViewAsync();
+
+    private async Task PushMarkdownToWebViewAsync()
     {
         if (!_ready || _webView is null)
             return;
 
-        var html = MarkdownWysiwygConverter.ToEditableHtml(Markdown ?? string.Empty);
-        var media = MediaAssetService.BuildPreviewMediaMap(html, SitePath);
-        var script = media.Count == 0
-            ? $"window.hugoerSetHtml({JsonSerializer.Serialize(html)})"
-            : $"window.hugoerSetHtml({JsonSerializer.Serialize(html)}, {JsonSerializer.Serialize(media)})";
-        _ = _webView.InvokeScript(script);
+        await _pushGate.WaitAsync().ConfigureAwait(true);
+        try
+        {
+            if (!_ready || _webView is null)
+                return;
+
+            var html = MarkdownWysiwygConverter.ToEditableHtml(Markdown ?? string.Empty);
+            var media = MediaAssetService.BuildPreviewMediaMap(html, SitePath);
+            var script = media.Count == 0
+                ? $"window.hugoerSetHtml({JsonSerializer.Serialize(html)})"
+                : $"window.hugoerSetHtml({JsonSerializer.Serialize(html)}, {JsonSerializer.Serialize(media)})";
+            await _webView.InvokeScript(script);
+        }
+        catch (Exception ex)
+        {
+            ShowFailure("WYSIWYG 編輯器更新失敗。已可改用原始碼模式。", ex.Message);
+        }
+        finally
+        {
+            _pushGate.Release();
+        }
+    }
+
+    private async Task<bool> TryInvokeScriptAsync(string script)
+    {
+        if (!_ready || _webView is null)
+            return false;
+
+        try
+        {
+            await _webView.InvokeScript(script);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ShowFailure("WYSIWYG 編輯器操作失敗。已可改用原始碼模式。", ex.Message);
+            return false;
+        }
     }
 
     private void ShowFailure(string userMessage, string detail)

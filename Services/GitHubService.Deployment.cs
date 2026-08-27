@@ -23,7 +23,10 @@ public sealed partial class GitHubService
         if (markerError is not null) return markerError;
 
         progress?.Report("提交檔案…");
-        await CommitAllAsync(sitePath, "Initial commit via Hugoer", cancellationToken).ConfigureAwait(false);
+        var commit = await CommitAllAsync(sitePath, "Initial commit via Hugoer", cancellationToken)
+            .ConfigureAwait(false);
+        if (!commit.Succeeded)
+            return commit;
 
         var visibility = isPublic ? "public" : "private";
         progress?.Report($"建立 GitHub repository：{repoName}…");
@@ -269,6 +272,8 @@ public sealed partial class GitHubService
         if (markerError is not null) return markerError;
         var commit = await CommitAllAsync(sitePath, commitMessage, cancellationToken).ConfigureAwait(false);
         progress?.Report(commit.CombinedOutput);
+        if (!commit.Succeeded)
+            return commit;
 
         var branch = target.IsValid
             ? StaticPagesDeployment.ResolveSourceBranch(target, info.Branch)

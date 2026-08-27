@@ -5,7 +5,9 @@ param(
 $ErrorActionPreference = "Stop"
 
 $service = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot "Services\DeploymentMonitorService.cs")
-$github = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot "Services\GitHubService.cs")
+$github = (Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot "Services") -Filter "GitHubService*.cs" |
+    Sort-Object Name |
+    ForEach-Object { Get-Content -Raw -LiteralPath $_.FullName }) -join "`n"
 $viewModel = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot "ViewModels\GitHubViewModel.cs")
 $view = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot "Views\GitHubView.axaml")
 $mainViewModel = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot "ViewModels\MainViewModel.cs")

@@ -350,7 +350,7 @@ public sealed partial class SiteMigrationService
         var dir = Path.Combine(destRoot, converted.RelativeDirectory.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(dir);
         var path = UniquePath(Path.Combine(dir, converted.FileName));
-        File.WriteAllText(path, converted.Markdown, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        AtomicFileWriter.WriteAllText(path, converted.Markdown);
     }
 
     private static string DestinationDirectory(
@@ -965,8 +965,9 @@ public sealed partial class SiteMigrationService
     {
         if (!overwrite && File.Exists(path))
             return;
-        File.WriteAllText(path, content.Replace("\r\n", "\n", StringComparison.Ordinal) + (content.EndsWith('\n') ? "" : "\n"),
-            new UTF8Encoding(false));
+        AtomicFileWriter.WriteAllText(
+            path,
+            content.Replace("\r\n", "\n", StringComparison.Ordinal) + (content.EndsWith('\n') ? "" : "\n"));
     }
 
     private static void WriteReport(
@@ -1006,10 +1007,9 @@ public sealed partial class SiteMigrationService
         foreach (var line in log)
             sb.AppendLine("- " + line);
 
-        File.WriteAllText(
+        AtomicFileWriter.WriteAllText(
             Path.Combine(dest, export ? "hugoer-export-report.txt" : "hugoer-migration-report.txt"),
-            sb.ToString(),
-            new UTF8Encoding(false));
+            sb.ToString());
     }
 
     private static string PrepareExportRoot(string destinationDirectory, StaticSiteKind target)

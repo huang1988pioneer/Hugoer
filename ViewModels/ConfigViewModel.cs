@@ -7,7 +7,7 @@ using Hugoer.Services;
 
 namespace Hugoer.ViewModels;
 
-public partial class ConfigViewModel : PageViewModelBase
+public partial class ConfigViewModel : PageViewModelBase, IDisposable
 {
     private readonly TomlParamsService _paramsService = new();
     private readonly HugoConfigService _configService = new();
@@ -66,6 +66,10 @@ public partial class ConfigViewModel : PageViewModelBase
     public partial string ConfigCatalogSummary { get; set; } = string.Empty;
 
     private bool _loading;
+    private bool _disposed;
+    private int _loadGeneration;
+    private CancellationTokenSource? _loadCts;
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
     private readonly IdleAutoSave _autoSave;
 
     public override async Task OnNavigatedToAsync()
@@ -103,6 +107,10 @@ public partial class ConfigViewModel : PageViewModelBase
     [RelayCommand]
     private async Task RefreshFilesAsync()
     {
+        if (_disposed)
+            return;
+
+        CancelPendingLoad();
         ConfigFiles.Clear();
         if (!RequireSite(out var site))
         {
@@ -129,23 +137,42 @@ public partial class ConfigViewModel : PageViewModelBase
     [RelayCommand]
     private async Task LoadSelectedAsync()
     {
-        if (string.IsNullOrWhiteSpace(SelectedFile) || !File.Exists(SelectedFile))
+        var path = SelectedFile;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
             return;
 
         _autoSave.Cancel();
+        var load = BeginLoad();
         _loading = true;
         try
         {
-            EditorText = await File.ReadAllTextAsync(SelectedFile);
+            var text = await File.ReadAllTextAsync(path, load.Source.Token);
+            if (!IsCurrentLoad(path, load.Generation))
+                return;
+
+            EditorText = text;
             IsDirty = false;
             ParseQuickFields(EditorText);
             ReloadParamsForm();
             ReloadAdvancedForm();
-            StatusMessage = $"已載入：{SelectedFile}";
+            StatusMessage = $"已載入：{path}";
+        }
+        catch (OperationCanceledException) when (load.Source.IsCancellationRequested)
+        {
+            // A newer selection or refresh superseded this read.
+        }
+        catch (Exception ex)
+        {
+            if (IsCurrentLoad(path, load.Generation))
+                StatusMessage = ex.Message;
         }
         finally
         {
-            _loading = false;
+            if (load.Generation == _loadGeneration)
+                _loading = false;
+            if (ReferenceEquals(_loadCts, load.Source))
+                _loadCts = null;
+            load.Source.Dispose();
         }
     }
 
@@ -160,36 +187,59 @@ public partial class ConfigViewModel : PageViewModelBase
 
     private async Task SaveCoreAsync(bool auto)
     {
-        if (string.IsNullOrWhiteSpace(SelectedFile))
+        if (_disposed)
+            return;
+
+        var selected = SelectedFile;
+        if (string.IsNullOrWhiteSpace(selected))
         {
             if (auto) return;
             if (!RequireSite(out var site)) return;
-            SelectedFile = Path.Combine(site, "hugo.toml");
+            selected = Path.Combine(site, "hugo.toml");
+            SelectedFile = selected;
         }
+
+        var text = EditorText;
+        await _saveGate.WaitAsync().ConfigureAwait(true);
 
         try
         {
-            await File.WriteAllTextAsync(SelectedFile, EditorText);
-            IsDirty = false;
-            _autoSave.Cancel();
-            StatusMessage = auto ? $"已自動儲存：{SelectedFile}" : $"已儲存：{SelectedFile}";
+            await AtomicFileWriter.WriteAllTextAsync(selected, text).ConfigureAwait(true);
+            if (string.Equals(SelectedFile, selected, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(EditorText, text, StringComparison.Ordinal))
+            {
+                IsDirty = false;
+                _autoSave.Cancel();
+                StatusMessage = auto ? $"已自動儲存：{selected}" : $"已儲存：{selected}";
+            }
         }
         catch (Exception ex)
         {
             StatusMessage = auto ? $"自動儲存失敗：{ex.Message}" : ex.Message;
         }
+        finally
+        {
+            _saveGate.Release();
+        }
     }
 
     private async Task PersistSilentlyAsync(string path, string text)
     {
+        await _saveGate.WaitAsync().ConfigureAwait(true);
         try
         {
-            await File.WriteAllTextAsync(path, text);
-            StatusMessage = $"已自動儲存：{path}";
+            await AtomicFileWriter.WriteAllTextAsync(path, text).ConfigureAwait(true);
+            if (string.Equals(SelectedFile, path, StringComparison.OrdinalIgnoreCase))
+                StatusMessage = $"已自動儲存：{path}";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"自動儲存失敗：{ex.Message}";
+            if (string.Equals(SelectedFile, path, StringComparison.OrdinalIgnoreCase))
+                StatusMessage = $"自動儲存失敗：{ex.Message}";
+        }
+        finally
+        {
+            _saveGate.Release();
         }
     }
 
@@ -373,7 +423,7 @@ theme = ''
   toggle = true
   default = 'auto'
 """;
-            await File.WriteAllTextAsync(path, content);
+            await AtomicFileWriter.WriteAllTextAsync(path, content);
         }
 
         await RefreshFilesAsync();
@@ -430,5 +480,35 @@ theme = ''
             lines.Insert(0, $"{key} = '{value}'");
 
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private (CancellationTokenSource Source, int Generation) BeginLoad()
+    {
+        _loadCts?.Cancel();
+        var source = new CancellationTokenSource();
+        _loadCts = source;
+        return (source, ++_loadGeneration);
+    }
+
+    private void CancelPendingLoad()
+    {
+        _loadCts?.Cancel();
+        _loadCts = null;
+        _loadGeneration++;
+    }
+
+    private bool IsCurrentLoad(string path, int generation) =>
+        generation == _loadGeneration
+        && string.Equals(SelectedFile, path, StringComparison.OrdinalIgnoreCase);
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+        _autoSave.Dispose();
+        _loadCts?.Cancel();
+        _loadCts = null;
+        GC.SuppressFinalize(this);
     }
 }

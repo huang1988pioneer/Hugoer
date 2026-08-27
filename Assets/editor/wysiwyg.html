@@ -742,6 +742,14 @@
         .replace(/"/g, '&quot;');
     }
 
+    function isSafeUrl(value, kind) {
+      const url = String(value || '').trim();
+      if (!url || /[\u0000-\u001f]/.test(url)) return false;
+      if (/^(?:javascript|vbscript|file):/i.test(url)) return false;
+      if (/^data:/i.test(url)) return kind === 'image' && /^data:image\//i.test(url);
+      return true;
+    }
+
     function toggleHeading(level) {
       const block = currentBlock();
       const tag = 'h' + level;
@@ -816,6 +824,7 @@
       const text = document.getElementById('dlgText').value || '';
       const href = document.getElementById('dlgHref').value || '';
       closeDialog();
+      if (!isSafeUrl(href, dialogKind)) return;
       if (dialogKind === 'image') {
         insertHtml('<img src="' + escapeHtml(href) + '" alt="' + escapeHtml(text) + '"/>');
       } else {
@@ -918,7 +927,8 @@
         template.content.querySelectorAll('script,iframe,object,embed,style').forEach((el) => el.remove());
         template.content.querySelectorAll('*').forEach((el) => {
           [...el.attributes].forEach((attr) => {
-            if (attr.name.startsWith('on') || (attr.name === 'href' && /^\s*javascript:/i.test(attr.value)))
+            if (attr.name.startsWith('on')
+              || ((attr.name === 'href' || attr.name === 'src') && !isSafeUrl(attr.value, attr.name === 'src' ? 'image' : 'link')))
               el.removeAttribute(attr.name);
           });
         });

@@ -106,7 +106,7 @@ public partial class MenuEntryItem : ObservableObject
     };
 }
 
-public partial class MenuViewModel : PageViewModelBase
+public partial class MenuViewModel : PageViewModelBase, IDisposable
 {
     public MenuViewModel()
     {
@@ -182,6 +182,9 @@ public partial class MenuViewModel : PageViewModelBase
     private bool _loading;
     private bool _syncingSelection;
     private readonly IdleAutoSave _autoSave;
+    private bool _disposed;
+    private int _pageLoadGeneration;
+    private CancellationTokenSource? _pageLoadCts;
 
     public override Task OnNavigatedToAsync()
     {
@@ -218,10 +221,12 @@ public partial class MenuViewModel : PageViewModelBase
 
     partial void OnSelectedPageChanged(ContentItem? value)
     {
+        if (_disposed) return;
         HasPageSelection = value is not null;
         if (_syncingSelection) return;
         if (value is null)
         {
+            CancelPageLoad();
             IsEditingPage = false;
             UpdateEditorMode();
             return;
@@ -234,7 +239,8 @@ public partial class MenuViewModel : PageViewModelBase
         IsEditingMenu = false;
         IsEditingPage = true;
         UpdateEditorMode();
-        _ = LoadPageAsync(value);
+        var load = BeginPageLoad();
+        _ = LoadPageAsync(value, load.Source, load.Generation);
     }
 
     partial void OnPageTitleChanged(string value)
@@ -252,13 +258,17 @@ public partial class MenuViewModel : PageViewModelBase
     [RelayCommand]
     private void Refresh()
     {
+        if (_disposed) return;
         _autoSave.Cancel();
+        CancelPageLoad();
         _all.Clear();
         Entries.Clear();
         SitePages.Clear();
         MenuNames.Clear();
         SelectedEntry = null;
         SelectedPage = null;
+        PageTitle = string.Empty;
+        PageBody = string.Empty;
         IsDirty = false;
         PageIsDirty = false;
         ShowFrontMatterNotice = false;
@@ -508,29 +518,39 @@ public partial class MenuViewModel : PageViewModelBase
 
     private async Task SavePageCoreAsync(bool reload, bool auto)
     {
-        if (SelectedPage is null)
+        var selectedPage = SelectedPage;
+        if (selectedPage is null)
         {
             if (!auto)
                 StatusMessage = "請先選擇網站頁面";
             return;
         }
 
+        var selectedPath = selectedPage.FullPath;
+        var title = PageTitle;
+        var body = PageBody ?? string.Empty;
+
         try
         {
-            var document = Services.FrontMatter.Parse(await Services.Content.ReadAsync(SelectedPage.FullPath));
-            if (!string.IsNullOrWhiteSpace(PageTitle))
-                document.Fields["title"] = PageTitle.Trim();
-            document.Body = PageBody ?? string.Empty;
-            await Services.Content.SaveAsync(SelectedPage.FullPath, Services.FrontMatter.Write(document));
+            var document = Services.FrontMatter.Parse(await Services.Content.ReadAsync(selectedPath));
+            if (!string.IsNullOrWhiteSpace(title))
+                document.Fields["title"] = title.Trim();
+            document.Body = body;
+            await Services.Content.SaveAsync(selectedPath, Services.FrontMatter.Write(document));
+
+            var stillSelected = ReferenceEquals(SelectedPage, selectedPage)
+                && string.Equals(SelectedPage?.FullPath, selectedPath, StringComparison.OrdinalIgnoreCase);
+            if (!stillSelected)
+                return;
+
             PageIsDirty = false;
             if (!IsDirty)
                 _autoSave.Cancel();
             StatusMessage = auto
-                ? $"已自動儲存頁面：{SelectedPage.RelativePath}"
-                : $"已儲存頁面：{SelectedPage.RelativePath}";
+                ? $"已自動儲存頁面：{selectedPage.RelativePath}"
+                : $"已儲存頁面：{selectedPage.RelativePath}";
             if (reload)
             {
-                var selectedPath = SelectedPage.FullPath;
                 Refresh();
                 SelectedPage = SitePages.FirstOrDefault(page =>
                     page.FullPath.Equals(selectedPath, StringComparison.OrdinalIgnoreCase));
@@ -569,27 +589,70 @@ public partial class MenuViewModel : PageViewModelBase
         }
     }
 
-    private async Task LoadPageAsync(ContentItem page)
+    private Task LoadPageAsync(ContentItem page)
+    {
+        var load = BeginPageLoad();
+        return LoadPageAsync(page, load.Source, load.Generation);
+    }
+
+    private async Task LoadPageAsync(ContentItem page, CancellationTokenSource load, int generation)
     {
         _loading = true;
         try
         {
-            var markdown = await Services.Content.ReadAsync(page.FullPath);
+            var markdown = await Services.Content.ReadAsync(page.FullPath, load.Token);
+            if (!IsCurrentPageLoad(page, generation))
+                return;
+
             var document = Services.FrontMatter.Parse(markdown);
             PageTitle = document.Fields.TryGetValue("title", out var title) ? title : page.DisplayTitle;
             PageBody = document.Body;
             PageIsDirty = false;
             StatusMessage = page.RelativePath;
         }
+        catch (OperationCanceledException) when (load.IsCancellationRequested)
+        {
+        }
         catch (Exception ex)
         {
-            StatusMessage = ex.Message;
+            if (IsCurrentPageLoad(page, generation))
+                StatusMessage = ex.Message;
         }
         finally
         {
-            _loading = false;
+            if (generation == _pageLoadGeneration)
+                _loading = false;
+            if (ReferenceEquals(_pageLoadCts, load))
+                _pageLoadCts = null;
+            load.Dispose();
         }
     }
+
+    private (CancellationTokenSource Source, int Generation) BeginPageLoad()
+    {
+        CancelPageLoad();
+        var source = new CancellationTokenSource();
+        _pageLoadCts = source;
+        var generation = ++_pageLoadGeneration;
+        return (source, generation);
+    }
+
+    private void CancelPageLoad()
+    {
+        _pageLoadGeneration++;
+        var source = _pageLoadCts;
+        _pageLoadCts = null;
+        if (source is null)
+            return;
+
+        source.Cancel();
+    }
+
+    private bool IsCurrentPageLoad(ContentItem page, int generation) =>
+        !_disposed
+        && generation == _pageLoadGeneration
+        && ReferenceEquals(SelectedPage, page)
+        && _pageLoadCts is not null;
 
     private void RebuildMenuNames()
     {
@@ -721,5 +784,13 @@ public partial class MenuViewModel : PageViewModelBase
         value = Regex.Replace(value, @"\s+", "-");
         value = Regex.Replace(value, @"[^a-z0-9\u4e00-\u9fff\-_]", "");
         return string.IsNullOrWhiteSpace(value) ? $"page-{DateTime.Now:yyyyMMddHHmmss}" : value;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        CancelPageLoad();
+        _autoSave.Dispose();
     }
 }

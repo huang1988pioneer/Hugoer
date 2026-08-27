@@ -10,6 +10,7 @@
     <Compile Include="..\..\Services\ContentService.cs" Link="Services\ContentService.cs" />
     <Compile Include="..\..\Services\FrontMatterService.cs" Link="Services\FrontMatterService.cs" />
     <Compile Include="..\..\Helpers\PathHelper.cs" Link="Helpers\PathHelper.cs" />
+    <Compile Include="..\..\Helpers\AtomicFileWriter.cs" Link="Helpers\AtomicFileWriter.cs" />
     <Compile Include="..\..\Models\MenuModels.cs" Link="Models\MenuModels.cs" />
     <Compile Include="..\..\Models\AppSettings.cs" Link="Models\AppSettings.cs" />
     <PackageReference Include="Tomlyn" Version="2.10.1" />

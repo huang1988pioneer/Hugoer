@@ -112,8 +112,32 @@ var service = new MenuService();
 var loaded = service.Load(temp);
 Assert(loaded.Entries.Count == 3, $"load should merge home/archives/search, got {loaded.Entries.Count}");
 Assert(loaded.ImportedFromFrontMatter >= 1, "should see front matter menus");
-Assert(new ContentService().ListArticles(temp).Count == 1, "only hello-world is an article");
-Assert(new ContentService().ListSitePages(temp).Count == 2, "archives and search are pages");
+var contentService = new ContentService();
+Assert(contentService.ListArticles(temp).Count == 1, "only hello-world is an article");
+Assert(contentService.ListSitePages(temp).Count == 2, "archives and search are pages");
+Assert(contentService.ListContent(temp, "../outside").Count == 0, "content browser must reject traversal");
+
+var escapedTitlePath = Path.Combine(temp, "content", "post", "safe.md");
+await contentService.CreateMarkdownAsync(
+    temp,
+    "post/safe.md",
+    "Title\nInjected",
+    slug: "safe\nslug");
+var escapedTitleBody = File.ReadAllText(escapedTitlePath);
+Assert(escapedTitleBody.Contains("title: \"Title Injected\"", StringComparison.Ordinal), "front matter title must stay on one line");
+Assert(escapedTitleBody.Contains("slug: \"safe slug\"", StringComparison.Ordinal), "front matter slug must stay on one line");
+File.Delete(escapedTitlePath);
+
+var traversalRejected = false;
+try
+{
+    await contentService.CreateMarkdownAsync(temp, "../escape.md", "Should not be created");
+}
+catch (ArgumentException)
+{
+    traversalRejected = true;
+}
+Assert(traversalRejected, "article creation must reject paths outside content/");
 
 service.Save(temp, loaded, loaded.Entries);
 var savedConfig = File.ReadAllText(Path.Combine(temp, "hugo.toml"));

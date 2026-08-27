@@ -4,8 +4,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$servicePath = Join-Path $RepositoryRoot "Services\GitHubService.cs"
-$source = Get-Content -Raw -LiteralPath $servicePath
+$serviceDirectory = Join-Path $RepositoryRoot "Services"
+$source = (Get-ChildItem -LiteralPath $serviceDirectory -Filter "GitHubService*.cs" |
+    Sort-Object Name |
+    ForEach-Object { Get-Content -Raw -LiteralPath $_.FullName }) -join "`n"
 
 $permissionCheck = $source.IndexOf(".permissions.admin", [System.StringComparison]::Ordinal)
 $managePagesCall = $source.IndexOf('api -X {method} repos/', [System.StringComparison]::Ordinal)

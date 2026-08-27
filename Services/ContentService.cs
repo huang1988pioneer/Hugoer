@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Hugoer.Helpers;
 using Hugoer.Models;
 using Tomlyn;
@@ -7,6 +9,8 @@ namespace Hugoer.Services;
 
 public sealed class ContentService
 {
+    private readonly FrontMatterService _frontMatter = new();
+
     public IReadOnlyList<ContentItem> ListContent(string sitePath, string? relativeDir = null)
     {
         var contentRoot = PathHelper.ContentDir(sitePath);
@@ -14,10 +18,12 @@ public sealed class ContentService
             return [];
 
         var dir = string.IsNullOrWhiteSpace(relativeDir)
-            ? contentRoot
-            : Path.GetFullPath(Path.Combine(contentRoot, relativeDir));
+            ? Path.GetFullPath(contentRoot)
+            : PathHelper.TryResolveUnder(contentRoot, relativeDir, out var resolved)
+                ? resolved
+                : string.Empty;
 
-        if (!dir.StartsWith(Path.GetFullPath(contentRoot), StringComparison.OrdinalIgnoreCase))
+        if (dir.Length == 0)
             return [];
 
         if (!Directory.Exists(dir))
@@ -25,32 +31,43 @@ public sealed class ContentService
 
         var items = new List<ContentItem>();
 
-        foreach (var d in Directory.GetDirectories(dir).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+        try
         {
-            items.Add(new ContentItem
+            foreach (var d in Directory.GetDirectories(dir).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
             {
-                FullPath = d,
-                RelativePath = Path.GetRelativePath(contentRoot, d).Replace('\\', '/'),
-                Name = Path.GetFileName(d),
-                IsDirectory = true,
-                LastWriteTime = Directory.GetLastWriteTime(d)
-            });
-        }
+                items.Add(new ContentItem
+                {
+                    FullPath = d,
+                    RelativePath = Path.GetRelativePath(contentRoot, d).Replace('\\', '/'),
+                    Name = Path.GetFileName(d),
+                    IsDirectory = true,
+                    LastWriteTime = Directory.GetLastWriteTime(d)
+                });
+            }
 
-        foreach (var f in Directory.GetFiles(dir)
-                     .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
-                                 || f.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase)
-                                 || f.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
-                     .OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
-        {
-            items.Add(new ContentItem
+            foreach (var f in Directory.GetFiles(dir)
+                         .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
+                                     || f.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase)
+                                     || f.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+                         .OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
             {
-                FullPath = f,
-                RelativePath = Path.GetRelativePath(contentRoot, f).Replace('\\', '/'),
-                Name = Path.GetFileName(f),
-                IsDirectory = false,
-                LastWriteTime = File.GetLastWriteTime(f)
-            });
+                items.Add(new ContentItem
+                {
+                    FullPath = f,
+                    RelativePath = Path.GetRelativePath(contentRoot, f).Replace('\\', '/'),
+                    Name = Path.GetFileName(f),
+                    IsDirectory = false,
+                    LastWriteTime = File.GetLastWriteTime(f)
+                });
+            }
+        }
+        catch (IOException)
+        {
+            // A site can be changed or removed while the content browser is open.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Keep the entries already read when a protected child is encountered.
         }
 
         return items;
@@ -62,14 +79,16 @@ public sealed class ContentService
         if (!Directory.Exists(contentRoot))
             return [];
 
-        return Directory.EnumerateFiles(contentRoot, "*.*", SearchOption.AllDirectories)
-            .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
-                        || f.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
-            .Select(f =>
+        var items = new List<ContentItem>();
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(contentRoot, "*.*", SearchOption.AllDirectories)
+                         .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
+                                     || f.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase))
+                         .OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
             {
                 var metadata = ReadArticleMetadata(f);
-                return new ContentItem
+                items.Add(new ContentItem
                 {
                     FullPath = f,
                     RelativePath = Path.GetRelativePath(contentRoot, f).Replace('\\', '/'),
@@ -79,9 +98,19 @@ public sealed class ContentService
                     ArticleDate = metadata.Date,
                     ArticleTitle = metadata.Title,
                     IsDraft = metadata.IsDraft
-                };
-            })
-            .ToList();
+                });
+            }
+        }
+        catch (IOException)
+        {
+            // Return the entries collected before a directory disappeared or became locked.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Return readable content even when another directory is protected.
+        }
+
+        return items;
     }
 
     public IReadOnlyList<ContentItem> ListArticles(string sitePath)
@@ -193,17 +222,21 @@ public sealed class ContentService
         }
     }
 
-    private static ArticleMetadata ReadArticleMetadata(string fullPath)
+    private ArticleMetadata ReadArticleMetadata(string fullPath)
     {
         try
         {
-            var document = new FrontMatterService().Parse(File.ReadAllText(fullPath));
+            var document = _frontMatter.Parse(File.ReadAllText(fullPath));
             var title = document.Fields.TryGetValue("title", out var parsedTitle) ? parsedTitle : string.Empty;
             var isDraft = document.Fields.TryGetValue("draft", out var parsedDraft)
                           && bool.TryParse(parsedDraft, out var draft)
                           && draft;
             var date = document.Fields.TryGetValue("date", out var parsedDate)
-                       && DateTimeOffset.TryParse(parsedDate, out var articleDate)
+                       && DateTimeOffset.TryParse(
+                           parsedDate,
+                           CultureInfo.InvariantCulture,
+                           DateTimeStyles.AllowWhiteSpaces,
+                           out var articleDate)
                 ? articleDate
                 : (DateTimeOffset?)null;
             return new ArticleMetadata(title, date, isDraft);
@@ -215,6 +248,10 @@ public sealed class ContentService
         catch (UnauthorizedAccessException)
         {
             // Keep the article in the list even when its metadata cannot be read.
+        }
+        catch (Exception)
+        {
+            // Malformed front matter must not hide every other article from the browser.
         }
 
         return new ArticleMetadata(string.Empty, null, false);
@@ -229,11 +266,8 @@ public sealed class ContentService
 
     public async Task SaveAsync(string fullPath, string content, CancellationToken cancellationToken = default)
     {
-        var dir = Path.GetDirectoryName(fullPath);
-        if (!string.IsNullOrEmpty(dir))
-            Directory.CreateDirectory(dir);
-
-        await File.WriteAllTextAsync(fullPath, content, cancellationToken).ConfigureAwait(false);
+        await AtomicFileWriter.WriteAllTextAsync(fullPath, content, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task CreateMarkdownAsync(
@@ -244,31 +278,60 @@ public sealed class ContentService
         string? slug = null)
     {
         var contentRoot = PathHelper.ContentDir(sitePath);
-        var normalized = relativePath.Replace('\\', '/').TrimStart('/');
+        var normalized = (relativePath ?? string.Empty).Replace('\\', '/').Trim();
+        normalized = normalized.TrimStart('/');
+        if (normalized.Length == 0)
+            throw new ArgumentException("文章路徑不可為空。", nameof(relativePath));
         if (!normalized.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
             normalized += ".md";
 
-        var full = Path.Combine(contentRoot, normalized.Replace('/', Path.DirectorySeparatorChar));
-        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        if (!PathHelper.TryResolveUnder(
+                contentRoot,
+                normalized.Replace('/', Path.DirectorySeparatorChar),
+                out var full,
+                allowRoot: false))
+        {
+            throw new ArgumentException("文章路徑必須位於 content/ 內。", nameof(relativePath));
+        }
 
-        if (File.Exists(full))
-            throw new InvalidOperationException($"檔案已存在：{normalized}");
+        var directory = Path.GetDirectoryName(full)
+            ?? throw new ArgumentException("文章路徑格式無效。", nameof(relativePath));
+        Directory.CreateDirectory(directory);
 
-        var date = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ssK");
+        var safeTitle = SanitizeFrontMatterValue(title);
         var code = string.IsNullOrWhiteSpace(slug)
             ? Path.GetFileNameWithoutExtension(normalized)
-            : slug.Trim();
+            : SanitizeFrontMatterValue(slug);
+        if (code.Length == 0)
+            code = Path.GetFileNameWithoutExtension(normalized);
+
+        var date = DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture);
         var body = $"""
 ---
-title: "{title.Replace("\"", "\\\"")}"
+title: "{EscapeFrontMatterValue(safeTitle)}"
 date: {date}
-slug: "{code.Replace("\"", "\\\"")}"
+slug: "{EscapeFrontMatterValue(code)}"
 draft: true
 ---
 
 開始寫作吧。
 """;
-        await File.WriteAllTextAsync(full, body, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var stream = new FileStream(
+                full,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                options: FileOptions.Asynchronous);
+            await using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            await writer.WriteAsync(body.AsMemory(), cancellationToken).ConfigureAwait(false);
+        }
+        catch (IOException) when (File.Exists(full))
+        {
+            throw new InvalidOperationException($"檔案已存在：{normalized}");
+        }
     }
 
     public void Delete(string fullPath)
@@ -278,4 +341,11 @@ draft: true
         else if (Directory.Exists(fullPath))
             Directory.Delete(fullPath, recursive: true);
     }
+
+    private static string SanitizeFrontMatterValue(string? value) =>
+        (value ?? string.Empty).ReplaceLineEndings(" ").Trim();
+
+    private static string EscapeFrontMatterValue(string value) =>
+        value.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal);
 }

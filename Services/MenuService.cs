@@ -71,13 +71,13 @@ public sealed partial class MenuService
         var rendered = RenderMenuToml(entries, document.MenuRootKey, document.IsDedicatedMenuFile);
         if (document.IsDedicatedMenuFile || IsDedicatedMenuFile(configPath))
         {
-            File.WriteAllText(configPath, rendered.EndsWith('\n') ? rendered : rendered + "\n");
+            AtomicFileWriter.WriteAllText(configPath, rendered.EndsWith('\n') ? rendered : rendered + "\n");
         }
         else
         {
             var original = File.Exists(configPath) ? File.ReadAllText(configPath) : string.Empty;
             var next = ReplaceMenuSpan(original, rendered);
-            File.WriteAllText(configPath, next);
+            AtomicFileWriter.WriteAllText(configPath, next);
         }
 
         var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -100,7 +100,7 @@ public sealed partial class MenuService
             var markdown = File.ReadAllText(file);
             var stripped = RemoveMenuFromFrontMatter(markdown);
             if (!string.Equals(stripped, markdown, StringComparison.Ordinal))
-                File.WriteAllText(file, stripped);
+                AtomicFileWriter.WriteAllText(file, stripped);
         }
     }
 

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text;
 using System.Text.RegularExpressions;
 using Hugoer.Helpers;
 using Hugoer.Models;
@@ -35,7 +36,7 @@ public sealed partial class GitHubService
         {
             ["baseURL"] = baseUrl
         });
-        await File.WriteAllTextAsync(config, updated, cancellationToken).ConfigureAwait(false);
+        await AtomicFileWriter.WriteAllTextAsync(config, updated, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<GitHubRepositoryLookup> LookupOwnedRepositoryAsync(
@@ -348,17 +349,24 @@ public sealed partial class GitHubService
 .DS_Store
 Thumbs.db
 """;
-        if (!File.Exists(path))
+        var text = File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+        var additions = new StringBuilder();
+        if (!text.Contains("/public/", StringComparison.Ordinal))
+            additions.AppendLine("/public/");
+        if (!text.Contains("/resources/", StringComparison.Ordinal))
+            additions.AppendLine("/resources/");
+
+        if (string.IsNullOrEmpty(text))
         {
-            File.WriteAllText(path, defaults);
+            AtomicFileWriter.WriteAllText(path, defaults);
             return;
         }
 
-        var text = File.ReadAllText(path);
-        if (!text.Contains("/public/", StringComparison.Ordinal))
-            File.AppendAllText(path, "\n/public/\n");
-        if (!text.Contains("/resources/", StringComparison.Ordinal))
-            File.AppendAllText(path, "\n/resources/\n");
+        if (additions.Length == 0)
+            return;
+
+        var separator = text.EndsWith('\n') ? string.Empty : Environment.NewLine;
+        AtomicFileWriter.WriteAllText(path, text + separator + additions);
     }
 
     /// <summary>
@@ -392,7 +400,10 @@ Thumbs.db
         string message,
         CancellationToken cancellationToken = default)
     {
-        await ProcessRunner.RunAsync("git", "add -A", sitePath, 60_000, cancellationToken).ConfigureAwait(false);
+        var add = await ProcessRunner.RunAsync("git", "add -A", sitePath, 60_000, cancellationToken)
+            .ConfigureAwait(false);
+        if (!add.Succeeded)
+            return add;
         var status = await ProcessRunner.RunAsync("git", "status --porcelain", sitePath, 30_000, cancellationToken)
             .ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(status.StdOut))

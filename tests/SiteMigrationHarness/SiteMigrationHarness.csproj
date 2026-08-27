@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\..\Helpers\AtomicFileWriter.cs" Link="Helpers\AtomicFileWriter.cs" />
     <Compile Include="..\..\Helpers\PathHelper.cs" Link="Helpers\PathHelper.cs" />
     <Compile Include="..\..\Helpers\StaticSiteKind.cs" Link="Helpers\StaticSiteKind.cs" />
     <Compile Include="..\..\Services\FrontMatterService.cs" Link="Services\FrontMatterService.cs" />

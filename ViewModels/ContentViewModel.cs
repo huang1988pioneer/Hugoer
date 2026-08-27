@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Hugoer.Helpers;
@@ -7,7 +8,7 @@ using Hugoer.Services;
 
 namespace Hugoer.ViewModels;
 
-public partial class ContentViewModel : PageViewModelBase
+public partial class ContentViewModel : PageViewModelBase, IDisposable
 {
     public ContentViewModel()
     {
@@ -180,6 +181,8 @@ public partial class ContentViewModel : PageViewModelBase
     private bool _syncingFrontMatter;
     private List<ContentItem> _all = [];
     private CancellationTokenSource? _previewCts;
+    private CancellationTokenSource? _loadCts;
+    private int _loadGeneration;
     private readonly IdleAutoSave _autoSave;
 
     public override Task OnNavigatedToAsync()
@@ -190,6 +193,8 @@ public partial class ContentViewModel : PageViewModelBase
 
     partial void OnSelectedFileChanging(ContentItem? oldValue, ContentItem? newValue)
     {
+        _loadGeneration++;
+        _loadCts?.Cancel();
         _autoSave.Cancel();
         if (_loading || !IsDirty || oldValue is null || oldValue.IsDirectory)
             return;
@@ -204,7 +209,11 @@ public partial class ContentViewModel : PageViewModelBase
     {
         HasSelection = value is not null && !value.IsDirectory;
         if (value is not null && !value.IsDirectory)
-            _ = LoadFileAsync(value);
+        {
+            var load = new CancellationTokenSource();
+            _loadCts = load;
+            _ = LoadFileAsync(value, load, _loadGeneration);
+        }
     }
 
     partial void OnEditorTextChanged(string value)
@@ -330,27 +339,37 @@ public partial class ContentViewModel : PageViewModelBase
     private void SchedulePreviewUpdate(string value)
     {
         _previewCts?.Cancel();
-        _previewCts = new CancellationTokenSource();
-        var token = _previewCts.Token;
+        var debounce = new CancellationTokenSource();
+        _previewCts = debounce;
+        _ = ApplyPreviewAfterDelayAsync(value, debounce);
+    }
 
-        // Debounce ~120ms so typing stays smooth
-        _ = Task.Run(async () =>
+    private async Task ApplyPreviewAfterDelayAsync(string value, CancellationTokenSource debounce)
+    {
+        try
         {
-            try
+            await Task.Delay(120, debounce.Token).ConfigureAwait(false);
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                await Task.Delay(120, token);
-                if (token.IsCancellationRequested) return;
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                {
-                    if (!token.IsCancellationRequested)
-                        PreviewMarkdown = value;
-                });
-            }
-            catch (TaskCanceledException)
-            {
-                // ignore
-            }
-        }, token);
+                if (!debounce.IsCancellationRequested)
+                    PreviewMarkdown = value;
+            });
+        }
+        catch (OperationCanceledException) when (debounce.IsCancellationRequested)
+        {
+            // A newer keystroke replaced this pending preview update.
+        }
+        catch
+        {
+            // Preview updates are best-effort; a closed dispatcher must not
+            // surface as an unobserved exception from the debounce task.
+        }
+        finally
+        {
+            if (ReferenceEquals(_previewCts, debounce))
+                _previewCts = null;
+            debounce.Dispose();
+        }
     }
 
     [RelayCommand]
@@ -371,7 +390,12 @@ public partial class ContentViewModel : PageViewModelBase
     {
         var selectedPath = SelectedFile?.FullPath;
         Files.Clear();
-        if (!RequireSite(out var site)) return;
+        if (!RequireSite(out var site))
+        {
+            _all = [];
+            ApplyFilter();
+            return;
+        }
 
         _all = Services.Content.ListArticles(site).ToList();
         ApplyFilter();
@@ -439,28 +463,48 @@ public partial class ContentViewModel : PageViewModelBase
             SelectedFile = null;
     }
 
-    private async Task LoadFileAsync(ContentItem item)
+    private async Task LoadFileAsync(
+        ContentItem item,
+        CancellationTokenSource load,
+        int generation)
     {
         _autoSave.Cancel();
         _loading = true;
         try
         {
-            EditorText = await Services.Content.ReadAsync(item.FullPath);
+            var text = await Services.Content.ReadAsync(item.FullPath, load.Token);
+            if (!IsCurrentLoad(item, generation))
+                return;
+
+            EditorText = text;
             PreviewMarkdown = EditorText;
             UpdatePreviewBody(EditorText);
             PopulateFrontMatter(EditorText);
             IsDirty = false;
             StatusMessage = item.RelativePath;
         }
+        catch (OperationCanceledException) when (load.IsCancellationRequested)
+        {
+            // Selection changed before the file finished loading.
+        }
         catch (Exception ex)
         {
-            StatusMessage = ex.Message;
+            if (IsCurrentLoad(item, generation))
+                StatusMessage = ex.Message;
         }
         finally
         {
-            _loading = false;
+            if (generation == _loadGeneration)
+                _loading = false;
+            if (ReferenceEquals(_loadCts, load))
+                _loadCts = null;
+            load.Dispose();
         }
     }
+
+    private bool IsCurrentLoad(ContentItem item, int generation) =>
+        generation == _loadGeneration
+        && SelectedFile?.FullPath.Equals(item.FullPath, StringComparison.OrdinalIgnoreCase) == true;
 
     [RelayCommand]
     private Task SaveAsync() => SaveCoreAsync(refreshList: true, auto: false);
@@ -473,7 +517,9 @@ public partial class ContentViewModel : PageViewModelBase
 
     private async Task SaveCoreAsync(bool refreshList, bool auto)
     {
-        if (SelectedFile is null || SelectedFile.IsDirectory)
+        var selected = SelectedFile;
+        var text = EditorText;
+        if (selected is null || selected.IsDirectory)
         {
             if (!auto)
                 StatusMessage = "請先選擇檔案";
@@ -482,12 +528,15 @@ public partial class ContentViewModel : PageViewModelBase
 
         try
         {
-            await Services.Content.SaveAsync(SelectedFile.FullPath, EditorText);
+            await Services.Content.SaveAsync(selected.FullPath, text);
+            if (SelectedFile?.FullPath.Equals(selected.FullPath, StringComparison.OrdinalIgnoreCase) != true)
+                return;
+
             IsDirty = false;
             _autoSave.Cancel();
             StatusMessage = auto
-                ? $"已自動儲存：{SelectedFile.RelativePath}"
-                : $"已儲存：{SelectedFile.RelativePath}";
+                ? $"已自動儲存：{selected.RelativePath}"
+                : $"已儲存：{selected.RelativePath}";
             if (refreshList)
                 Refresh();
         }
@@ -502,11 +551,13 @@ public partial class ContentViewModel : PageViewModelBase
         try
         {
             await Services.Content.SaveAsync(fullPath, text);
-            StatusMessage = $"已自動儲存：{Path.GetFileName(fullPath)}";
+            if (SelectedFile?.FullPath.Equals(fullPath, StringComparison.OrdinalIgnoreCase) == true)
+                StatusMessage = $"已自動儲存：{Path.GetFileName(fullPath)}";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"自動儲存失敗：{ex.Message}";
+            if (SelectedFile?.FullPath.Equals(fullPath, StringComparison.OrdinalIgnoreCase) == true)
+                StatusMessage = $"自動儲存失敗：{ex.Message}";
         }
     }
 
@@ -515,7 +566,12 @@ public partial class ContentViewModel : PageViewModelBase
     {
         if (!RequireSite(out var site)) return;
 
-        var folder = string.IsNullOrWhiteSpace(NewPostFolder) ? "post" : NewPostFolder.Trim().Trim('/');
+        if (!TryNormalizeContentFolder(site, NewPostFolder, out var folder))
+        {
+            StatusMessage = "文章資料夾路徑無效，請使用 content/ 內的相對路徑。";
+            return;
+        }
+
         var code = AllocateNextArticleCode(site, folder);
         var title = string.IsNullOrWhiteSpace(NewPostTitle) ? code : NewPostTitle.Trim();
         var relative = $"{folder}/{code}.md";
@@ -740,7 +796,9 @@ public partial class ContentViewModel : PageViewModelBase
     private void RefreshSuggestedArticleCode()
     {
         var site = Services.CurrentSitePath;
-        var folder = string.IsNullOrWhiteSpace(NewPostFolder) ? "post" : NewPostFolder.Trim().Trim('/');
+        var folder = TryNormalizeContentFolder(site, NewPostFolder, out var normalizedFolder)
+            ? normalizedFolder
+            : "post";
         var previous = NextArticleCode;
         NextArticleCode = string.IsNullOrWhiteSpace(site) || !Directory.Exists(site)
             ? ArticleCode.Format(DateTimeOffset.Now, 1)
@@ -755,6 +813,20 @@ public partial class ContentViewModel : PageViewModelBase
     {
         var directory = Path.Combine(PathHelper.ContentDir(site), folder.Replace('/', Path.DirectorySeparatorChar));
         return ArticleCode.NextInDirectory(directory, DateTimeOffset.Now);
+    }
+
+    private static bool TryNormalizeContentFolder(string? site, string? value, out string normalized)
+    {
+        normalized = string.Empty;
+        if (string.IsNullOrWhiteSpace(site))
+            return false;
+
+        var candidate = string.IsNullOrWhiteSpace(value) ? "post" : value.Trim().Trim('/');
+        if (!PathHelper.TryResolveUnder(PathHelper.ContentDir(site), candidate, out var full, allowRoot: false))
+            return false;
+
+        normalized = Path.GetRelativePath(PathHelper.ContentDir(site), full).Replace('\\', '/');
+        return !string.IsNullOrWhiteSpace(normalized) && normalized != ".";
     }
 
     private static bool ArticleCodeLooksLikeDefault(string value)
@@ -835,5 +907,15 @@ public partial class ContentViewModel : PageViewModelBase
             document.Fields.Remove(key);
         else
             document.Fields[key] = value.Trim();
+    }
+
+    public void Dispose()
+    {
+        _autoSave.Dispose();
+        _previewCts?.Cancel();
+        _previewCts = null;
+        _loadCts?.Cancel();
+        _loadCts = null;
+        GC.SuppressFinalize(this);
     }
 }

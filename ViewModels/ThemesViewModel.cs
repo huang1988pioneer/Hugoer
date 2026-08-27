@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Hugoer.Helpers;
 using Hugoer.Models;
 using Hugoer.Services;
 
@@ -148,10 +149,22 @@ public partial class ThemesViewModel : PageViewModelBase
     [RelayCommand]
     private async Task SaveThemeConfigAsync()
     {
-        if (string.IsNullOrWhiteSpace(SelectedConfigFile)) return;
-        await File.WriteAllTextAsync(SelectedConfigFile, ThemeConfigText);
-        StatusMessage = $"已儲存：{SelectedConfigFile}";
-        AppendLog(StatusMessage);
+        var path = SelectedConfigFile;
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        try
+        {
+            await AtomicFileWriter.WriteAllTextAsync(path, ThemeConfigText).ConfigureAwait(true);
+            if (string.Equals(SelectedConfigFile, path, StringComparison.OrdinalIgnoreCase))
+            {
+                StatusMessage = $"已儲存：{path}";
+                AppendLog(StatusMessage);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"儲存失敗：{ex.Message}";
+        }
     }
 
     [RelayCommand]

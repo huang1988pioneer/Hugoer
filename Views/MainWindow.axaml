@@ -16,7 +16,7 @@
         <vm:MainViewModel />
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto,*">
+    <Grid RowDefinitions="Auto,Auto,*">
         <Border Grid.Row="0" Classes="topBar" Padding="16,12">
             <Grid ColumnDefinitions="*,Auto">
                 <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
@@ -43,33 +43,40 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="1" ColumnDefinitions="220,*">
-            <Border Grid.Column="0" Classes="sidebar" Padding="12,8">
-                <DockPanel>
-                    <StackPanel DockPanel.Dock="Bottom" Margin="4,12,4,8" Spacing="4">
-                        <TextBlock Text="Hugo · Themes · Pages" Classes="caption"/>
-                        <TextBlock Text="Local tool · Traditional Chinese UI" Classes="caption"/>
-                    </StackPanel>
+        <Border Grid.Row="1" Classes="navigationBar" Padding="12,6">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                <ListBox ItemsSource="{Binding NavItems}"
+                         SelectedItem="{Binding SelectedNav}"
+                         Classes="navList"
+                         Background="Transparent"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:NavItem">
+                            <TextBlock Text="{Binding Title}"
+                                       ToolTip.Tip="{Binding Description}"
+                                       FontWeight="SemiBold"
+                                       FontSize="14"
+                                       VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
 
-                    <ListBox ItemsSource="{Binding NavItems}"
-                             SelectedItem="{Binding SelectedNav}"
-                             Classes="navList"
-                             Background="Transparent">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:NavItem">
-                                <StackPanel Spacing="2" Margin="4,8">
-                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="15"/>
-                                    <TextBlock Text="{Binding Description}" Classes="caption" TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </DockPanel>
+                <StackPanel Grid.Column="1" Orientation="Vertical" Spacing="2"
+                            HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock Text="Hugo · Themes · Pages" Classes="caption"/>
+                    <TextBlock Text="Local tool · Traditional Chinese UI" Classes="caption"/>
+                </StackPanel>
+            </Grid>
             </Border>
 
-            <Border Grid.Column="1" Classes="contentHost" Padding="0">
-                <ContentControl Content="{Binding CurrentPage}" Margin="0"/>
-            </Border>
-        </Grid>
+        <Border Grid.Row="2" Classes="contentHost" Padding="0">
+            <ContentControl Content="{Binding CurrentPage}" Margin="0"/>
+        </Border>
     </Grid>
 </Window>

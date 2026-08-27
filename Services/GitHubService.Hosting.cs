@@ -16,7 +16,7 @@ public sealed partial class GitHubService
 
         if (!File.Exists(workflow))
         {
-            await File.WriteAllTextAsync(workflow, DefaultHugoPagesWorkflow, cancellationToken)
+            await AtomicFileWriter.WriteAllTextAsync(workflow, DefaultHugoPagesWorkflow, cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -48,7 +48,7 @@ public sealed partial class GitHubService
         var workflow = Path.Combine(sitePath, ".gitlab-ci.yml");
         if (!File.Exists(workflow))
         {
-            await File.WriteAllTextAsync(workflow, DefaultGitLabPagesWorkflow, cancellationToken)
+            await AtomicFileWriter.WriteAllTextAsync(workflow, DefaultGitLabPagesWorkflow, cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
@@ -60,7 +60,7 @@ public sealed partial class GitHubService
         var backup = workflow + ".hugoer.bak";
         if (!File.Exists(backup))
             File.Copy(workflow, backup);
-        await File.WriteAllTextAsync(workflow, DefaultGitLabPagesWorkflow, cancellationToken)
+        await AtomicFileWriter.WriteAllTextAsync(workflow, DefaultGitLabPagesWorkflow, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -74,7 +74,7 @@ public sealed partial class GitHubService
         if (File.Exists(file))
             return;
 
-        File.WriteAllText(file, provider == GitHostingProvider.Codeberg
+        AtomicFileWriter.WriteAllText(file, provider == GitHostingProvider.Codeberg
             ? CodebergPagesNotes
             : BitbucketPagesNotes);
     }

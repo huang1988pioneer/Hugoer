@@ -24,32 +24,46 @@ public static class PathHelper
 
     public static string? FindConfigFile(string sitePath)
     {
-        foreach (var name in ConfigNames)
-        {
-            var path = Path.Combine(sitePath, name);
-            if (File.Exists(path))
-                return path;
-        }
+        if (string.IsNullOrWhiteSpace(sitePath) || !Directory.Exists(sitePath))
+            return null;
 
-        var configDir = Path.Combine(sitePath, "config");
-        if (Directory.Exists(configDir))
+        try
         {
             foreach (var name in ConfigNames)
             {
-                var path = Path.Combine(configDir, name);
+                var path = Path.Combine(sitePath, name);
                 if (File.Exists(path))
                     return path;
             }
 
-            var any = Directory.EnumerateFiles(configDir, "*", SearchOption.AllDirectories)
-                .FirstOrDefault(f =>
+            var configDir = Path.Combine(sitePath, "config");
+            if (Directory.Exists(configDir))
+            {
+                foreach (var name in ConfigNames)
                 {
-                    var n = Path.GetFileName(f).ToLowerInvariant();
-                    return n is "hugo.toml" or "hugo.yaml" or "hugo.yml" or "config.toml"
-                        or "config.yaml" or "config.yml" or "_default" or "config.toml";
-                });
-            if (any is not null)
-                return any;
+                    var path = Path.Combine(configDir, name);
+                    if (File.Exists(path))
+                        return path;
+                }
+
+                var any = Directory.EnumerateFiles(configDir, "*", SearchOption.AllDirectories)
+                    .FirstOrDefault(f =>
+                    {
+                        var n = Path.GetFileName(f).ToLowerInvariant();
+                        return n is "hugo.toml" or "hugo.yaml" or "hugo.yml" or "config.toml"
+                            or "config.yaml" or "config.yml" or "_default";
+                    });
+                if (any is not null)
+                    return any;
+            }
+        }
+        catch (IOException)
+        {
+            // A partially copied site may disappear while it is being inspected.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Treat inaccessible configuration as not found.
         }
 
         return null;
@@ -72,4 +86,66 @@ public static class PathHelper
     public static string ThemesDir(string sitePath) => Path.Combine(sitePath, "themes");
     public static string ArchetypesDir(string sitePath) => Path.Combine(sitePath, "archetypes");
     public static string StaticDir(string sitePath) => Path.Combine(sitePath, "static");
+
+    /// <summary>
+    /// Resolves a path against <paramref name="root"/> and verifies that the
+    /// resulting path remains inside that directory. This boundary check is
+    /// intentionally separator-aware so a sibling such as <c>content-backup</c>
+    /// cannot pass a simple string-prefix test.
+    /// </summary>
+    public static bool TryResolveUnder(
+        string root,
+        string candidate,
+        out string fullPath,
+        bool allowRoot = true)
+    {
+        fullPath = string.Empty;
+        if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(candidate))
+            return false;
+
+        try
+        {
+            var rawRoot = Path.GetFullPath(root);
+            var trimmedRoot = rawRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var volumeRoot = Path.GetPathRoot(rawRoot);
+            var fullRoot = !string.IsNullOrEmpty(volumeRoot)
+                           && string.Equals(
+                               trimmedRoot,
+                               volumeRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                               StringComparison.OrdinalIgnoreCase)
+                ? volumeRoot
+                : trimmedRoot;
+            fullPath = Path.GetFullPath(Path.Combine(fullRoot, candidate));
+
+            if (allowRoot && string.Equals(fullPath, fullRoot, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            var rootWithSeparator = fullRoot.EndsWith(Path.DirectorySeparatorChar)
+                || fullRoot.EndsWith(Path.AltDirectorySeparatorChar)
+                ? fullRoot
+                : fullRoot + Path.DirectorySeparatorChar;
+            if (fullPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (Path.AltDirectorySeparatorChar != Path.DirectorySeparatorChar)
+            {
+                var alternateRootWithSeparator = fullRoot.EndsWith(Path.AltDirectorySeparatorChar)
+                    ? fullRoot
+                    : fullRoot + Path.AltDirectorySeparatorChar;
+                return fullPath.StartsWith(alternateRootWithSeparator, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
+        }
+        catch (ArgumentException)
+        {
+            fullPath = string.Empty;
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            fullPath = string.Empty;
+            return false;
+        }
+    }
 }

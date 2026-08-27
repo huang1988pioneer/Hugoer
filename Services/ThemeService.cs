@@ -152,7 +152,7 @@ public sealed partial class ThemeService
         if (config is null)
         {
             config = Path.Combine(sitePath, "hugo.toml");
-            await File.WriteAllTextAsync(config, $"theme = '{themeFolderName}'\n", cancellationToken)
+            await AtomicFileWriter.WriteAllTextAsync(config, $"theme = '{themeFolderName}'\n", cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
@@ -185,7 +185,7 @@ public sealed partial class ThemeService
                 text = text.TrimEnd() + $",\n  \"theme\": \"{themeFolderName}\"\n";
         }
 
-        await File.WriteAllTextAsync(config, text, cancellationToken).ConfigureAwait(false);
+        await AtomicFileWriter.WriteAllTextAsync(config, text, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task ApplyStackDefaultsAsync(string sitePath, CancellationToken cancellationToken)
@@ -261,7 +261,7 @@ icon = "search"
         if (!File.Exists(archives))
         {
             Directory.CreateDirectory(Path.GetDirectoryName(archives)!);
-            await File.WriteAllTextAsync(archives, """
+            await AtomicFileWriter.WriteAllTextAsync(archives, """
 ---
 title: "Archives"
 layout: "archives"
@@ -276,7 +276,7 @@ slug: "archives"
         if (!File.Exists(search))
         {
             Directory.CreateDirectory(Path.GetDirectoryName(search)!);
-            await File.WriteAllTextAsync(search, """
+            await AtomicFileWriter.WriteAllTextAsync(search, """
 ---
 title: "Search"
 layout: "search"
@@ -289,7 +289,7 @@ outputs: ["html", "json"]
         if (!File.Exists(about) && !File.Exists(Path.Combine(sitePath, "content", "about", "_index.md")))
         {
             Directory.CreateDirectory(Path.GetDirectoryName(about)!);
-            await File.WriteAllTextAsync(about, """
+            await AtomicFileWriter.WriteAllTextAsync(about, """
 ---
 title: About
 date: 2024-01-01
@@ -299,7 +299,7 @@ Hello, this site is powered by **Hugo** + **Stack** theme, managed with **Hugoer
 """, cancellationToken).ConfigureAwait(false);
         }
 
-        await File.WriteAllTextAsync(config, sb.ToString(), cancellationToken).ConfigureAwait(false);
+        await AtomicFileWriter.WriteAllTextAsync(config, sb.ToString(), cancellationToken).ConfigureAwait(false);
     }
 
     public string? FindThemeConfig(string sitePath, string themeName)

@@ -34,11 +34,8 @@ public sealed class DeploymentMonitorService
         Directory.CreateDirectory(staticDirectory);
         var markerPath = Path.Combine(staticDirectory, MarkerFileName);
         var json = JsonSerializer.Serialize(marker, JsonOptions);
-        await File.WriteAllTextAsync(
-            markerPath,
-            json,
-            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-            cancellationToken).ConfigureAwait(false);
+        await AtomicFileWriter.WriteAllTextAsync(markerPath, json, cancellationToken)
+            .ConfigureAwait(false);
         return marker;
     }
 

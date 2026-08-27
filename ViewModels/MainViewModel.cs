@@ -33,7 +33,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         AppServices.Instance.AppStatusChanged += (_, message) => AppStatus = message;
         UpdateSiteBanner();
         _ = RefreshCodeStatisticsAsync();
-        _ = SelectedNav.Page.OnNavigatedToAsync();
+        _ = NavigateToPageAsync(SelectedNav.Page, ++_navigationGeneration);
     }
 
     public ObservableCollection<NavItem> NavItems { get; }
@@ -64,12 +64,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     public partial string CodeStatisticsDetails { get; set; } = "正在掃描應用程式來源…";
 
+    private int _navigationGeneration;
+
     partial void OnSelectedNavChanged(NavItem? value)
     {
         if (value is null) return;
         CurrentPage = value.Page;
         AppStatus = value.Page.StatusMessage;
-        _ = value.Page.OnNavigatedToAsync();
+        _ = NavigateToPageAsync(value.Page, ++_navigationGeneration);
     }
 
     [RelayCommand]
@@ -77,9 +79,33 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     private async Task RefreshCodeStatisticsAsync()
     {
-        var stats = await CodeStatisticsService.CountAsync();
-        CodeStatisticsSummary = stats.Summary;
-        CodeStatisticsDetails = stats.Details;
+        try
+        {
+            var stats = await CodeStatisticsService.CountAsync();
+            CodeStatisticsSummary = stats.Summary;
+            CodeStatisticsDetails = stats.Details;
+        }
+        catch (Exception ex)
+        {
+            CodeStatisticsSummary = "暫不可用";
+            CodeStatisticsDetails = $"程式碼統計失敗：{ex.Message}";
+        }
+    }
+
+    private async Task NavigateToPageAsync(PageViewModelBase page, int generation)
+    {
+        try
+        {
+            await page.OnNavigatedToAsync();
+            if (generation == _navigationGeneration)
+                AppStatus = page.StatusMessage;
+        }
+        catch (Exception ex)
+        {
+            page.StatusMessage = ex.Message;
+            if (generation == _navigationGeneration)
+                AppStatus = $"載入「{page.Title}」失敗：{ex.Message}";
+        }
     }
 
     private void UpdateSiteBanner()
@@ -93,6 +119,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public void Dispose()
     {
         SetupPage.Dispose();
+        ConfigPage.Dispose();
+        ContentPage.Dispose();
+        MenuPage.Dispose();
         GitHubPage.Dispose();
         GC.SuppressFinalize(this);
     }

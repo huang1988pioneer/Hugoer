@@ -14,6 +14,15 @@ public static class ProcessRunner
         CancellationToken cancellationToken = default,
         IDictionary<string, string?>? env = null)
     {
+        if (timeoutMs <= 0)
+        {
+            return new CommandResult
+            {
+                ExitCode = -1,
+                StdErr = "Command timeout must be positive."
+            };
+        }
+
         var psi = new ProcessStartInfo
         {
             FileName = fileName,
@@ -38,20 +47,7 @@ public static class ProcessRunner
             }
         }
 
-        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        var stdout = new StringBuilder();
-        var stderr = new StringBuilder();
-
-        process.OutputDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-                stdout.AppendLine(e.Data);
-        };
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-                stderr.AppendLine(e.Data);
-        };
+        using var process = new Process { StartInfo = psi };
 
         try
         {
@@ -64,8 +60,11 @@ public static class ProcessRunner
                 };
             }
 
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
+            // Read both streams concurrently. Event based readers require an arbitrary
+            // delay after the process exits and can lose the final output lines, which
+            // makes Hugo/Git failures especially difficult to diagnose.
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(timeoutMs);
@@ -73,27 +72,36 @@ public static class ProcessRunner
             try
             {
                 await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+                var output = await ReadOutputAsync(stdoutTask, stderrTask).ConfigureAwait(false);
+                return new CommandResult
+                {
+                    ExitCode = process.ExitCode,
+                    StdOut = output.StdOut,
+                    StdErr = output.StdErr
+                };
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                try { process.Kill(entireProcessTree: true); } catch { /* ignore */ }
+                TryKill(process);
+                var output = await ReadOutputAsync(stdoutTask, stderrTask).ConfigureAwait(false);
                 return new CommandResult
                 {
                     ExitCode = -1,
-                    StdOut = stdout.ToString(),
-                    StdErr = $"Command timed out after {timeoutMs}ms.\n{stderr}"
+                    StdOut = output.StdOut,
+                    StdErr = $"Command timed out after {timeoutMs}ms.\n{output.StdErr}".TrimEnd()
                 };
             }
-
-            // Ensure async readers finish
-            await Task.Delay(50, CancellationToken.None).ConfigureAwait(false);
-
-            return new CommandResult
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                ExitCode = process.ExitCode,
-                StdOut = stdout.ToString().TrimEnd(),
-                StdErr = stderr.ToString().TrimEnd()
-            };
+                TryKill(process);
+                var output = await ReadOutputAsync(stdoutTask, stderrTask).ConfigureAwait(false);
+                return new CommandResult
+                {
+                    ExitCode = -1,
+                    StdOut = output.StdOut,
+                    StdErr = $"Command canceled.\n{output.StdErr}".TrimEnd()
+                };
+            }
         }
         catch (Exception ex)
         {
@@ -127,5 +135,38 @@ public static class ProcessRunner
             workingDirectory,
             timeoutMs,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void TryKill(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+        catch
+        {
+            // The process may have exited between HasExited and Kill. The original
+            // command result is more useful to callers than a cleanup exception.
+        }
+    }
+
+    private static async Task<(string StdOut, string StdErr)> ReadOutputAsync(
+        Task<string> stdoutTask,
+        Task<string> stderrTask)
+    {
+        try
+        {
+            await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Preserve any stream that was successfully drained. Process start or
+            // stream failures are reported by the outer command result.
+        }
+
+        var stdout = stdoutTask.Status == TaskStatus.RanToCompletion ? stdoutTask.Result : string.Empty;
+        var stderr = stderrTask.Status == TaskStatus.RanToCompletion ? stderrTask.Result : string.Empty;
+        return (stdout.TrimEnd(), stderr.TrimEnd());
     }
 }

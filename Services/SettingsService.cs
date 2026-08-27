@@ -14,72 +14,106 @@ public sealed class SettingsService
 
     private const int MaxRecentRepositories = 10;
 
+    private readonly object _gate = new();
+    private readonly string _settingsPath;
     private AppSettings _settings = new();
+
+    public SettingsService(string? settingsPath = null)
+    {
+        _settingsPath = string.IsNullOrWhiteSpace(settingsPath)
+            ? PathHelper.SettingsPath
+            : Path.GetFullPath(settingsPath);
+    }
 
     public AppSettings Current => _settings;
 
     public void Load()
     {
-        try
+        lock (_gate)
         {
-            if (!File.Exists(PathHelper.SettingsPath))
+            try
+            {
+                if (!File.Exists(_settingsPath))
+                {
+                    _settings = new AppSettings();
+                    return;
+                }
+
+                var json = File.ReadAllText(_settingsPath);
+                _settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+                _settings.GitProviderSettings ??= [];
+                _settings.RecentRepositories ??= [];
+            }
+            catch
             {
                 _settings = new AppSettings();
-                return;
             }
-
-            var json = File.ReadAllText(PathHelper.SettingsPath);
-            _settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
-            _settings.GitProviderSettings ??= [];
-            _settings.RecentRepositories ??= [];
-        }
-        catch
-        {
-            _settings = new AppSettings();
         }
     }
 
     public void Save()
     {
-        var json = JsonSerializer.Serialize(_settings, JsonOptions);
-        File.WriteAllText(PathHelper.SettingsPath, json);
+        lock (_gate)
+        {
+            var json = JsonSerializer.Serialize(_settings, JsonOptions);
+            AtomicFileWriter.WriteAllText(_settingsPath, json);
+        }
     }
 
     public void SetLastSitePath(string? path)
     {
-        _settings.LastSitePath = path;
-        Save();
+        lock (_gate)
+        {
+            _settings.LastSitePath = path;
+            Save();
+        }
     }
 
     public void SetMarkdownEditorMode(string mode)
     {
-        _settings.MarkdownEditorMode = mode;
-        Save();
+        lock (_gate)
+        {
+            _settings.MarkdownEditorMode = mode;
+            Save();
+        }
     }
 
     public GitProviderSettings GetGitProviderSettings(GitHostingProvider provider)
     {
-        var profile = _settings.GitProviderSettings
-            .FirstOrDefault(item => item.Provider == provider);
-        if (profile is not null)
-            return profile;
+        lock (_gate)
+        {
+            var profile = _settings.GitProviderSettings
+                .FirstOrDefault(item => item.Provider == provider);
+            if (profile is not null)
+                return profile;
 
-        profile = new GitProviderSettings { Provider = provider };
-        _settings.GitProviderSettings.Add(profile);
-        return profile;
+            profile = new GitProviderSettings { Provider = provider };
+            _settings.GitProviderSettings.Add(profile);
+            return profile;
+        }
     }
 
     public void SaveGitProviderSettings(GitProviderSettings profile)
     {
-        var index = _settings.GitProviderSettings.FindIndex(item => item.Provider == profile.Provider);
-        if (index >= 0)
-            _settings.GitProviderSettings[index] = profile;
-        else
-            _settings.GitProviderSettings.Add(profile);
-        Save();
+        ArgumentNullException.ThrowIfNull(profile);
+        lock (_gate)
+        {
+            var index = _settings.GitProviderSettings.FindIndex(item => item.Provider == profile.Provider);
+            if (index >= 0)
+                _settings.GitProviderSettings[index] = profile;
+            else
+                _settings.GitProviderSettings.Add(profile);
+            Save();
+        }
     }
 
-    public IReadOnlyList<RecentRepositoryEntry> GetRecentRepositories() => _settings.RecentRepositories;
+    public IReadOnlyList<RecentRepositoryEntry> GetRecentRepositories()
+    {
+        lock (_gate)
+        {
+            return _settings.RecentRepositories.ToArray();
+        }
+    }
 
     // Local path and remote repository are tracked separately: an existing entry keeps its
     // previously known local path / Pages URL when a new usage doesn't supply one.
@@ -91,50 +125,60 @@ public sealed class SettingsService
             || string.IsNullOrWhiteSpace(target.CanonicalUrl))
             return;
 
-        var existing = _settings.RecentRepositories.FirstOrDefault(item =>
-            item.Provider == target.Provider
-            && string.Equals(item.Owner, target.Owner, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(item.Repository, target.Repository, StringComparison.OrdinalIgnoreCase));
-
-        var resolvedLocalPath = string.IsNullOrWhiteSpace(localPath) ? existing?.LocalPath : localPath;
-        var resolvedPagesUrl = string.IsNullOrWhiteSpace(target.PagesUrl) ? existing?.PagesUrl : target.PagesUrl;
-
-        _settings.RecentRepositories.RemoveAll(item =>
-            item.Provider == target.Provider
-            && string.Equals(item.Owner, target.Owner, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(item.Repository, target.Repository, StringComparison.OrdinalIgnoreCase));
-
-        _settings.RecentRepositories.Insert(0, new RecentRepositoryEntry
+        lock (_gate)
         {
-            Provider = target.Provider,
-            Owner = target.Owner,
-            Repository = target.Repository,
-            CanonicalUrl = target.CanonicalUrl,
-            PagesUrl = resolvedPagesUrl,
-            LocalPath = resolvedLocalPath,
-            LastUsedUtc = DateTimeOffset.UtcNow
-        });
+            var existing = _settings.RecentRepositories.FirstOrDefault(item =>
+                item.Provider == target.Provider
+                && string.Equals(item.Owner, target.Owner, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.Repository, target.Repository, StringComparison.OrdinalIgnoreCase));
 
-        if (_settings.RecentRepositories.Count > MaxRecentRepositories)
-            _settings.RecentRepositories.RemoveRange(
-                MaxRecentRepositories,
-                _settings.RecentRepositories.Count - MaxRecentRepositories);
+            var resolvedLocalPath = string.IsNullOrWhiteSpace(localPath) ? existing?.LocalPath : localPath;
+            var resolvedPagesUrl = string.IsNullOrWhiteSpace(target.PagesUrl) ? existing?.PagesUrl : target.PagesUrl;
 
-        Save();
+            _settings.RecentRepositories.RemoveAll(item =>
+                item.Provider == target.Provider
+                && string.Equals(item.Owner, target.Owner, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.Repository, target.Repository, StringComparison.OrdinalIgnoreCase));
+
+            _settings.RecentRepositories.Insert(0, new RecentRepositoryEntry
+            {
+                Provider = target.Provider,
+                Owner = target.Owner,
+                Repository = target.Repository,
+                CanonicalUrl = target.CanonicalUrl,
+                PagesUrl = resolvedPagesUrl,
+                LocalPath = resolvedLocalPath,
+                LastUsedUtc = DateTimeOffset.UtcNow
+            });
+
+            if (_settings.RecentRepositories.Count > MaxRecentRepositories)
+                _settings.RecentRepositories.RemoveRange(
+                    MaxRecentRepositories,
+                    _settings.RecentRepositories.Count - MaxRecentRepositories);
+
+            Save();
+        }
     }
 
     public void RemoveRecentRepository(RecentRepositoryEntry entry)
     {
-        _settings.RecentRepositories.RemoveAll(item =>
-            item.Provider == entry.Provider
-            && string.Equals(item.Owner, entry.Owner, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(item.Repository, entry.Repository, StringComparison.OrdinalIgnoreCase));
-        Save();
+        ArgumentNullException.ThrowIfNull(entry);
+        lock (_gate)
+        {
+            _settings.RecentRepositories.RemoveAll(item =>
+                item.Provider == entry.Provider
+                && string.Equals(item.Owner, entry.Owner, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.Repository, entry.Repository, StringComparison.OrdinalIgnoreCase));
+            Save();
+        }
     }
 
     public void ClearRecentRepositories()
     {
-        _settings.RecentRepositories.Clear();
-        Save();
+        lock (_gate)
+        {
+            _settings.RecentRepositories.Clear();
+            Save();
+        }
     }
 }

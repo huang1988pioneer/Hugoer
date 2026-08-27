@@ -373,6 +373,9 @@ public sealed partial class HugoService
         bool force = false,
         CancellationToken cancellationToken = default)
     {
+        if (!TryNormalizeSiteName(parentDir, siteName, out var parentPath, out var normalizedName, out var validationError))
+            return new CommandResult { ExitCode = -1, StdErr = validationError };
+
         var hugo = await DetectAsync(cancellationToken).ConfigureAwait(false);
         if (!hugo.IsInstalled || string.IsNullOrWhiteSpace(hugo.ExecutablePath))
         {
@@ -383,20 +386,20 @@ public sealed partial class HugoService
             };
         }
 
-        Directory.CreateDirectory(parentDir);
-        var args = $"new site \"{siteName}\" --format toml";
+        Directory.CreateDirectory(parentPath);
+        var args = $"new site \"{normalizedName}\" --format toml";
         if (force) args += " --force";
 
         var result = await ProcessRunner.RunAsync(
             hugo.ExecutablePath,
             args,
-            parentDir,
+            parentPath,
             timeoutMs: 60_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (result.Succeeded)
         {
-            var sitePath = Path.Combine(parentDir, siteName);
+            var sitePath = Path.Combine(parentPath, normalizedName);
             // Seed a friendly starter config
             var config = Path.Combine(sitePath, "hugo.toml");
             if (File.Exists(config))
@@ -407,7 +410,8 @@ public sealed partial class HugoService
                 seeded = AppendTomlStringIfMissing(seeded, "title", "My New Hugo Site");
                 if (!string.Equals(content, seeded, StringComparison.Ordinal))
                 {
-                    await File.WriteAllTextAsync(config, seeded, cancellationToken).ConfigureAwait(false);
+                    await AtomicFileWriter.WriteAllTextAsync(config, seeded, cancellationToken)
+                        .ConfigureAwait(false);
                 }
             }
 
@@ -437,20 +441,87 @@ public sealed partial class HugoService
         string relativePath,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(sitePath) || !Directory.Exists(sitePath))
+            return new CommandResult { ExitCode = -1, StdErr = "找不到 Hugo 網站資料夾。" };
+
+        var normalized = (relativePath ?? string.Empty).Replace('\\', '/').Trim().TrimStart('/');
+        if (normalized.Length == 0)
+            return new CommandResult { ExitCode = -1, StdErr = "文章路徑不可為空。" };
+        if (!normalized.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+            normalized += ".md";
+
+        if (!PathHelper.TryResolveUnder(
+                PathHelper.ContentDir(sitePath),
+                normalized.Replace('/', Path.DirectorySeparatorChar),
+                out var contentPath,
+                allowRoot: false))
+        {
+            return new CommandResult
+            {
+                ExitCode = -1,
+                StdErr = "文章路徑必須位於 content/ 內。"
+            };
+        }
+
         var hugo = await DetectAsync(cancellationToken).ConfigureAwait(false);
         if (!hugo.IsInstalled || string.IsNullOrWhiteSpace(hugo.ExecutablePath))
             return new CommandResult { ExitCode = -1, StdErr = "請先安裝 Hugo。" };
 
-        var normalized = relativePath.Replace('\\', '/').TrimStart('/');
-        if (!normalized.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
-            normalized += ".md";
+        var hugoRelativePath = Path.GetRelativePath(sitePath, contentPath).Replace('\\', '/');
 
         return await ProcessRunner.RunAsync(
             hugo.ExecutablePath,
-            $"new content \"{normalized}\"",
+            $"new content \"{hugoRelativePath}\"",
             sitePath,
             timeoutMs: 30_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool TryNormalizeSiteName(
+        string parentDir,
+        string siteName,
+        out string parentPath,
+        out string normalizedName,
+        out string error)
+    {
+        parentPath = string.Empty;
+        normalizedName = string.Empty;
+        error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(parentDir))
+        {
+            error = "網站上層資料夾不可為空。";
+            return false;
+        }
+
+        try
+        {
+            parentPath = Path.GetFullPath(parentDir.Trim());
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            error = "網站上層資料夾路徑格式無效。";
+            return false;
+        }
+
+        normalizedName = (siteName ?? string.Empty).Trim();
+        if (normalizedName.Length == 0
+            || normalizedName is "." or ".."
+            || Path.IsPathRooted(normalizedName)
+            || normalizedName.Any(character => character is '/' or '\\' || char.IsControl(character))
+            || normalizedName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            error = "網站名稱只能是單一資料夾名稱，且不可包含路徑分隔符或特殊字元。";
+            return false;
+        }
+
+        if (!PathHelper.TryResolveUnder(parentPath, normalizedName, out _, allowRoot: false))
+        {
+            error = "網站資料夾必須位於所選上層資料夾內。";
+            return false;
+        }
+
+        return true;
     }
 
     public Task<CommandResult> BuildAsync(
@@ -521,7 +592,7 @@ public sealed partial class HugoService
         var backup = config + ".hugoer.bak";
         if (!File.Exists(backup))
             File.Copy(config, backup);
-        await File.WriteAllTextAsync(config, string.Join(newline, repaired), cancellationToken)
+        await AtomicFileWriter.WriteAllTextAsync(config, string.Join(newline, repaired), cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -573,7 +644,7 @@ public sealed partial class HugoService
         var backup = config + ".hugoer.bak";
         if (!File.Exists(backup))
             File.Copy(config, backup);
-        await File.WriteAllTextAsync(config, string.Join(newline, repaired), cancellationToken)
+        await AtomicFileWriter.WriteAllTextAsync(config, string.Join(newline, repaired), cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -623,7 +694,7 @@ public sealed partial class HugoService
         var backup = config + ".hugoer.bak";
         if (!File.Exists(backup))
             File.Copy(config, backup);
-        await File.WriteAllTextAsync(config, string.Join(newline, lines), cancellationToken)
+        await AtomicFileWriter.WriteAllTextAsync(config, string.Join(newline, lines), cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -656,7 +727,8 @@ public sealed partial class HugoService
             var backup = file + ".hugoer.bak";
             if (!File.Exists(backup))
                 File.Copy(file, backup);
-            await File.WriteAllTextAsync(file, next, cancellationToken).ConfigureAwait(false);
+            await AtomicFileWriter.WriteAllTextAsync(file, next, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 

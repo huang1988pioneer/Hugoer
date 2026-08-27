@@ -357,8 +357,17 @@ public static partial class MediaAssetService
         if (cut >= 0)
             trimmed = trimmed[..cut];
 
-        relative = Uri.UnescapeDataString(trimmed.TrimStart('/')).Replace('/', Path.DirectorySeparatorChar);
-        return relative.Length > 0;
+        try
+        {
+            relative = Uri.UnescapeDataString(trimmed.TrimStart('/'))
+                .Replace('/', Path.DirectorySeparatorChar);
+            return relative.Length > 0;
+        }
+        catch (UriFormatException)
+        {
+            relative = string.Empty;
+            return false;
+        }
     }
 
     private static string RestoreMarkedSources(string html)
