@@ -83,6 +83,15 @@ public sealed class SettingsService
         }
     }
 
+    public void SetPreferredHugoPath(string? path)
+    {
+        lock (_gate)
+        {
+            _settings.PreferredHugoPath = path;
+            Save();
+        }
+    }
+
     public GitProviderSettings GetGitProviderSettings(GitHostingProvider provider)
     {
         lock (_gate)
