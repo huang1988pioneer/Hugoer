@@ -591,8 +591,6 @@ Thumbs.db
             _ => 10
         };
 
-    private static string QuoteArg(string value) => $"\"{value.Replace("\"", "\\\"")}\"";
-
     private static GitHubRepositoryTarget ParseRemoteTarget(string url)
     {
         var parsed = ParseRepositoryTarget(url);

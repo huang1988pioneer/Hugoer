@@ -11,6 +11,7 @@ namespace Hugoer.Services;
 
 public sealed partial class HugoService
 {
+    private const string UserAgent = "Hugoer/1.6.0";
     private static readonly HttpClient DefaultHttpClient = CreateHttpClient();
     private readonly SettingsService _settings;
     private readonly HttpClient _httpClient;
@@ -23,7 +24,7 @@ public sealed partial class HugoService
         // A caller supplied client is useful for tests and for hosts that own
         // their networking stack. Only add a default identity when it has none.
         if (_httpClient.DefaultRequestHeaders.UserAgent.Count == 0)
-            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Hugoer/1.5");
+            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
     }
 
     public async Task<HugoInfo> DetectAsync(CancellationToken cancellationToken = default)
@@ -37,7 +38,7 @@ public sealed partial class HugoService
         }
 
         var which = OperatingSystem.IsWindows() ? "where" : "which";
-        var locate = await ProcessRunner.RunAsync(which, "hugo", timeoutMs: 15_000, cancellationToken: cancellationToken)
+        var locate = await ProcessRunner.RunAsync(which, ["hugo"], timeoutMs: 15_000, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (locate.Succeeded)
@@ -122,7 +123,7 @@ public sealed partial class HugoService
 
     private static async Task<HugoInfo> ProbeHugoAsync(string exe, CancellationToken cancellationToken)
     {
-        var result = await ProcessRunner.RunAsync(exe, "version", timeoutMs: 15_000, cancellationToken: cancellationToken)
+        var result = await ProcessRunner.RunAsync(exe, ["version"], timeoutMs: 15_000, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (!result.Succeeded && string.IsNullOrWhiteSpace(result.StdOut))
@@ -168,7 +169,11 @@ public sealed partial class HugoService
         progress?.Report("嘗試使用 winget 更新 Hugo Extended…");
         var upgrade = await ProcessRunner.RunAsync(
             "winget",
-            "upgrade --id Hugo.Hugo.Extended -e --accept-source-agreements --accept-package-agreements --disable-interactivity",
+            [
+                "upgrade", "--id", "Hugo.Hugo.Extended", "-e",
+                "--accept-source-agreements", "--accept-package-agreements",
+                "--disable-interactivity"
+            ],
             timeoutMs: 300_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -183,7 +188,11 @@ public sealed partial class HugoService
         progress?.Report("嘗試使用 winget 安裝 Hugo Extended…");
         var winget = await ProcessRunner.RunAsync(
             "winget",
-            "install --id Hugo.Hugo.Extended -e --accept-source-agreements --accept-package-agreements --disable-interactivity",
+            [
+                "install", "--id", "Hugo.Hugo.Extended", "-e",
+                "--accept-source-agreements", "--accept-package-agreements",
+                "--disable-interactivity"
+            ],
             timeoutMs: 300_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -196,7 +205,7 @@ public sealed partial class HugoService
         progress?.Report("winget 失敗，嘗試 chocolatey…");
         var choco = await ProcessRunner.RunAsync(
             "choco",
-            "install hugo-extended -y",
+            ["install", "hugo-extended", "-y"],
             timeoutMs: 300_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -410,8 +419,8 @@ public sealed partial class HugoService
         }
 
         Directory.CreateDirectory(parentPath);
-        var args = $"new site \"{normalizedName}\" --format toml";
-        if (force) args += " --force";
+        var args = new List<string> { "new", "site", normalizedName, "--format", "toml" };
+        if (force) args.Add("--force");
 
         var result = await ProcessRunner.RunAsync(
             hugo.ExecutablePath,
@@ -494,7 +503,7 @@ public sealed partial class HugoService
 
         return await ProcessRunner.RunAsync(
             hugo.ExecutablePath,
-            $"new content \"{hugoRelativePath}\"",
+            ["new", "content", hugoRelativePath],
             sitePath,
             timeoutMs: 30_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -557,6 +566,31 @@ public sealed partial class HugoService
         string? extraArgs,
         CancellationToken cancellationToken = default)
     {
+        return await BuildCoreAsync(sitePath, extraArgs, argumentList: null, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Builds a site with structured Hugo arguments. This keeps generated URLs and
+    /// other values separate from the command parser used by the legacy string API.
+    /// </summary>
+    public async Task<CommandResult> BuildWithArgumentsAsync(
+        string sitePath,
+        IEnumerable<string>? extraArgs = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(sitePath);
+        var arguments = extraArgs?.ToArray() ?? [];
+        return await BuildCoreAsync(sitePath, extraArgsText: null, arguments, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<CommandResult> BuildCoreAsync(
+        string sitePath,
+        string? extraArgsText,
+        IReadOnlyList<string>? argumentList,
+        CancellationToken cancellationToken)
+    {
         await RepairDuplicateRootTomlKeysAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await MigrateDeprecatedLanguageCodeAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await RepairLegacyStackColorSchemeAsync(sitePath, cancellationToken).ConfigureAwait(false);
@@ -567,10 +601,22 @@ public sealed partial class HugoService
         if (!hugo.IsInstalled || string.IsNullOrWhiteSpace(hugo.ExecutablePath))
             return new CommandResult { ExitCode = -1, StdErr = "請先安裝 Hugo。" };
 
-        var args = string.IsNullOrWhiteSpace(extraArgs) ? "build" : $"build {extraArgs.Trim()}";
+        if (argumentList is not null)
+        {
+            var args = new List<string>(argumentList.Count + 1) { "build" };
+            args.AddRange(argumentList);
+            return await ProcessRunner.RunAsync(
+                hugo.ExecutablePath,
+                args,
+                sitePath,
+                timeoutMs: 180_000,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
+        var text = string.IsNullOrWhiteSpace(extraArgsText) ? "build" : $"build {extraArgsText.Trim()}";
         return await ProcessRunner.RunAsync(
             hugo.ExecutablePath,
-            args,
+            text,
             sitePath,
             timeoutMs: 180_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -960,7 +1006,7 @@ public sealed partial class HugoService
             // from overriding a deliberate operation-level budget.
             Timeout = Timeout.InfiniteTimeSpan
         };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("Hugoer/1.5");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
         return client;
     }
 

@@ -29,8 +29,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         ];
 
         SelectedNav = NavItems[0];
-        AppServices.Instance.SiteChanged += (_, _) => UpdateSiteBanner();
-        AppServices.Instance.AppStatusChanged += (_, message) => AppStatus = message;
+        AppServices.Instance.SiteChanged += OnSiteChanged;
+        AppServices.Instance.AppStatusChanged += OnAppStatusChanged;
         UpdateSiteBanner();
         _ = RefreshCodeStatisticsAsync();
         _ = NavigateToPageAsync(SelectedNav.Page, ++_navigationGeneration);
@@ -65,10 +65,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public partial string CodeStatisticsDetails { get; set; } = "正在掃描應用程式來源…";
 
     private int _navigationGeneration;
+    private bool _disposed;
 
     partial void OnSelectedNavChanged(NavItem? value)
     {
-        if (value is null) return;
+        if (_disposed || value is null) return;
         CurrentPage = value.Page;
         AppStatus = value.Page.StatusMessage;
         _ = NavigateToPageAsync(value.Page, ++_navigationGeneration);
@@ -94,18 +95,37 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     private async Task NavigateToPageAsync(PageViewModelBase page, int generation)
     {
+        if (_disposed)
+            return;
+
         try
         {
             await page.OnNavigatedToAsync();
-            if (generation == _navigationGeneration)
+            if (!_disposed && generation == _navigationGeneration)
                 AppStatus = page.StatusMessage;
         }
         catch (Exception ex)
         {
             page.StatusMessage = ex.Message;
-            if (generation == _navigationGeneration)
+            if (!_disposed && generation == _navigationGeneration)
                 AppStatus = $"載入「{page.Title}」失敗：{ex.Message}";
         }
+    }
+
+    private void OnSiteChanged(object? sender, EventArgs e)
+    {
+        if (_disposed)
+            return;
+
+        UpdateSiteBanner();
+        if (CurrentPage is not null)
+            _ = NavigateToPageAsync(CurrentPage, ++_navigationGeneration);
+    }
+
+    private void OnAppStatusChanged(object? sender, string message)
+    {
+        if (!_disposed)
+            AppStatus = message;
     }
 
     private void UpdateSiteBanner()
@@ -118,6 +138,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        AppServices.Instance.SiteChanged -= OnSiteChanged;
+        AppServices.Instance.AppStatusChanged -= OnAppStatusChanged;
         SetupPage.Dispose();
         ConfigPage.Dispose();
         ContentPage.Dispose();

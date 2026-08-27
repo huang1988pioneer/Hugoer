@@ -179,6 +179,8 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
 
     private bool _loading;
     private bool _syncingFrontMatter;
+    private bool _suppressEditorState;
+    private bool _disposed;
     private List<ContentItem> _all = [];
     private CancellationTokenSource? _previewCts;
     private CancellationTokenSource? _loadCts;
@@ -187,12 +189,16 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
 
     public override Task OnNavigatedToAsync()
     {
-        Refresh();
+        if (!_disposed)
+            Refresh();
         return Task.CompletedTask;
     }
 
     partial void OnSelectedFileChanging(ContentItem? oldValue, ContentItem? newValue)
     {
+        if (_disposed)
+            return;
+
         _loadGeneration++;
         _loadCts?.Cancel();
         _autoSave.Cancel();
@@ -207,8 +213,18 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
 
     partial void OnSelectedFileChanged(ContentItem? value)
     {
-        HasSelection = value is not null && !value.IsDirectory;
-        if (value is not null && !value.IsDirectory)
+        if (_disposed)
+            return;
+
+        if (value is null)
+        {
+            if (!_suppressEditorState)
+                ResetEditorState();
+            return;
+        }
+
+        HasSelection = !value.IsDirectory;
+        if (!value.IsDirectory)
         {
             var load = new CancellationTokenSource();
             _loadCts = load;
@@ -218,6 +234,9 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
 
     partial void OnEditorTextChanged(string value)
     {
+        if (_disposed || _suppressEditorState)
+            return;
+
         UpdateEditorStatistics(value);
         UpdatePreviewBody(value);
         if (!_loading)
@@ -338,6 +357,9 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
 
     private void SchedulePreviewUpdate(string value)
     {
+        if (_disposed)
+            return;
+
         _previewCts?.Cancel();
         var debounce = new CancellationTokenSource();
         _previewCts = debounce;
@@ -351,7 +373,7 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
             await Task.Delay(120, debounce.Token).ConfigureAwait(false);
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (!debounce.IsCancellationRequested)
+                if (!_disposed && !debounce.IsCancellationRequested)
                     PreviewMarkdown = value;
             });
         }
@@ -388,11 +410,15 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
     [RelayCommand]
     private void Refresh()
     {
+        if (_disposed)
+            return;
+
         var selectedPath = SelectedFile?.FullPath;
         Files.Clear();
         if (!RequireSite(out var site))
         {
             _all = [];
+            ResetEditorState();
             ApplyFilter();
             return;
         }
@@ -468,6 +494,12 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
         CancellationTokenSource load,
         int generation)
     {
+        if (_disposed)
+        {
+            load.Dispose();
+            return;
+        }
+
         _autoSave.Cancel();
         _loading = true;
         try
@@ -503,7 +535,8 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
     }
 
     private bool IsCurrentLoad(ContentItem item, int generation) =>
-        generation == _loadGeneration
+        !_disposed
+        && generation == _loadGeneration
         && SelectedFile?.FullPath.Equals(item.FullPath, StringComparison.OrdinalIgnoreCase) == true;
 
     [RelayCommand]
@@ -517,6 +550,9 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
 
     private async Task SaveCoreAsync(bool refreshList, bool auto)
     {
+        if (_disposed)
+            return;
+
         var selected = SelectedFile;
         var text = EditorText;
         if (selected is null || selected.IsDirectory)
@@ -548,6 +584,9 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
 
     private async Task PersistSilentlyAsync(string fullPath, string text)
     {
+        if (_disposed)
+            return;
+
         try
         {
             await Services.Content.SaveAsync(fullPath, text);
@@ -838,6 +877,49 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
                && text.Skip(9).All(char.IsDigit);
     }
 
+    /// <summary>
+    /// Clears all state that belongs to a previously selected site. The editor
+    /// property callbacks are deliberately suppressed so clearing a page cannot
+    /// mark a phantom document dirty or auto-save it back into the old site.
+    /// </summary>
+    private void ResetEditorState()
+    {
+        _autoSave.Cancel();
+        _previewCts?.Cancel();
+        _previewCts = null;
+        _loadCts?.Cancel();
+        _loadCts = null;
+        _loadGeneration++;
+        _loading = true;
+        _syncingFrontMatter = true;
+        _suppressEditorState = true;
+        try
+        {
+            IsDirty = false;
+            SelectedFile = null;
+            HasSelection = false;
+            EditorText = string.Empty;
+            PreviewMarkdown = string.Empty;
+            PreviewBodyMarkdown = string.Empty;
+            HasPreviewBody = false;
+            UpdateEditorStatistics(string.Empty);
+            FrontMatterTitle = string.Empty;
+            FrontMatterDate = string.Empty;
+            FrontMatterSlug = string.Empty;
+            FrontMatterCategories = string.Empty;
+            FrontMatterTags = string.Empty;
+            FrontMatterImage = string.Empty;
+            FrontMatterDescription = string.Empty;
+            IsDraft = true;
+        }
+        finally
+        {
+            _suppressEditorState = false;
+            _syncingFrontMatter = false;
+            _loading = false;
+        }
+    }
+
     private async Task ApplyArticleCodeAsync(string site, string relative, string title, string code)
     {
         var full = Path.Combine(
@@ -911,7 +993,13 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
 
     public void Dispose()
     {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        _loadGeneration++;
         _autoSave.Dispose();
+        _suppressEditorState = true;
         _previewCts?.Cancel();
         _previewCts = null;
         _loadCts?.Cancel();

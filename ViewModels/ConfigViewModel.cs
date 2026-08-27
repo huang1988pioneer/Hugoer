@@ -66,6 +66,7 @@ public partial class ConfigViewModel : PageViewModelBase, IDisposable
     public partial string ConfigCatalogSummary { get; set; } = string.Empty;
 
     private bool _loading;
+    private bool _suppressSelectionLoad;
     private bool _disposed;
     private int _loadGeneration;
     private CancellationTokenSource? _loadCts;
@@ -79,6 +80,9 @@ public partial class ConfigViewModel : PageViewModelBase, IDisposable
 
     partial void OnSelectedFileChanging(string? oldValue, string? newValue)
     {
+        if (_disposed)
+            return;
+
         _autoSave.Cancel();
         if (_loading || !IsDirty || string.IsNullOrWhiteSpace(oldValue))
             return;
@@ -91,7 +95,17 @@ public partial class ConfigViewModel : PageViewModelBase, IDisposable
 
     partial void OnSelectedFileChanged(string? value)
     {
-        if (value is not null)
+        if (_disposed)
+            return;
+
+        if (value is null)
+        {
+            if (!_loading)
+                ResetEditorState();
+            return;
+        }
+
+        if (!_suppressSelectionLoad)
             _ = LoadSelectedAsync();
     }
 
@@ -114,8 +128,7 @@ public partial class ConfigViewModel : PageViewModelBase, IDisposable
         ConfigFiles.Clear();
         if (!RequireSite(out var site))
         {
-            EditorText = string.Empty;
-            ParamFields.Clear();
+            ResetEditorState();
             return;
         }
 
@@ -123,14 +136,35 @@ public partial class ConfigViewModel : PageViewModelBase, IDisposable
         foreach (var f in files)
             ConfigFiles.Add(f);
 
-        SelectedFile = files.FirstOrDefault() ?? PathHelper.FindConfigFile(site);
-        if (SelectedFile is not null)
+        var selected = files.FirstOrDefault() ?? PathHelper.FindConfigFile(site);
+        _suppressSelectionLoad = true;
+        try
+        {
+            SelectedFile = selected;
+        }
+        finally
+        {
+            _suppressSelectionLoad = false;
+        }
+
+        if (selected is not null)
             await LoadSelectedAsync();
         else
         {
-            EditorText = "# 尚無設定檔。可建立 hugo.toml";
-            StatusMessage = "找不到設定檔";
-            ReloadParamsForm();
+            _loading = true;
+            try
+            {
+                EditorText = "# 尚無設定檔。可建立 hugo.toml";
+                IsDirty = false;
+                StatusMessage = "找不到設定檔";
+                ParseQuickFields(EditorText);
+                ReloadParamsForm();
+                ReloadAdvancedForm();
+            }
+            finally
+            {
+                _loading = false;
+            }
         }
     }
 
@@ -498,8 +532,40 @@ theme = ''
     }
 
     private bool IsCurrentLoad(string path, int generation) =>
-        generation == _loadGeneration
+        !_disposed
+        && generation == _loadGeneration
         && string.Equals(SelectedFile, path, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Clears all state that belongs to a previously selected site without
+    /// triggering an auto-save of that site's last edited configuration file.
+    /// </summary>
+    private void ResetEditorState()
+    {
+        _autoSave.Cancel();
+        _loading = true;
+        try
+        {
+            IsDirty = false;
+            SelectedFile = null;
+            EditorText = string.Empty;
+            BaseUrl = string.Empty;
+            SiteTitle = string.Empty;
+            LanguageCode = "zh-tw";
+            ThemeName = string.Empty;
+            ParamFields.Clear();
+            _allConfigFields = [];
+            ConfigFields.Clear();
+            ConfigGroups.Clear();
+            ConfigGroups.Add("全部");
+            SelectedConfigGroup = "全部";
+            ConfigCatalogSummary = string.Empty;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
 
     public void Dispose()
     {

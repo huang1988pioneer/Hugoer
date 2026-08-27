@@ -332,9 +332,12 @@ public sealed partial class GitHubService
         }
 
         progress?.Report($"建立 {target.PagesProductName} 靜態輸出…");
-        var extraArgs = string.IsNullOrWhiteSpace(target.PagesUrl)
-            ? "--gc --minify"
-            : $"--gc --minify --baseURL {QuoteArg(target.PagesUrl)}";
+        var extraArgs = new List<string> { "--gc", "--minify" };
+        if (!string.IsNullOrWhiteSpace(target.PagesUrl))
+        {
+            extraArgs.Add("--baseURL");
+            extraArgs.Add(target.PagesUrl);
+        }
         var build = await BuildSiteOutputAsync(sitePath, extraArgs, cancellationToken).ConfigureAwait(false);
         if (!build.Succeeded)
         {
@@ -437,15 +440,15 @@ public sealed partial class GitHubService
 
     private async Task<CommandResult> BuildSiteOutputAsync(
         string sitePath,
-        string extraArgs,
+        IReadOnlyList<string> extraArgs,
         CancellationToken cancellationToken)
     {
         if (_hugo is not null)
-            return await _hugo.BuildAsync(sitePath, extraArgs, cancellationToken).ConfigureAwait(false);
+            return await _hugo.BuildWithArgumentsAsync(sitePath, extraArgs, cancellationToken).ConfigureAwait(false);
 
         return await ProcessRunner.RunAsync(
             "hugo",
-            $"build {extraArgs}",
+            new[] { "build" }.Concat(extraArgs),
             sitePath,
             180_000,
             cancellationToken).ConfigureAwait(false);
