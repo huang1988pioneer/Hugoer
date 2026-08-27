@@ -27,3 +27,7 @@ The generated Gradle wrapper is included for Android Studio/CI. The local sandbo
 ## iOS
 
 The SwiftUI source and Xcode project target iOS/iPadOS 17 and are ready to open in Xcode 15+. The Xcode project statically references all nine Swift source files, including the new repository and store boundaries. This Windows environment has no Xcode toolchain, so an on-device iOS build remains a macOS CI/reviewer step.
+
+The pull-request workflow `.github/workflows/ios-mobile-validation.yml` now builds
+the simulator target on `macos-14` with signing disabled. This keeps SwiftUI
+compiler coverage in the same review loop as the Android checks.

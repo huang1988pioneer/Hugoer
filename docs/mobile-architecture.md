@@ -58,8 +58,11 @@ in Markdown content.
 
 ## Android release outputs
 
+Pull requests touching either mobile target run platform-native build checks.
 Tagging `mobile-v*` runs `.github/workflows/android-mobile-release.yml`.
-It executes Android unit tests and publishes two clearly labelled APKs:
+It executes Android unit tests and publishes two clearly labelled APKs. The
+packaging job only has read access; a separate tag-only release job receives
+the artifacts and is the only job granted `contents: write`.
 
 - `*-preview-signed.apk`: optimized, installable device-QA build signed using
   the Android debug key. It is never a Play Store submission artifact.
