@@ -37,7 +37,7 @@ struct HugoerMobileApp: App {
             .tint(HugoerPalette.cyan)
             .environmentObject(store)
             .sheet(item: $editorArticle) { article in
-                ArticleEditorView(article: article) { title, body in
+                ArticleEditorView(article: article, previewBaseURL: store.site.pagesURL) { title, body in
                     if store.save(articleID: article.id, title: title, body: body) {
                         toastMessage = "草稿已儲存"
                     }

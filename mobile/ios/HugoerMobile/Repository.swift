@@ -144,7 +144,7 @@ private extension HugoerSnapshot {
                 updated: "昨天 18:20",
                 status: .published,
                 excerpt: "讓圖片、影音與 PDF 在編輯流程裡保持可見。",
-                body: "---\ntitle: \"短碼與媒體預覽的整理\"\ndraft: false\n---\n\nHugo 的內容不只是一段文字。預覽應該保留媒體的比例、語意與來源。"
+                body: "---\ntitle: \"短碼與媒體預覽的整理\"\ndraft: false\n---\n\nHugo 的內容不只是一段文字。預覽應該保留媒體的比例、語意與來源。\n\n![Hugoer 預覽示意圖](https://www.w3.org/Icons/w3c_home.png)\n\n[影片預覽示範](https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4)\n\n[PDF 預覽示範](https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf)"
             ),
             Article(
                 id: "migration",

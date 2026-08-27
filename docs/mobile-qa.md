@@ -8,7 +8,7 @@
 - Verified screens: Overview (light and dark), Articles, Deploy, editor sheet, and publish confirmation dialog.
 - Evidence is captured locally under `.impeccable/review/` and intentionally ignored from source control.
 
-### Architecture release verification (v2.0.0)
+### Architecture release verification (v2.0.0 baseline)
 
 - `:core:data:test`: passed repository, front matter, duplicate-deployment,
   and cancellation tests.
@@ -31,3 +31,8 @@ The SwiftUI source and Xcode project target iOS/iPadOS 17 and are ready to open 
 The pull-request workflow `.github/workflows/ios-mobile-validation.yml` now builds
 the simulator target on `macos-14` with signing disabled. This keeps SwiftUI
 compiler coverage in the same review loop as the Android checks.
+
+The tag/manual workflow `.github/workflows/android-mobile-release.yml` also
+archives an iOS device target and packages an unsigned IPA when Apple signing
+secrets are unavailable. A signed ad-hoc IPA is produced automatically once
+the documented certificate and provisioning-profile secrets are configured.

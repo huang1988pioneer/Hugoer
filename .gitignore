@@ -7,6 +7,7 @@ artifacts/
 mobile/android/local.properties
 .gradle-cache/
 mobile/android/.gradle/
+mobile/android/.kotlin/
 mobile/android/**/build/
 .impeccable/review/
 *.user

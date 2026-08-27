@@ -138,6 +138,7 @@ fun HugoerApp() {
     if (editorArticle != null) {
         ArticleEditorSheet(
             article = editorArticle,
+            previewBaseUrl = state.site.pagesUrl,
             onDismiss = { editorArticleId = null },
             onSave = { title, body ->
                 viewModel.saveArticle(editorArticle.id, title, body)

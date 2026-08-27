@@ -28,7 +28,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +43,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ArticleEditorSheet(
     article: Article,
+    previewBaseUrl: String? = null,
     onDismiss: () -> Unit,
     onSave: (String, String) -> Unit,
 ) {
@@ -96,7 +96,11 @@ fun ArticleEditorSheet(
                 label = { Text("標題") },
             )
             if (preview) {
-                MarkdownPreview(body = body)
+                ArticlePreview(
+                    title = title,
+                    markdown = body,
+                    baseUrl = previewBaseUrl,
+                )
             } else {
                 OutlinedTextField(
                     value = body,
@@ -127,29 +131,6 @@ fun ArticleEditorSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-    }
-}
-
-@Composable
-private fun MarkdownPreview(body: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 260.dp)
-            .padding(4.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        body.lines()
-            .filter { line -> line.isNotBlank() && !line.trim().startsWith("---") }
-            .take(14)
-            .forEach { line ->
-                val clean = line.trim().removePrefix("#").trim()
-                Text(
-                    text = clean,
-                    style = if (line.trim().startsWith("#")) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge,
-                    fontWeight = if (line.trim().startsWith("#")) FontWeight.Bold else FontWeight.Normal,
-                )
-            }
     }
 }
 

@@ -56,19 +56,30 @@ create one article, and trigger a deployment. OAuth tokens belong in platform
 secure storage; the mobile UI must not execute Hugo locally or persist secrets
 in Markdown content.
 
-## Android release outputs
+## Mobile release outputs
 
 Pull requests touching either mobile target run platform-native build checks.
-Tagging `mobile-v*` runs `.github/workflows/android-mobile-release.yml`.
-It executes Android unit tests and publishes two clearly labelled APKs. The
-packaging job only has read access; a separate tag-only release job receives
-the artifacts and is the only job granted `contents: write`.
+Tagging `mobile-v*` runs `.github/workflows/android-mobile-release.yml`; a
+manual dispatch can package both platforms and can publish when `publish` is
+enabled with an explicit `release_tag` such as `mobile-v2.0.1`. The workflow
+executes Android unit tests, archives the iOS target, and publishes clearly
+labelled APK/IPA artifacts. The platform packaging jobs only have read access;
+the release job receives the artifacts and is the only job granted
+`contents: write`.
 
 - `*-preview-signed.apk`: optimized, installable device-QA build signed using
   the Android debug key. It is never a Play Store submission artifact.
 - `*-unsigned.apk`: optimized release output for signing with the production
   upload key.
 
+- `*-ad-hoc-signed.ipa`: emitted when Apple signing secrets and an ad-hoc
+  provisioning profile are configured; installability is limited to devices in
+  that profile.
+- `*-unsigned.ipa`: device archive packaged for downstream signing. It cannot
+  be installed on iOS until signed by Apple tooling.
+
 Use `./gradlew assembleRelease -PpreviewSigning=true` only for the first
 artifact. Keep a production key outside the repository and configure it in a
-secure release environment.
+secure release environment. For signed iOS output, configure the
+`APPLE_TEAM_ID`, `BUILD_CERTIFICATE_BASE64`, `P12_PASSWORD`,
+`BUILD_PROVISION_PROFILE_BASE64`, and `KEYCHAIN_PASSWORD` GitHub secrets.

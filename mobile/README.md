@@ -26,8 +26,12 @@ navigation bar; expanded windows (600 dp+) use a navigation rail.
 
 For release QA, `gradlew.bat :app:assembleRelease -PpreviewSigning=true`
 creates an installable preview-signed APK. A standard release build remains
-unsigned for a production upload key. Tag `mobile-v*` to publish both via the
-GitHub Actions release workflow.
+unsigned for a production upload key. Tag `mobile-v*` to publish the APKs and
+the iOS IPA produced by the GitHub Actions release workflow. Without Apple
+signing secrets, the IPA is explicitly labelled unsigned and requires a
+downstream signing step before device installation. For a manual release,
+enable `publish` and provide the matching `release_tag` input (for example,
+`mobile-v2.0.1`).
 
 ## iOS
 
@@ -38,8 +42,9 @@ Type, and both orientations.
 
 ## Design contract
 
-The product and direction assumptions are recorded in `PRODUCT.md` and
-`docs/mobile-design-direction.md`; implementation boundaries are in
-`docs/mobile-architecture.md`. The visual idea is a release dispatch board:
+The product and direction assumptions are recorded in [`../PRODUCT.md`](../PRODUCT.md)
+and [`../docs/mobile-design-direction.md`](../docs/mobile-design-direction.md);
+implementation boundaries are in [`../docs/mobile-architecture.md`](../docs/mobile-architecture.md).
+The visual idea is a release dispatch board:
 draft → preview → queue → live. Android and iOS translate that idea into their
 own platform controls instead of sharing a web shell.
