@@ -260,7 +260,7 @@ public sealed partial class HugoService
                     : $"Hugo 已是最新版：v{current}。"
             };
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException)
         {
             return new HugoVersionCheck
             {
@@ -380,8 +380,7 @@ public sealed partial class HugoService
                 return new CommandResult { ExitCode = -1, StdErr = "解壓後找不到 hugo.exe" };
             }
 
-            _settings.Current.PreferredHugoPath = exe;
-            _settings.Save();
+            _settings.SetPreferredHugoPath(exe);
             progress?.Report($"已安裝到 {exe}");
             return new CommandResult { ExitCode = 0, StdOut = exe };
         }

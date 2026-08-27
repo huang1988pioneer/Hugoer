@@ -400,13 +400,10 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                 AppendLog(message);
                 StatusMessage = message;
             });
-            var autoMsg = Hugoer.Services.GitHubService.IsAutomaticCommitMessage(CommitMessage)
-                ? await Services.GitHub.NextDatedCommitMessageAsync(site)
-                : CommitMessage.Trim();
             var result = await Services.GitHub.ConnectExistingRepositoryAndPushAsync(
                 site,
                 target,
-                autoMsg,
+                CommitMessage,
                 progress);
             AppendLog(result.CombinedOutput);
             StatusMessage = result.IsPartialSuccess
@@ -598,10 +595,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                 AppendLog(m);
                 StatusMessage = m;
             });
-            var pushMsg = Hugoer.Services.GitHubService.IsAutomaticCommitMessage(CommitMessage)
-                ? await Services.GitHub.NextDatedCommitMessageAsync(site)
-                : CommitMessage.Trim();
-            var result = await Services.GitHub.PushAsync(site, pushMsg, progress);
+            var result = await Services.GitHub.PushAsync(site, CommitMessage, progress);
             AppendLog(result.CombinedOutput);
             StatusMessage = result.Succeeded ? "推送完成" : "推送失敗";
             if (result.Succeeded)

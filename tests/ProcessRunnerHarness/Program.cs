@@ -14,6 +14,17 @@ Assert(output.Succeeded, output.CombinedOutput);
 Assert(output.StdOut.Contains("stdout-line", StringComparison.Ordinal), output.StdOut);
 Assert(output.StdErr.Contains("stderr-line", StringComparison.Ordinal), output.StdErr);
 
+var structured = await ProcessRunner.RunAsync(
+    "cmd.exe",
+    ["/c", "echo", "structured argument with spaces"],
+    timeoutMs: 10_000);
+Assert(structured.Succeeded, structured.CombinedOutput);
+Assert(structured.StdOut.Contains("structured argument with spaces", StringComparison.Ordinal), structured.StdOut);
+
+var invalidTimeout = await ProcessRunner.RunAsync("cmd.exe", "/c echo ignored", timeoutMs: 0);
+Assert(!invalidTimeout.Succeeded && invalidTimeout.StdErr.Contains("positive", StringComparison.OrdinalIgnoreCase),
+    invalidTimeout.CombinedOutput);
+
 var timeout = await ProcessRunner.RunAsync(
     "cmd.exe",
     "/c \"ping -n 6 127.0.0.1 >nul\"",
