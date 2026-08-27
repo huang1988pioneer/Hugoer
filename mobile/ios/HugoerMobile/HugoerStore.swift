@@ -15,13 +15,17 @@ final class HugoerStore: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var errorMessage: String?
 
-    init(repository: any HugoerRepository = DemoRepository()) {
+    init(repository: any HugoerRepository) {
         self.repository = repository
         let snapshot = repository.snapshot
         site = snapshot.site
         articles = snapshot.articles
         deployments = snapshot.deployments
         latestDeploymentMessage = snapshot.latestDeploymentMessage
+    }
+
+    convenience init() {
+        self.init(repository: DemoRepository())
     }
 
     func refresh() async {

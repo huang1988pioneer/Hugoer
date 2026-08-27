@@ -5,14 +5,14 @@ struct ArticleEditorView: View {
     let onSave: (String, String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var title: String
-    @State private var body: String
+    @State private var markdown: String
     @State private var preview = false
 
     init(article: Article, onSave: @escaping (String, String) -> Void) {
         self.article = article
         self.onSave = onSave
         _title = State(initialValue: article.title)
-        _body = State(initialValue: article.body)
+        _markdown = State(initialValue: article.body)
     }
 
     var body: some View {
@@ -28,11 +28,11 @@ struct ArticleEditorView: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.title3.weight(.semibold))
                     if preview {
-                        MarkdownPreview(body: body)
+                        MarkdownPreview(markdown: markdown)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(4)
                     } else {
-                        TextEditor(text: $body)
+                        TextEditor(text: $markdown)
                             .font(.body.monospaced())
                             .frame(minHeight: 300)
                             .padding(8)
@@ -52,7 +52,7 @@ struct ArticleEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("儲存") {
-                        onSave(title, body)
+                        onSave(title, markdown)
                         dismiss()
                     }
                     .fontWeight(.semibold)
@@ -63,11 +63,11 @@ struct ArticleEditorView: View {
 }
 
 private struct MarkdownPreview: View {
-    let body: String
+    let markdown: String
 
     var bodyView: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(body.split(separator: "\n").map(String.init).filter { !$0.isEmpty && !$0.hasPrefix("---") }.prefix(14).enumerated()), id: \.offset) { _, line in
+            ForEach(Array(markdown.split(separator: "\n").map(String.init).filter { !$0.isEmpty && !$0.hasPrefix("---") }.prefix(14).enumerated()), id: \.offset) { _, line in
                 Text(line.trimmingCharacters(in: CharacterSet(charactersIn: "# ")))
                     .font(line.hasPrefix("#") ? .title2.bold() : .body)
             }
