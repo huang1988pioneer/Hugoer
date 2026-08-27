@@ -6,6 +6,8 @@ namespace Hugoer.Services;
 
 public static class ProcessRunner
 {
+    private static readonly TimeSpan OutputDrainTimeout = TimeSpan.FromSeconds(2);
+
     public static async Task<CommandResult> RunAsync(
         string fileName,
         string arguments,
@@ -13,7 +15,58 @@ public static class ProcessRunner
         int timeoutMs = 120_000,
         CancellationToken cancellationToken = default,
         IDictionary<string, string?>? env = null)
+        => await RunCoreAsync(
+            fileName,
+            arguments,
+            argumentList: null,
+            workingDirectory: workingDirectory,
+            timeoutMs: timeoutMs,
+            cancellationToken: cancellationToken,
+            env: env).ConfigureAwait(false);
+
+    /// <summary>
+    /// Runs a process with structured arguments. Using <see cref="ProcessStartInfo.ArgumentList"/>
+    /// avoids platform-specific quoting bugs and prevents values supplied by a user
+    /// (for example a commit message or repository path) from being interpreted as
+    /// additional command-line switches.
+    /// </summary>
+    public static async Task<CommandResult> RunAsync(
+        string fileName,
+        IEnumerable<string> arguments,
+        string? workingDirectory = null,
+        int timeoutMs = 120_000,
+        CancellationToken cancellationToken = default,
+        IDictionary<string, string?>? env = null)
     {
+        ArgumentNullException.ThrowIfNull(arguments);
+        return await RunCoreAsync(
+            fileName,
+            argumentsText: null,
+            argumentList: arguments,
+            workingDirectory: workingDirectory,
+            timeoutMs: timeoutMs,
+            cancellationToken: cancellationToken,
+            env: env).ConfigureAwait(false);
+    }
+
+    private static async Task<CommandResult> RunCoreAsync(
+        string fileName,
+        string? argumentsText,
+        IEnumerable<string>? argumentList,
+        string? workingDirectory,
+        int timeoutMs,
+        CancellationToken cancellationToken,
+        IDictionary<string, string?>? env)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return new CommandResult
+            {
+                ExitCode = -1,
+                StdErr = "Command file name must not be empty."
+            };
+        }
+
         if (timeoutMs <= 0)
         {
             return new CommandResult
@@ -26,7 +79,6 @@ public static class ProcessRunner
         var psi = new ProcessStartInfo
         {
             FileName = fileName,
-            Arguments = arguments,
             WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -35,6 +87,14 @@ public static class ProcessRunner
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
+
+        if (argumentList is null)
+            psi.Arguments = argumentsText ?? string.Empty;
+        else
+        {
+            foreach (var argument in argumentList)
+                psi.ArgumentList.Add(argument ?? string.Empty);
+        }
 
         if (env is not null)
         {
@@ -72,7 +132,7 @@ public static class ProcessRunner
             try
             {
                 await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
-                var output = await ReadOutputAsync(stdoutTask, stderrTask).ConfigureAwait(false);
+                var output = await ReadOutputAsync(stdoutTask, stderrTask, OutputDrainTimeout).ConfigureAwait(false);
                 return new CommandResult
                 {
                     ExitCode = process.ExitCode,
@@ -83,7 +143,7 @@ public static class ProcessRunner
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 TryKill(process);
-                var output = await ReadOutputAsync(stdoutTask, stderrTask).ConfigureAwait(false);
+                var output = await ReadOutputAsync(stdoutTask, stderrTask, OutputDrainTimeout).ConfigureAwait(false);
                 return new CommandResult
                 {
                     ExitCode = -1,
@@ -94,7 +154,7 @@ public static class ProcessRunner
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 TryKill(process);
-                var output = await ReadOutputAsync(stdoutTask, stderrTask).ConfigureAwait(false);
+                var output = await ReadOutputAsync(stdoutTask, stderrTask, OutputDrainTimeout).ConfigureAwait(false);
                 return new CommandResult
                 {
                     ExitCode = -1,
@@ -153,16 +213,24 @@ public static class ProcessRunner
 
     private static async Task<(string StdOut, string StdErr)> ReadOutputAsync(
         Task<string> stdoutTask,
-        Task<string> stderrTask)
+        Task<string> stderrTask,
+        TimeSpan drainTimeout)
     {
+        var allOutput = Task.WhenAll(stdoutTask, stderrTask);
         try
         {
-            await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
+            // A killed process normally closes both pipes immediately. A child
+            // process can nevertheless inherit a handle and keep one pipe open;
+            // never let timeout/cancellation handling wait forever in that case.
+            await allOutput.WaitAsync(drainTimeout).ConfigureAwait(false);
         }
         catch
         {
             // Preserve any stream that was successfully drained. Process start or
-            // stream failures are reported by the outer command result.
+            // stream failures are reported by the outer command result. Observe a
+            // later fault as well so a detached pipe cannot create an unobserved
+            // task exception after this method returns.
+            _ = allOutput.Exception;
         }
 
         var stdout = stdoutTask.Status == TaskStatus.RanToCompletion ? stdoutTask.Result : string.Empty;

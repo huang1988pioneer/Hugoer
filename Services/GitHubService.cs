@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -8,6 +9,8 @@ namespace Hugoer.Services;
 
 public sealed partial class GitHubService
 {
+    public const string DefaultUpdateCommitMessage = GitProviderSettings.DefaultUpdateCommitMessage;
+
     private readonly DeploymentMonitorService _deploymentMonitor;
     private readonly HugoService? _hugo;
 
@@ -371,29 +374,55 @@ Thumbs.db
 
     /// <summary>
     /// 產生帶日期與自動序號的提交訊息，格式：{baseMessage} YYYYMMDD-N。
-    /// 序號依當天已有相同前綴的 commit 數量自動遞增。
+    /// 序號依當天已有相同前綴的 commit 最大編號自動遞增。
     /// </summary>
     public async Task<string> NextDatedCommitMessageAsync(
         string sitePath,
-        string baseMessage = "Update site via Hugoer",
+        string baseMessage = DefaultUpdateCommitMessage,
         CancellationToken cancellationToken = default)
     {
-        var dateStr = DateTime.Now.ToString("yyyyMMdd");
-        var prefix = $"{baseMessage} {dateStr}-";
+        var normalizedBaseMessage = string.IsNullOrWhiteSpace(baseMessage)
+            ? DefaultUpdateCommitMessage
+            : baseMessage.Trim();
+        var dateStr = DateTime.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        var prefix = $"{normalizedBaseMessage} {dateStr}-";
 
         var log = await ProcessRunner.RunAsync(
             "git",
-            $"log --oneline --grep=\"{prefix}\"",
+            "log --format=%s --all",
             sitePath,
             30_000,
             cancellationToken).ConfigureAwait(false);
 
-        int seq = 1;
-        if (log.Succeeded && !string.IsNullOrWhiteSpace(log.StdOut))
-            seq = log.StdOut.Trim().Split('\n', StringSplitOptions.RemoveEmptyEntries).Length + 1;
+        long maxSequence = 0;
+        if (log.Succeeded)
+        {
+            foreach (var subject in log.StdOut.Split(
+                         ['\r', '\n'],
+                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!subject.StartsWith(prefix, StringComparison.Ordinal))
+                    continue;
 
-        return $"{prefix}{seq}";
+                var suffix = subject[prefix.Length..];
+                if (long.TryParse(
+                        suffix,
+                        NumberStyles.None,
+                        CultureInfo.InvariantCulture,
+                        out var sequence)
+                    && sequence > maxSequence)
+                {
+                    maxSequence = sequence;
+                }
+            }
+        }
+
+        var nextSequence = maxSequence == long.MaxValue ? long.MaxValue : maxSequence + 1;
+        return $"{prefix}{nextSequence.ToString(CultureInfo.InvariantCulture)}";
     }
+
+    public static bool IsAutomaticCommitMessage(string? message) =>
+        GitProviderSettings.IsAutomaticCommitMessage(message);
 
     public async Task<CommandResult> CommitAllAsync(
         string sitePath,

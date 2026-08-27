@@ -81,8 +81,9 @@ public partial class GitHubViewModel
                 ? ProviderPagesUrl
                 : profile.PagesUrl;
             SyncRecommendedBaseUrl = profile.SyncRecommendedBaseUrl;
-            if (!string.IsNullOrWhiteSpace(profile.CommitMessage))
-                CommitMessage = profile.CommitMessage;
+            CommitMessage = Hugoer.Services.GitHubService.IsAutomaticCommitMessage(profile.CommitMessage)
+                ? string.Empty
+                : profile.CommitMessage;
             if (!keepRepositoryUrl)
                 RepositoryUrl = profile.RepositoryUrl;
             else
@@ -123,8 +124,8 @@ public partial class GitHubViewModel
         profile.AccountOrWorkspace = ProviderAccount.Trim();
         profile.PagesUrl = ProviderPagesUrl.Trim();
         profile.SyncRecommendedBaseUrl = SyncRecommendedBaseUrl;
-        profile.CommitMessage = string.IsNullOrWhiteSpace(CommitMessage)
-            ? "Update site via Hugoer"
+        profile.CommitMessage = Hugoer.Services.GitHubService.IsAutomaticCommitMessage(CommitMessage)
+            ? string.Empty
             : CommitMessage.Trim();
         Services.Settings.SaveGitProviderSettings(profile);
     }

@@ -8,7 +8,9 @@ $service = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot "Services\De
 $github = (Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot "Services") -Filter "GitHubService*.cs" |
     Sort-Object Name |
     ForEach-Object { Get-Content -Raw -LiteralPath $_.FullName }) -join "`n"
-$viewModel = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot "ViewModels\GitHubViewModel.cs")
+$viewModel = (Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot "ViewModels") -Filter "GitHubViewModel*.cs" |
+    Sort-Object Name |
+    ForEach-Object { Get-Content -Raw -LiteralPath $_.FullName }) -join "`n"
 $view = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot "Views\GitHubView.axaml")
 $mainViewModel = Get-Content -Raw -LiteralPath (Join-Path $RepositoryRoot "ViewModels\MainViewModel.cs")
 

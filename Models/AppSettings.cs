@@ -182,12 +182,21 @@ public static class GitHostingProviderExtensions
 
 public sealed class GitProviderSettings
 {
+    public const string DefaultUpdateCommitMessage = "Update site via Hugoer";
+
     public GitHostingProvider Provider { get; set; }
     public string RepositoryUrl { get; set; } = string.Empty;
     public string AccountOrWorkspace { get; set; } = string.Empty;
     public string PagesUrl { get; set; } = string.Empty;
     public bool SyncRecommendedBaseUrl { get; set; } = true;
-    public string CommitMessage { get; set; } = "Update site via Hugoer";
+    /// <summary>
+    /// Optional custom commit subject. An empty value uses Hugoer's dated update format.
+    /// </summary>
+    public string CommitMessage { get; set; } = string.Empty;
+
+    public static bool IsAutomaticCommitMessage(string? message) =>
+        string.IsNullOrWhiteSpace(message)
+        || string.Equals(message.Trim(), DefaultUpdateCommitMessage, StringComparison.Ordinal);
 }
 
 public sealed class GitHostingProviderOption

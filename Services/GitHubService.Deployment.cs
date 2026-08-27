@@ -87,7 +87,7 @@ public sealed partial class GitHubService
                 return await ConnectExistingRepositoryAndPushAsync(
                     sitePath,
                     target,
-                    "Publish site via Hugoer",
+                    DefaultUpdateCommitMessage,
                     progress,
                     cancellationToken).ConfigureAwait(false);
             }
@@ -206,7 +206,10 @@ public sealed partial class GitHubService
         await EnsureHostingWorkflowAsync(sitePath, target.Provider, cancellationToken).ConfigureAwait(false);
         var markerError = await PrepareDeploymentMarkerAsync(sitePath, progress, cancellationToken).ConfigureAwait(false);
         if (markerError is not null) return markerError;
-        var commit = await CommitAllAsync(sitePath, commitMessage, cancellationToken).ConfigureAwait(false);
+        var resolvedCommitMessage = IsAutomaticCommitMessage(commitMessage)
+            ? await NextDatedCommitMessageAsync(sitePath, cancellationToken: cancellationToken)
+            : commitMessage.Trim();
+        var commit = await CommitAllAsync(sitePath, resolvedCommitMessage, cancellationToken).ConfigureAwait(false);
         if (!commit.Succeeded) return commit;
 
         if (StaticPagesDeployment.ShouldPushSourceBranch(target))
@@ -256,10 +259,13 @@ public sealed partial class GitHubService
 
     public async Task<CommandResult> PushAsync(
         string sitePath,
-        string commitMessage = "Update site via Hugoer",
+        string commitMessage = DefaultUpdateCommitMessage,
         IProgress<string>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        var resolvedCommitMessage = IsAutomaticCommitMessage(commitMessage)
+            ? await NextDatedCommitMessageAsync(sitePath, cancellationToken: cancellationToken)
+            : commitMessage.Trim();
         var info = await GetInfoAsync(sitePath, cancellationToken).ConfigureAwait(false);
         var target = !string.IsNullOrWhiteSpace(info.RemoteUrl)
             ? ParseRemoteTarget(info.RemoteUrl)
@@ -270,7 +276,7 @@ public sealed partial class GitHubService
         await EnsureHostingWorkflowAsync(sitePath, provider, cancellationToken).ConfigureAwait(false);
         var markerError = await PrepareDeploymentMarkerAsync(sitePath, progress, cancellationToken).ConfigureAwait(false);
         if (markerError is not null) return markerError;
-        var commit = await CommitAllAsync(sitePath, commitMessage, cancellationToken).ConfigureAwait(false);
+        var commit = await CommitAllAsync(sitePath, resolvedCommitMessage, cancellationToken).ConfigureAwait(false);
         progress?.Report(commit.CombinedOutput);
         if (!commit.Succeeded)
             return commit;

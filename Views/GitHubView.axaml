@@ -60,7 +60,7 @@
                         <TextBlock Grid.Row="2" Text="Commit 訊息" VerticalAlignment="Center"/>
                         <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3"
                                  Text="{Binding CommitMessage}"
-                                 PlaceholderText="Update site via Hugoer"/>
+                                 PlaceholderText="留空自動產生：Update site via Hugoer yyyyMMdd-N"/>
                     </Grid>
 
                     <StackPanel Orientation="Horizontal" Spacing="10">

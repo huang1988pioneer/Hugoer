@@ -43,6 +43,11 @@ public sealed class SettingsService
                 _settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
                 _settings.GitProviderSettings ??= [];
                 _settings.RecentRepositories ??= [];
+                foreach (var profile in _settings.GitProviderSettings)
+                {
+                    if (profile is not null && GitProviderSettings.IsAutomaticCommitMessage(profile.CommitMessage))
+                        profile.CommitMessage = string.Empty;
+                }
             }
             catch
             {

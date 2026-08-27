@@ -18,7 +18,13 @@ public sealed class DeploymentMonitorService
         WriteIndented = true
     };
 
-    private static readonly HttpClient Client = CreateHttpClient();
+    private static readonly HttpClient DefaultClient = CreateHttpClient();
+    private readonly HttpClient _client;
+
+    public DeploymentMonitorService(HttpClient? client = null)
+    {
+        _client = client ?? DefaultClient;
+    }
 
     public async Task<DeploymentMarker> PrepareDeploymentAsync(
         string sitePath,
@@ -75,7 +81,7 @@ public sealed class DeploymentMonitorService
                 NoCache = true,
                 NoStore = true
             };
-            using var response = await Client.SendAsync(
+            using var response = await _client.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken).ConfigureAwait(false);

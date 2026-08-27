@@ -11,11 +11,19 @@ namespace Hugoer.Services;
 
 public sealed partial class HugoService
 {
+    private static readonly HttpClient DefaultHttpClient = CreateHttpClient();
     private readonly SettingsService _settings;
+    private readonly HttpClient _httpClient;
 
-    public HugoService(SettingsService settings)
+    public HugoService(SettingsService settings, HttpClient? httpClient = null)
     {
-        _settings = settings;
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _httpClient = httpClient ?? DefaultHttpClient;
+
+        // A caller supplied client is useful for tests and for hosts that own
+        // their networking stack. Only add a default identity when it has none.
+        if (_httpClient.DefaultRequestHeaders.UserAgent.Count == 0)
+            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Hugoer/1.5");
     }
 
     public async Task<HugoInfo> DetectAsync(CancellationToken cancellationToken = default)
@@ -208,12 +216,11 @@ public sealed partial class HugoService
     {
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Hugoer/1.4");
+            using var timeout = CreateTimeoutSource(cancellationToken, TimeSpan.FromSeconds(12));
 
-            var release = await http.GetFromJsonAsync<GitHubRelease>(
+            var release = await _httpClient.GetFromJsonAsync<GitHubRelease>(
                 "https://api.github.com/repos/gohugoio/hugo/releases/latest",
-                cancellationToken).ConfigureAwait(false);
+                timeout.Token).ConfigureAwait(false);
 
             var latest = NormalizeVersion(release?.TagName);
             if (string.IsNullOrWhiteSpace(latest))
@@ -309,13 +316,12 @@ public sealed partial class HugoService
     {
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Hugoer/1.0");
+            using var timeout = CreateTimeoutSource(cancellationToken, TimeSpan.FromMinutes(5));
 
             progress?.Report("查詢最新 Hugo Extended 版本…");
-            var api = await http.GetStringAsync(
+            var api = await _httpClient.GetStringAsync(
                 "https://api.github.com/repos/gohugoio/hugo/releases/latest",
-                cancellationToken).ConfigureAwait(false);
+                timeout.Token).ConfigureAwait(false);
 
             // Prefer windows-amd64 extended zip
             var assetMatch = AssetRegex().Match(api);
@@ -334,10 +340,28 @@ public sealed partial class HugoService
             var zipPath = Path.Combine(toolsDir, "hugo.zip");
 
             progress?.Report($"下載 {url}…");
-            await using (var fs = File.Create(zipPath))
+            var partialZipPath = zipPath + ".download";
+            try
             {
-                await using var stream = await http.GetStreamAsync(url, cancellationToken).ConfigureAwait(false);
-                await stream.CopyToAsync(fs, cancellationToken).ConfigureAwait(false);
+                await using (var fs = new FileStream(
+                    partialZipPath,
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 128 * 1024,
+                    options: FileOptions.Asynchronous | FileOptions.SequentialScan))
+                {
+                    await using var stream = await _httpClient.GetStreamAsync(url, timeout.Token)
+                        .ConfigureAwait(false);
+                    await stream.CopyToAsync(fs, timeout.Token).ConfigureAwait(false);
+                }
+
+                File.Move(partialZipPath, zipPath, overwrite: true);
+            }
+            finally
+            {
+                try { if (File.Exists(partialZipPath)) File.Delete(partialZipPath); }
+                catch { /* preserve the original download error */ }
             }
 
             progress?.Report("解壓縮…");
@@ -788,7 +812,7 @@ public sealed partial class HugoService
         return Fail($"找不到可用的本機預覽埠（{preferredPort}–{lastPort}）。請關閉占用中的程式後再試。");
     }
 
-    private static async Task<HugoServerStartResult> StartServerOnPortAsync(
+    private async Task<HugoServerStartResult> StartServerOnPortAsync(
         string hugoExe,
         string sitePath,
         int port,
@@ -841,7 +865,6 @@ public sealed partial class HugoService
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
             for (var attempt = 0; attempt < 40; attempt++)
             {
                 await Task.Delay(200, cancellationToken).ConfigureAwait(false);
@@ -856,10 +879,11 @@ public sealed partial class HugoService
 
                 try
                 {
-                    using var response = await http.GetAsync(
+                    using var requestTimeout = CreateTimeoutSource(cancellationToken, TimeSpan.FromSeconds(1));
+                    using var response = await _httpClient.GetAsync(
                         url,
                         HttpCompletionOption.ResponseHeadersRead,
-                        cancellationToken).ConfigureAwait(false);
+                        requestTimeout.Token).ConfigureAwait(false);
                     if (response.IsSuccessStatusCode)
                     {
                         StopCollecting();
@@ -870,7 +894,7 @@ public sealed partial class HugoService
                 {
                     // Hugo is still compiling; retry until the readiness deadline.
                 }
-                catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
                     // Per-request timeout; the overall readiness loop continues.
                 }
@@ -918,6 +942,28 @@ public sealed partial class HugoService
 
     private static HugoServerStartResult Fail(string message, string url = "http://127.0.0.1:1313/") =>
         new(null, message, url);
+
+    private static CancellationTokenSource CreateTimeoutSource(
+        CancellationToken cancellationToken,
+        TimeSpan timeout)
+    {
+        var source = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        source.CancelAfter(timeout);
+        return source;
+    }
+
+    private static HttpClient CreateHttpClient()
+    {
+        var client = new HttpClient
+        {
+            // Individual operations apply their own cancellation budget. Keeping
+            // the shared client uncapped prevents the default 100-second timeout
+            // from overriding a deliberate operation-level budget.
+            Timeout = Timeout.InfiniteTimeSpan
+        };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Hugoer/1.5");
+        return client;
+    }
 
     public void StopServer(Process? process) => KillServer(process);
 

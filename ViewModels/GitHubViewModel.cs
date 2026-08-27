@@ -400,8 +400,8 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                 AppendLog(message);
                 StatusMessage = message;
             });
-            var autoMsg = string.IsNullOrWhiteSpace(CommitMessage)
-                ? await Services.GitHub.NextDatedCommitMessageAsync(site, "Publish site via Hugoer")
+            var autoMsg = Hugoer.Services.GitHubService.IsAutomaticCommitMessage(CommitMessage)
+                ? await Services.GitHub.NextDatedCommitMessageAsync(site)
                 : CommitMessage.Trim();
             var result = await Services.GitHub.ConnectExistingRepositoryAndPushAsync(
                 site,
@@ -598,7 +598,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                 AppendLog(m);
                 StatusMessage = m;
             });
-            var pushMsg = string.IsNullOrWhiteSpace(CommitMessage)
+            var pushMsg = Hugoer.Services.GitHubService.IsAutomaticCommitMessage(CommitMessage)
                 ? await Services.GitHub.NextDatedCommitMessageAsync(site)
                 : CommitMessage.Trim();
             var result = await Services.GitHub.PushAsync(site, pushMsg, progress);
