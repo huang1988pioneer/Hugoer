@@ -65,10 +65,10 @@ public sealed partial class GitHubService
         {
             var create = await ProcessRunner.RunAsync(
                 "gh",
-                $"repo create \"{repoName}\" --source=. --remote=origin --{visibility} --push",
-                sitePath,
-                180_000,
-                cancellationToken).ConfigureAwait(false);
+                ["repo", "create", repoName, "--source=.", "--remote=origin", $"--{visibility}", "--push"],
+                workingDirectory: sitePath,
+                timeoutMs: 180_000,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
 
             if (!create.Succeeded)
             {
@@ -135,7 +135,11 @@ public sealed partial class GitHubService
         {
             progress?.Report($"連結 {target.ProviderName} origin：{target.Owner}/{target.Repository}…");
             var addRemote = await ProcessRunner.RunAsync(
-                "git", $"remote add origin \"{target.CanonicalUrl}\"", sitePath, 15_000, cancellationToken)
+                "git",
+                ["remote", "add", "origin", target.CanonicalUrl],
+                workingDirectory: sitePath,
+                timeoutMs: 15_000,
+                cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             if (!addRemote.Succeeded) return addRemote;
         }
@@ -178,8 +182,11 @@ public sealed partial class GitHubService
             {
                 progress?.Report($"以遠端 {remoteBranch} 為基準，保留本機未追蹤網站檔案…");
                 var checkout = await ProcessRunner.RunAsync(
-                    "git", $"checkout -B \"{remoteBranch}\" --track \"origin/{remoteBranch}\"",
-                    sitePath, 30_000, cancellationToken).ConfigureAwait(false);
+                    "git",
+                    ["checkout", "-B", remoteBranch, "--track", $"origin/{remoteBranch}"],
+                    workingDirectory: sitePath,
+                    timeoutMs: 30_000,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
                 if (!checkout.Succeeded)
                 {
                     return new CommandResult
@@ -354,24 +361,37 @@ public sealed partial class GitHubService
         try
         {
             var init = await ProcessRunner.RunAsync(
-                "git", $"init -b {QuoteArg(outputBranch)}", tempRoot, 30_000, cancellationToken)
+                "git",
+                ["init", "-b", outputBranch],
+                workingDirectory: tempRoot,
+                timeoutMs: 30_000,
+                cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             if (!init.Succeeded) return init;
 
             var addRemote = await ProcessRunner.RunAsync(
-                "git", $"remote add origin {QuoteArg(target.CanonicalUrl)}",
-                tempRoot,
-                15_000,
-                cancellationToken).ConfigureAwait(false);
+                "git",
+                ["remote", "add", "origin", target.CanonicalUrl],
+                workingDirectory: tempRoot,
+                timeoutMs: 15_000,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
             if (!addRemote.Succeeded) return addRemote;
 
             var fetch = await ProcessRunner.RunAsync(
-                "git", $"fetch origin {QuoteArg(outputBranch)}", tempRoot, 60_000, cancellationToken)
+                "git",
+                ["fetch", "origin", outputBranch],
+                workingDirectory: tempRoot,
+                timeoutMs: 60_000,
+                cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             if (fetch.Succeeded)
             {
                 var checkout = await ProcessRunner.RunAsync(
-                    "git", $"checkout -B {QuoteArg(outputBranch)} FETCH_HEAD", tempRoot, 30_000, cancellationToken)
+                    "git",
+                    ["checkout", "-B", outputBranch, "FETCH_HEAD"],
+                    workingDirectory: tempRoot,
+                    timeoutMs: 30_000,
+                    cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
                 if (!checkout.Succeeded) return checkout;
             }
@@ -399,7 +419,11 @@ public sealed partial class GitHubService
 
             progress?.Report($"推送 {target.PagesProductName} 靜態檔到 {outputBranch} 分支…");
             var push = await ProcessRunner.RunAsync(
-                "git", $"push -u origin HEAD:{QuoteArg(outputBranch)}", tempRoot, 180_000, cancellationToken)
+                "git",
+                ["push", "-u", "origin", $"HEAD:{outputBranch}"],
+                workingDirectory: tempRoot,
+                timeoutMs: 180_000,
+                cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             if (!push.Succeeded)
                 return GitHostingProcessErrors.WithRepositoryAccessHint(
@@ -450,13 +474,21 @@ public sealed partial class GitHubService
             return new CommandResult { ExitCode = 0, StdOut = "本機尚無 commit，略過合併遠端更新。" };
 
         var remoteCommit = await ProcessRunner.RunAsync(
-            "git", $"rev-parse --verify \"origin/{branch}\"", sitePath, 10_000, cancellationToken)
+            "git",
+            ["rev-parse", "--verify", $"origin/{branch}"],
+            workingDirectory: sitePath,
+            timeoutMs: 10_000,
+            cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         if (!remoteCommit.Succeeded)
             return new CommandResult { ExitCode = 0, StdOut = $"遠端尚無 {branch} 分支，將建立新分支。" };
 
         var mergeBase = await ProcessRunner.RunAsync(
-            "git", $"merge-base --is-ancestor \"origin/{branch}\" HEAD", sitePath, 10_000, cancellationToken)
+            "git",
+            ["merge-base", "--is-ancestor", $"origin/{branch}", "HEAD"],
+            workingDirectory: sitePath,
+            timeoutMs: 10_000,
+            cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         if (mergeBase.Succeeded)
             return new CommandResult { ExitCode = 0, StdOut = $"本機已包含 origin/{branch}。" };
@@ -473,10 +505,11 @@ public sealed partial class GitHubService
     {
         progress?.Report($"合併遠端 {branch}（保留本機 Hugo 網站內容，不 force push）…");
         var merge = await ProcessRunner.RunAsync(
-            "git", $"merge \"origin/{branch}\" --allow-unrelated-histories --no-edit -X ours",
-            sitePath,
-            60_000,
-            cancellationToken).ConfigureAwait(false);
+            "git",
+            ["merge", $"origin/{branch}", "--allow-unrelated-histories", "--no-edit", "-X", "ours"],
+            workingDirectory: sitePath,
+            timeoutMs: 60_000,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         if (merge.Succeeded)
             return merge;
 
@@ -501,7 +534,11 @@ public sealed partial class GitHubService
     {
         progress?.Report(message);
         var push = await ProcessRunner.RunAsync(
-            "git", $"push -u origin HEAD:\"{branch}\"", sitePath, 180_000, cancellationToken)
+            "git",
+            ["push", "-u", "origin", $"HEAD:{branch}"],
+            workingDirectory: sitePath,
+            timeoutMs: 180_000,
+            cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         if (push.Succeeded)
             return push;
@@ -515,7 +552,11 @@ public sealed partial class GitHubService
         if (!sync.Succeeded) return sync;
 
         var retry = await ProcessRunner.RunAsync(
-            "git", $"push -u origin HEAD:\"{branch}\"", sitePath, 180_000, cancellationToken)
+            "git",
+            ["push", "-u", "origin", $"HEAD:{branch}"],
+            workingDirectory: sitePath,
+            timeoutMs: 180_000,
+            cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         return retry.Succeeded ? retry : WithGitPushHint(retry);
     }

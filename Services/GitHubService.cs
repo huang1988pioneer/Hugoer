@@ -248,10 +248,10 @@ public sealed partial class GitHubService
                 progress?.Report($"預設分支不是 Hugo 網站，改切換到 {sourceBranch}…");
                 var checkout = await ProcessRunner.RunAsync(
                     "git",
-                    $"checkout -B \"{sourceBranch}\" --track \"origin/{sourceBranch}\"",
-                    destination,
-                    30_000,
-                    cancellationToken).ConfigureAwait(false);
+                    ["checkout", "-B", sourceBranch, "--track", $"origin/{sourceBranch}"],
+                    workingDirectory: destination,
+                    timeoutMs: 30_000,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
                 if (!checkout.Succeeded)
                 {
                     return CloneSiteResult.Fail(
@@ -449,14 +449,13 @@ Thumbs.db
             env["GIT_COMMITTER_EMAIL"] = "hugoer@local";
         }
 
-        var msg = message.Replace("\"", "'");
         return await ProcessRunner.RunAsync(
             "git",
-            $"commit -m \"{msg}\"",
-            sitePath,
-            60_000,
-            cancellationToken,
-            env).ConfigureAwait(false);
+            ["commit", "-m", message],
+            workingDirectory: sitePath,
+            timeoutMs: 60_000,
+            cancellationToken: cancellationToken,
+            env: env).ConfigureAwait(false);
     }
 
     private async Task<CommandResult> CloneRepositoryAsync(
@@ -465,13 +464,12 @@ Thumbs.db
         IProgress<string>? progress,
         CancellationToken cancellationToken)
     {
-        var quotedDestination = QuoteArg(destination);
         if (target.Provider == GitHostingProvider.GitHub
             && await IsGhAvailableAsync(cancellationToken).ConfigureAwait(false))
         {
             var ghClone = await ProcessRunner.RunAsync(
                 "gh",
-                $"repo clone {target.Owner}/{target.Repository} {quotedDestination} -- --recurse-submodules",
+                ["repo", "clone", $"{target.Owner}/{target.Repository}", destination, "--", "--recurse-submodules"],
                 timeoutMs: 300_000,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             if (ghClone.Succeeded)
@@ -482,7 +480,7 @@ Thumbs.db
 
         return await ProcessRunner.RunAsync(
             "git",
-            $"clone --recurse-submodules {QuoteArg(target.CanonicalUrl!)} {quotedDestination}",
+            ["clone", "--recurse-submodules", target.CanonicalUrl!, destination],
             timeoutMs: 300_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -513,10 +511,10 @@ Thumbs.db
             progress?.Report($"本機已有此 repository，改切換到 Hugo 來源分支 {sourceBranch}…");
             var checkout = await ProcessRunner.RunAsync(
                 "git",
-                $"checkout -B \"{sourceBranch}\" --track \"origin/{sourceBranch}\"",
-                destination,
-                30_000,
-                cancellationToken).ConfigureAwait(false);
+                ["checkout", "-B", sourceBranch, "--track", $"origin/{sourceBranch}"],
+                workingDirectory: destination,
+                timeoutMs: 30_000,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
             if (!checkout.Succeeded || !PathHelper.LooksLikeHugoSite(destination))
                 return null;
         }
@@ -551,10 +549,10 @@ Thumbs.db
 
             var tree = await ProcessRunner.RunAsync(
                 "git",
-                $"ls-tree --name-only {QuoteArg("origin/" + branch)}",
-                sitePath,
-                15_000,
-                cancellationToken).ConfigureAwait(false);
+                ["ls-tree", "--name-only", "origin/" + branch],
+                workingDirectory: sitePath,
+                timeoutMs: 15_000,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
             if (!tree.Succeeded)
                 continue;
 

@@ -285,7 +285,7 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
                 return;
             }
 
-            var path = Path.Combine(NewSiteParent, NewSiteName.Trim());
+            var path = Path.Combine(Path.GetFullPath(NewSiteParent.Trim()), NewSiteName.Trim());
             Services.SetSite(path);
             SitePath = path;
             RefreshSite();
