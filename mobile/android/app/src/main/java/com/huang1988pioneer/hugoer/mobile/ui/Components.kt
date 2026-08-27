@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Circle
@@ -24,7 +25,6 @@ import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RocketLaunch
@@ -56,8 +56,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.huang1988pioneer.hugoer.mobile.data.ArticleStatus
-import com.huang1988pioneer.hugoer.mobile.data.DeploymentStatus
+import com.huang1988pioneer.hugoer.mobile.domain.model.ArticleStatus
+import com.huang1988pioneer.hugoer.mobile.domain.model.DeploymentStatus
 
 @Composable
 fun AppNavigationBar(
@@ -323,7 +323,7 @@ fun MoreActionRow(
                 )
             }
         },
-        trailingContent = { Icon(Icons.Rounded.OpenInNew, contentDescription = "開啟") },
+        trailingContent = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = "開啟") },
     )
 }
 

@@ -15,6 +15,8 @@
 		A10000000000000000000006 /* Screens.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* Screens.swift */; };
 		A10000000000000000000007 /* EditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* EditorSheet.swift */; };
 		A10000000000000000000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* Assets.xcassets */; };
+		A10000000000000000000009 /* Repository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* Repository.swift */; };
+		A1000000000000000000000A /* HugoerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* HugoerStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +30,8 @@
 		B10000000000000000000007 /* EditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorSheet.swift; sourceTree = "<group>"; };
 		B10000000000000000000008 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B10000000000000000000009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10000000000000000000010 /* Repository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Repository.swift; sourceTree = "<group>"; };
+		B10000000000000000000011 /* HugoerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HugoerStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -55,6 +59,8 @@
 				B10000000000000000000001 /* HugoerMobileApp.swift */,
 				B10000000000000000000002 /* Models.swift */,
 				B10000000000000000000003 /* DemoStore.swift */,
+				B10000000000000000000010 /* Repository.swift */,
+				B10000000000000000000011 /* HugoerStore.swift */,
 				B10000000000000000000004 /* HugoerTheme.swift */,
 				B10000000000000000000005 /* Components.swift */,
 				B10000000000000000000006 /* Screens.swift */,
@@ -140,6 +146,8 @@
 				A10000000000000000000001 /* HugoerMobileApp.swift in Sources */,
 				A10000000000000000000002 /* Models.swift in Sources */,
 				A10000000000000000000003 /* DemoStore.swift in Sources */,
+				A10000000000000000000009 /* Repository.swift in Sources */,
+				A1000000000000000000000A /* HugoerStore.swift in Sources */,
 				A10000000000000000000004 /* HugoerTheme.swift in Sources */,
 				A10000000000000000000005 /* Components.swift in Sources */,
 				A10000000000000000000006 /* Screens.swift in Sources */,

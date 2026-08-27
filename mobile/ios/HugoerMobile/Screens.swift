@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct OverviewView: View {
-    @EnvironmentObject private var store: DemoStore
+    @EnvironmentObject private var store: HugoerStore
     let onSelectArticles: () -> Void
     let onSelectDeploy: () -> Void
     let onOpenArticle: (Article) -> Void
@@ -41,18 +41,26 @@ struct OverviewView: View {
             .navigationSubtitle(store.site.repository)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: {}) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
+                    Button {
+                        Task { await store.refresh() }
+                    } label: {
+                        if store.isRefreshing {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                        }
                     }
+                    .disabled(store.isRefreshing)
                     .accessibilityLabel("同步站點")
                 }
             }
+            .refreshable { await store.refresh() }
         }
     }
 }
 
 private struct DispatchBoard: View {
-    @EnvironmentObject private var store: DemoStore
+    @EnvironmentObject private var store: HugoerStore
     let onSelectDeploy: () -> Void
 
     var body: some View {
@@ -124,7 +132,7 @@ private struct QuickActions: View {
 }
 
 struct ArticlesView: View {
-    @EnvironmentObject private var store: DemoStore
+    @EnvironmentObject private var store: HugoerStore
     @State private var query = ""
     @State private var filter: ArticleStatus? = nil
     let onOpenArticle: (Article) -> Void
@@ -179,6 +187,7 @@ struct ArticlesView: View {
                         .accessibilityLabel("新增文章")
                 }
             }
+            .refreshable { await store.refresh() }
         }
     }
 }
@@ -203,7 +212,7 @@ private struct FilterChip: View {
 }
 
 struct DeployView: View {
-    @EnvironmentObject private var store: DemoStore
+    @EnvironmentObject private var store: HugoerStore
     let onOpenArticle: (Article) -> Void
     @State private var showPublishConfirmation = false
 

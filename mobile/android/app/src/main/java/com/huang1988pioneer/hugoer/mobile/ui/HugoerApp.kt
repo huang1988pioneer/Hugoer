@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Article
+import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.MoreHoriz
@@ -20,6 +20,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,8 +30,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import com.huang1988pioneer.hugoer.mobile.data.Article
-import com.huang1988pioneer.hugoer.mobile.data.DemoStore
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.huang1988pioneer.hugoer.mobile.data.DemoHugoerRepository
+import com.huang1988pioneer.hugoer.mobile.presentation.HugoerEvent
+import com.huang1988pioneer.hugoer.mobile.presentation.HugoerViewModel
 import kotlinx.coroutines.launch
 
 enum class Destination(
@@ -38,7 +42,7 @@ enum class Destination(
     val icon: ImageVector,
 ) {
     Overview("總覽", Icons.Rounded.Home),
-    Articles("文章", Icons.Rounded.Article),
+    Articles("文章", Icons.AutoMirrored.Rounded.Article),
     Deploy("發布", Icons.Rounded.CloudUpload),
     More("更多", Icons.Rounded.MoreHoriz),
 }
@@ -46,7 +50,9 @@ enum class Destination(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HugoerApp() {
-    val store = remember { DemoStore() }
+    val repository = remember { DemoHugoerRepository() }
+    val viewModel: HugoerViewModel = viewModel(factory = HugoerViewModel.Factory(repository))
+    val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var destinationIndex by rememberSaveable { mutableStateOf(0) }
@@ -89,27 +95,21 @@ fun HugoerApp() {
                 ) {
                     when (destination) {
                         Destination.Overview -> OverviewScreen(
-                            store = store,
+                            state = state,
                             onSelectArticles = { destinationIndex = Destination.Articles.ordinal },
                             onSelectDeploy = { destinationIndex = Destination.Deploy.ordinal },
                             onOpenArticle = { editorArticleId = it.id },
-                            onSync = {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar("已同步 ${store.site.repository}")
-                                }
-                            },
+                            onSync = viewModel::refresh,
                         )
 
                         Destination.Articles -> ArticlesScreen(
-                            store = store,
+                            state = state,
                             onOpenArticle = { editorArticleId = it.id },
-                            onCreateArticle = {
-                                editorArticleId = store.createArticle().id
-                            },
+                            onCreateArticle = viewModel::createArticle,
                         )
 
                         Destination.Deploy -> DeployScreen(
-                            store = store,
+                            state = state,
                             onRequestPublish = { showPublishConfirmation = true },
                             onOpenArticle = { editorArticleId = it.id },
                         )
@@ -125,29 +125,34 @@ fun HugoerApp() {
         }
     }
 
-    val editorArticle = store.articles.firstOrNull { it.id == editorArticleId }
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is HugoerEvent.Snackbar -> snackbarHostState.showSnackbar(event.message)
+                is HugoerEvent.OpenEditor -> editorArticleId = event.articleId
+            }
+        }
+    }
+
+    val editorArticle = state.articles.firstOrNull { it.id == editorArticleId }
     if (editorArticle != null) {
         ArticleEditorSheet(
             article = editorArticle,
             onDismiss = { editorArticleId = null },
             onSave = { title, body ->
-                store.saveArticle(editorArticle.id, title, body)
+                viewModel.saveArticle(editorArticle.id, title, body)
                 editorArticleId = null
-                scope.launch { snackbarHostState.showSnackbar("草稿已儲存") }
             },
         )
     }
 
     if (showPublishConfirmation) {
         PublishConfirmationDialog(
-            isBusy = store.isDeploying,
-            onDismiss = { if (!store.isDeploying) showPublishConfirmation = false },
+            isBusy = state.isDeploying,
+            onDismiss = { if (!state.isDeploying) showPublishConfirmation = false },
             onConfirm = {
                 showPublishConfirmation = false
-                scope.launch {
-                    store.triggerDeployment()
-                    snackbarHostState.showSnackbar(store.latestDeploymentMessage)
-                }
+                viewModel.triggerDeployment()
             },
         )
     }

@@ -1,4 +1,4 @@
-package com.huang1988pioneer.hugoer.mobile.data
+package com.huang1988pioneer.hugoer.mobile.domain.model
 
 enum class ArticleStatus(val label: String) {
     DRAFT("草稿"),
