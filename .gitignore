@@ -3,6 +3,11 @@ obj/
 dist/
 .vs/
 .idea/
+mobile/android/local.properties
+.gradle-cache/
+mobile/android/.gradle/
+mobile/android/**/build/
+.impeccable/review/
 *.user
 *.suo
 *.DotSettings.user
