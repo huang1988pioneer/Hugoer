@@ -2,6 +2,11 @@
 
 以 **Avalonia** 打造的 Hugo 桌面工作台：一鍵建立環境、圖形化設定、安裝主題（含 Stack）、Markdown 即時預覽，並推送到 GitHub、GitLab、Codeberg 或 Bitbucket。
 
+> Mobile companions 位於 [`mobile/`](mobile/)：Android Jetpack Compose 與 iOS SwiftUI
+> 以 repository 為資料邊界，提供行動端瀏覽／編輯；本機 Hugo 預覽、批次遷移與完整 Pages
+> 建置仍由桌面版處理。架構與 APK 發布契約請參閱
+> [`docs/mobile-architecture.md`](docs/mobile-architecture.md)。
+
 ## 功能
 
 | 分頁 | 能力 |
@@ -93,6 +98,7 @@ Hugoer/
   Views/        Avalonia XAML
   scripts/      publish.ps1
   installer/    Inno Setup 腳本
+  mobile/       Android + iOS companion apps
 ```
 
 ## 授權

@@ -1,0 +1,40 @@
+name: iOS mobile validation
+
+on:
+  pull_request:
+    paths:
+      - "mobile/ios/**"
+      - ".github/workflows/ios-mobile-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-mobile-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build SwiftUI app
+    runs-on: macos-14
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build iOS simulator target
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project mobile/ios/HugoerMobile.xcodeproj \
+            -scheme HugoerMobile \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/HugoerMobileDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build | tee "$RUNNER_TEMP/HugoerMobile-xcodebuild.log"
