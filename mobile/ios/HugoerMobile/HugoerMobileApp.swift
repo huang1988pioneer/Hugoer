@@ -1,8 +1,9 @@
 import SwiftUI
 
 @main
+@MainActor
 struct HugoerMobileApp: App {
-    @StateObject private var store = DemoStore()
+    @StateObject private var store = HugoerStore()
     @State private var selection = 0
     @State private var editorArticle: Article?
     @State private var toastMessage: String?
@@ -37,8 +38,9 @@ struct HugoerMobileApp: App {
             .environmentObject(store)
             .sheet(item: $editorArticle) { article in
                 ArticleEditorView(article: article) { title, body in
-                    store.save(articleID: article.id, title: title, body: body)
-                    toastMessage = "草稿已儲存"
+                    if store.save(articleID: article.id, title: title, body: body) {
+                        toastMessage = "草稿已儲存"
+                    }
                 }
             }
             .overlay(alignment: .top) {
@@ -56,6 +58,17 @@ struct HugoerMobileApp: App {
                             withAnimation { self.toastMessage = nil }
                         }
                 }
+            }
+            .alert(
+                "操作未完成",
+                isPresented: Binding(
+                    get: { store.errorMessage != nil },
+                    set: { if !$0 { store.clearError() } }
+                )
+            ) {
+                Button("知道了", role: .cancel) { store.clearError() }
+            } message: {
+                Text(store.errorMessage ?? "請稍後重試。")
             }
         }
     }

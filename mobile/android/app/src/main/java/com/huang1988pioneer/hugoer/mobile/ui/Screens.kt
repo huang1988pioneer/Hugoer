@@ -19,9 +19,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.Article
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Article
-import androidx.compose.material.icons.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Code
@@ -68,15 +68,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.huang1988pioneer.hugoer.mobile.data.Article
-import com.huang1988pioneer.hugoer.mobile.data.ArticleStatus
-import com.huang1988pioneer.hugoer.mobile.data.DemoStore
-import com.huang1988pioneer.hugoer.mobile.data.Deployment
-import com.huang1988pioneer.hugoer.mobile.data.DeploymentStatus
+import com.huang1988pioneer.hugoer.mobile.domain.model.Article
+import com.huang1988pioneer.hugoer.mobile.domain.model.ArticleStatus
+import com.huang1988pioneer.hugoer.mobile.domain.model.Deployment
+import com.huang1988pioneer.hugoer.mobile.domain.model.DeploymentStatus
+import com.huang1988pioneer.hugoer.mobile.domain.model.Site
+import com.huang1988pioneer.hugoer.mobile.presentation.HugoerUiState
 
 @Composable
 fun OverviewScreen(
-    store: DemoStore,
+    state: HugoerUiState,
     onSelectArticles: () -> Unit,
     onSelectDeploy: () -> Unit,
     onOpenArticle: (Article) -> Unit,
@@ -85,7 +86,7 @@ fun OverviewScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         HugoerTopBar(
             title = "站點總覽",
-            subtitle = store.site.repository,
+            subtitle = state.site.repository,
             onAction = onSync,
             actionDescription = "同步站點",
         )
@@ -95,11 +96,11 @@ fun OverviewScreen(
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             item {
-                SiteIdentity(store = store)
+                SiteIdentity(site = state.site)
             }
             item {
                 DispatchBoard(
-                    store = store,
+                    state = state,
                     onSelectDeploy = onSelectDeploy,
                 )
             }
@@ -127,7 +128,7 @@ fun OverviewScreen(
                             detail = "把 Hugo 站帶在身上",
                             time = "今天 09:42",
                             icon = Icons.Rounded.Edit,
-                            onClick = { onOpenArticle(store.articles.first()) },
+                            onClick = { state.articles.firstOrNull()?.let(onOpenArticle) },
                         )
                         ThinDivider(Modifier.padding(horizontal = 16.dp))
                         ActivityRow(
@@ -145,7 +146,7 @@ fun OverviewScreen(
 }
 
 @Composable
-private fun SiteIdentity(store: DemoStore) {
+private fun SiteIdentity(site: Site) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -162,9 +163,9 @@ private fun SiteIdentity(store: DemoStore) {
             }
         }
         Column(modifier = Modifier.weight(1f)) {
-            Text(store.site.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(site.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(
-                text = "${store.site.branch} · 最近同步 ${store.site.lastSynced}",
+                text = "${site.branch} · 最近同步 ${site.lastSynced}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -175,7 +176,7 @@ private fun SiteIdentity(store: DemoStore) {
 
 @Composable
 private fun DispatchBoard(
-    store: DemoStore,
+    state: HugoerUiState,
     onSelectDeploy: () -> Unit,
 ) {
     ElevatedCard(
@@ -200,12 +201,12 @@ private fun DispatchBoard(
                     Spacer(Modifier.height(4.dp))
                     Text("版本正在航行", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     Text(
-                        text = store.latestDeploymentMessage,
+                        text = state.latestDeploymentMessage,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                SitePill(label = "${store.site.lastCommit} · main", icon = Icons.Rounded.Code)
+                SitePill(label = "${state.site.lastCommit} · ${state.site.branch}", icon = Icons.Rounded.Code)
             }
             DispatchRail(currentIndex = 3)
             Row(
@@ -216,7 +217,7 @@ private fun DispatchBoard(
                 Column {
                     Text("GitHub Pages", style = MaterialTheme.typography.labelLarge)
                     Text(
-                        store.site.pagesUrl,
+                        state.site.pagesUrl,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -226,7 +227,7 @@ private fun DispatchBoard(
                 TextButton(onClick = onSelectDeploy) {
                     Text("查看記錄")
                     Spacer(Modifier.width(4.dp))
-                    Icon(Icons.Rounded.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -271,13 +272,13 @@ private fun QuickActions(
 
 @Composable
 fun ArticlesScreen(
-    store: DemoStore,
+    state: HugoerUiState,
     onOpenArticle: (Article) -> Unit,
     onCreateArticle: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(ArticleStatusFilter.All) }
-    val filtered = store.articles.filter { article ->
+    val filtered = state.articles.filter { article ->
         val matchesQuery = query.isBlank() || article.title.contains(query, ignoreCase = true) || article.path.contains(query, ignoreCase = true)
         val matchesFilter = when (filter) {
             ArticleStatusFilter.All -> true
@@ -289,7 +290,7 @@ fun ArticlesScreen(
 
     Scaffold(
         topBar = {
-            HugoerTopBar(title = "文章", subtitle = "${store.articles.size} 篇 · repository content")
+            HugoerTopBar(title = "文章", subtitle = "${state.articles.size} 篇 · repository content")
         },
         floatingActionButton = {
             androidx.compose.material3.FloatingActionButton(onClick = onCreateArticle) {
@@ -340,7 +341,7 @@ fun ArticlesScreen(
                             modifier = Modifier.padding(24.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Icon(Icons.Rounded.Article, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Icon(Icons.AutoMirrored.Rounded.Article, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Text("找不到符合條件的文章", style = MaterialTheme.typography.titleMedium)
                             Text("試試看其他關鍵字，或新增一篇草稿。", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -381,14 +382,14 @@ private fun ArticleRow(article: Article, onClick: () -> Unit) {
                 Text(article.excerpt, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${article.path} · ${article.updated}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Icon(Icons.Rounded.ArrowForward, contentDescription = "編輯", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = "編輯", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
 fun DeployScreen(
-    store: DemoStore,
+    state: HugoerUiState,
     onRequestPublish: () -> Unit,
     onOpenArticle: (Article) -> Unit,
 ) {
@@ -412,7 +413,7 @@ fun DeployScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Icon(Icons.Rounded.CloudUpload, contentDescription = null)
-                            Text("準備發布 ${store.site.branch}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text("準備發布 ${state.site.branch}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         }
                         Text(
                             "手機端只觸發既有的 GitHub Actions，不在裝置上執行 Hugo。發布前請確認草稿內容與 repository。",
@@ -420,10 +421,10 @@ fun DeployScreen(
                         )
                         Button(
                             onClick = onRequestPublish,
-                            enabled = !store.isDeploying,
+                            enabled = !state.isDeploying,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            if (store.isDeploying) {
+                            if (state.isDeploying) {
                                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                 Spacer(Modifier.width(10.dp))
                                 Text("正在排入佇列…")
@@ -437,23 +438,23 @@ fun DeployScreen(
                 }
             }
             item {
-                DispatchBoard(store = store, onSelectDeploy = {})
+                DispatchBoard(state = state, onSelectDeploy = {})
             }
             item { SectionHeading(title = "部署記錄") }
-            items(store.deployments, key = { it.id }) { deployment ->
+            items(state.deployments, key = { it.id }) { deployment ->
                 DeploymentRow(deployment)
             }
             item {
-                SectionHeading(title = "最近變更", actionLabel = "查看文章", onAction = { store.articles.firstOrNull()?.let(onOpenArticle) })
+                SectionHeading(title = "最近變更", actionLabel = "查看文章", onAction = { state.articles.firstOrNull()?.let(onOpenArticle) })
             }
             item {
                 Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
                     ActivityRow(
-                        title = store.articles.firstOrNull()?.title ?: "沒有變更",
-                        detail = "${store.site.branch} · ${store.site.lastCommit}",
+                        title = state.articles.firstOrNull()?.title ?: "沒有變更",
+                        detail = "${state.site.branch} · ${state.site.lastCommit}",
                         time = "未提交",
                         icon = Icons.Rounded.Edit,
-                        onClick = { store.articles.firstOrNull()?.let(onOpenArticle) },
+                        onClick = { state.articles.firstOrNull()?.let(onOpenArticle) },
                     )
                 }
             }
@@ -536,7 +537,7 @@ fun MoreScreen(onAction: (String) -> Unit) {
                             Text("在桌面 Hugoer 執行本機預覽、安裝 Hugo 或大量遷移。")
                         }
                         IconButton(onClick = { onAction("已複製桌面接續提示") }) {
-                            Icon(Icons.Rounded.ArrowForward, contentDescription = "查看接續提示")
+                            Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = "查看接續提示")
                         }
                     }
                 }

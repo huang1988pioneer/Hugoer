@@ -37,7 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.huang1988pioneer.hugoer.mobile.data.Article
+import com.huang1988pioneer.hugoer.mobile.domain.model.Article
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)

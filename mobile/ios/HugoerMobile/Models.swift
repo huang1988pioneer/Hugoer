@@ -13,7 +13,7 @@ struct Site {
     let branch: String
     let pagesURL: String
     let lastCommit: String
-    let lastSynced: String
+    var lastSynced: String
 }
 
 struct Article: Identifiable, Hashable {

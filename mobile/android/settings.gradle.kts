@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "HugoerMobile"
-include(":app")
+include(":app", ":core:model", ":core:data")
