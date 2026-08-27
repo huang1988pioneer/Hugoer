@@ -11,6 +11,48 @@
             <TextBlock Text="將 Hugo 網站推到 GitHub、GitLab、Codeberg 或 Bitbucket。貼上該平台網址會自動切換。GitHub 可自動啟用 Pages；GitLab 加入 CI；Codeberg 發布 pages 分支；Bitbucket 靜態網站發布到 workspace.bitbucket.io。"
                        Classes="muted" TextWrapping="Wrap"/>
 
+            <Border Classes="card" BorderBrush="#0E7490" BorderThickness="1">
+                <StackPanel Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <StackPanel Spacing="3">
+                            <TextBlock Text="發佈策略" Classes="sectionTitle"/>
+                            <TextBlock Text="{Binding DeploymentModeSummary}" Classes="muted" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <Border Grid.Column="1" Classes="pill" Padding="10,4" VerticalAlignment="Top">
+                            <StackPanel>
+                                <TextBlock Text="預設遠端" Foreground="#67D8FF" FontWeight="SemiBold" FontSize="12"
+                                           IsVisible="{Binding IsRemoteDeploymentMode}"/>
+                                <TextBlock Text="本機備援" Foreground="#F6C85F" FontWeight="SemiBold" FontSize="12"
+                                           IsVisible="{Binding IsLocalDeploymentMode}"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <TextBlock Text="主要路徑" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding DeploymentModeOptions}"
+                                  SelectedItem="{Binding SelectedDeploymentMode}"
+                                  HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="models:DeploymentModeOption">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding Description}" Classes="caption" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <CheckBox Grid.Column="2"
+                                  Content="遠端失敗時自動本機備援"
+                                  IsChecked="{Binding AllowLocalDeploymentFallback}"
+                                  VerticalAlignment="Center"
+                                  IsVisible="{Binding IsRemoteDeploymentMode}"/>
+                    </Grid>
+                    <TextBlock Classes="caption" TextWrapping="Wrap"
+                               Text="遠端優先會直接提交 repository，由 GitHub Actions／平台工作流程建置 Pages；不要求本機 Hugo。只有遠端推送失敗，或你明確選擇本機路徑時，才會使用 public/ 本機建置。"/>
+                </StackPanel>
+            </Border>
+
             <Border Classes="card">
                 <StackPanel Spacing="8">
                     <TextBlock Text="本機工具" Classes="sectionTitle"/>
@@ -155,7 +197,7 @@
                     <Grid ColumnDefinitions="*,Auto">
                         <StackPanel Spacing="3">
                             <TextBlock Text="連結既有 Repository" Classes="sectionTitle"/>
-                            <TextBlock Text="貼上 GitHub、GitLab、Codeberg 或 Bitbucket repository / Pages 網址，Hugoer 會辨識平台、同步 baseURL，安全合併遠端內容後推送。"
+                            <TextBlock Text="貼上 GitHub、GitLab、Codeberg 或 Bitbucket repository / Pages 網址，Hugoer 會辨識平台、同步 baseURL，先直接讀取並合併遠端內容，再交由平台建置發布。"
                                        Classes="caption" TextWrapping="Wrap"/>
                         </StackPanel>
                         <Border Grid.Column="1" Classes="pill" Padding="10,4" VerticalAlignment="Top">
@@ -222,6 +264,8 @@
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Content="查詢 Pages 狀態" Command="{Binding RefreshPagesStatusCommand}"
                                     IsEnabled="{Binding !IsBusy}"/>
+                            <Button Content="開啟 Repository" Command="{Binding OpenRepositoryUrlCommand}"
+                                    IsEnabled="{Binding CanConnectRepository}"/>
                             <Button Content="開啟網站" Command="{Binding OpenPagesUrlCommand}"/>
                             <Button Content="啟用 / 顯示平台提示" Command="{Binding EnablePagesCommand}"
                                     IsEnabled="{Binding !IsBusy}"/>
@@ -255,15 +299,19 @@
 
             <Border Classes="card" IsVisible="{Binding HasLocalSite}">
                 <StackPanel Spacing="10">
-                    <TextBlock Text="建置並推送更新" Classes="sectionTitle"/>
+                    <TextBlock Text="遠端發佈更新" Classes="sectionTitle"/>
                     <TextBlock Text="{Binding ProviderHint}" Classes="muted" TextWrapping="Wrap"/>
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Content="建置、提交並推送更新" Classes="accent"
+                        <Button Content="{Binding PublishButtonText}" Classes="accent"
                                 Command="{Binding PushCommand}"
                                 IsEnabled="{Binding !IsBusy}"/>
+                        <Button Content="本機部署備援"
+                                Command="{Binding DeployLocallyCommand}"
+                                IsEnabled="{Binding !IsBusy}"
+                                IsVisible="{Binding IsRemoteDeploymentMode}"/>
                     </StackPanel>
                     <TextBlock Classes="caption" TextWrapping="Wrap"
-                               Text="GitHub 使用 Actions 建置 Pages；GitLab 使用 .gitlab-ci.yml 的 pages job；Codeberg 會把靜態輸出推到 pages 分支；Bitbucket 靜態網站則推到 workspace.bitbucket.io 的根目錄。"/>
+                               Text="遠端模式不會先執行本機 hugo build：GitHub 使用 Actions 建置 Pages；GitLab 使用 .gitlab-ci.yml；Codeberg／Bitbucket 依平台分支與靜態網站規則發布。"/>
                 </StackPanel>
             </Border>
 

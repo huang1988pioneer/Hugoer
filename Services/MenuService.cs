@@ -15,6 +15,13 @@ public sealed partial class MenuService
         "menu.toml", "menus.toml", "menu.yaml", "menu.yml", "menus.yaml", "menus.yml"
     ];
 
+    private readonly FrontMatterService _frontMatter;
+
+    public MenuService(FrontMatterService? frontMatter = null)
+    {
+        _frontMatter = frontMatter ?? new FrontMatterService();
+    }
+
     public SiteMenuDocument Load(string sitePath)
     {
         var configPath = FindMenuConfigFile(sitePath);
@@ -576,9 +583,9 @@ public sealed partial class MenuService
         return i;
     }
 
-    private static void FillEntryFromContent(MenuEntry entry, string markdown, string relativePath)
+    private void FillEntryFromContent(MenuEntry entry, string markdown, string relativePath)
     {
-        var document = new FrontMatterService().Parse(markdown);
+        var document = _frontMatter.Parse(markdown);
         if (string.IsNullOrWhiteSpace(entry.Name))
             entry.Name = document.Fields.TryGetValue("title", out var title) ? title : Path.GetFileNameWithoutExtension(relativePath);
         if (string.IsNullOrWhiteSpace(entry.Identifier))

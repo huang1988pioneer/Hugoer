@@ -6,19 +6,19 @@
 
 | 分頁 | 能力 |
 |------|------|
-| **環境** | 偵測／一鍵安裝 Hugo Extended、建立新站、開啟既有站、本機預覽、`hugo build` |
+| **環境** | 偵測／一鍵安裝 Hugo Extended、建立新站、開啟既有站、本機預覽、`hugo build`（離線備援） |
 | **設定檔** | 網站基本欄位、**圖形化 params 表單**（Hugo / Stack 常用參數）、原始 TOML |
 | **主題** | 一鍵安裝 **Stack** 及其他熱門主題、切換 theme、編輯主題設定 |
 | **文章** | 只管理 `content/post` 等部落格文章、新增文章、**Markdown 即時預覽**、匯出 **Hexo／Jekyll 相容** Markdown |
 | **遷移** | **Hexo／Jekyll → Hugo**、**Hugo → Hexo／Jekyll** 網站遷移（文章、頁面、靜態檔與基本設定） |
 | **選單** | 與文章分開：圖形化編輯 `menu.main` / `menu.social`、網站頁面（關於／歸檔／搜尋） |
-| **Git 部署** | GitHub、GitLab、Codeberg、Bitbucket 分別保存設定；推送、Pages／靜態網站提示、每 5 分鐘監控線上部署版本 |
+| **Git 部署** | 預設直接推送 GitHub Pages／遠端 Pages 工作流程；遠端失敗時可自動或手動本機備援；GitHub、GitLab、Codeberg、Bitbucket 分別保存設定；每 5 分鐘監控線上部署版本 |
 
 ## 系統需求
 
 - Windows 10/11（亦可在 macOS / Linux 建置）
 - 開發：[.NET 10 SDK](https://dotnet.microsoft.com/download)
-- 建議： [Git](https://git-scm.com/)、[GitHub CLI (`gh`)](https://cli.github.com/)
+- 建議： [Git](https://git-scm.com/)；GitHub 可選 [GitHub CLI (`gh`)](https://cli.github.com/)，也可使用 Git Credential Manager／SSH
 
 Hugo 可在應用程式內一鍵安裝。
 
@@ -36,9 +36,9 @@ dotnet run
 ```powershell
 .\scripts\publish.ps1
 # 或指定版本
-.\scripts\publish.ps1 -Version 1.6.0
-# 只要單一 exe、不要安裝程式
-.\scripts\publish.ps1 -SkipInstaller
+.\scripts\publish.ps1 -Version 1.7.0 -Runtime win-x64
+# 只產生免安裝單檔 EXE、ZIP 與校驗資訊
+.\scripts\publish.ps1 -Version 1.7.0 -SkipInstaller
 ```
 
 產出位置：
@@ -47,7 +47,10 @@ dotnet run
 |------|------|
 | `dist\single\Hugoer.exe` | **單一可攜 EXE**（self-contained，免安裝 .NET） |
 | `dist\publish\win-x64\` | publish 輸出目錄 |
-| `dist\releases\velopack\` | Velopack **Setup.exe** 安裝程式（需 `vpk`） |
+| `dist\releases\Hugoer-<版本>-win-x64-portable.zip` | 可攜式 Windows x64 壓縮包 |
+| `dist\releases\SHA256SUMS.txt` | 所有 release 檔案的 SHA-256 校驗碼 |
+| `dist\releases\release-manifest.json` | 版本、runtime、檔案大小與雜湊資訊 |
+| `dist\releases\velopack\` | Velopack **Setup.exe** 安裝程式（需 `vpk`；可用 `-InstallTools` 安裝） |
 | `dist\releases\inno\` | Inno Setup 安裝程式（若已安裝 Inno Setup 6） |
 
 手動 publish：
@@ -64,7 +67,7 @@ Velopack CLI（可選，產生 Setup.exe）：
 
 ```powershell
 dotnet tool install -g vpk
-vpk pack --packId Hugoer --packVersion 1.6.0 --packDir .\dist\publish\win-x64 --mainExe Hugoer.exe --outputDir .\dist\releases\velopack
+vpk pack --packId Hugoer --packVersion 1.7.0 --packDir .\dist\publish\win-x64 --mainExe Hugoer.exe --outputDir .\dist\releases\velopack
 ```
 
 ## 建議使用流程
@@ -76,8 +79,9 @@ vpk pack --packId Hugoer --packVersion 1.6.0 --packDir .\dist\publish\win-x64 --
 5. **文章** → 新增／編輯部落格文章，右側即時預覽；可把單篇或全部文章匯出成 Hexo／Jekyll 相容的 `_posts` Markdown  
    **選單** → 編輯 Home／Archives／Search 等導覽，與文章分開  
 6. **遷移** → 從 Hexo 或 Jekyll 匯入成 Hugo，或把目前 Hugo 網站輸出成 Hexo／Jekyll  
-7. **Git 部署** → 從下拉選單選擇 GitHub／GitLab／Codeberg／Bitbucket；各平台設定分開保存，再連結或推送 repository。
-8. **Git 部署** → 查看「線上版本監控」；Hugoer 每 5 分鐘確認 Pages／靜態網站是否已更新至本次推送版本
+7. **Git 部署** → 從下拉選單選擇 GitHub／GitLab／Codeberg／Bitbucket；各平台設定分開保存，再連結或推送 repository。主要路徑預設為「GitHub Pages（遠端優先）」。
+8. 遠端模式會直接讀取／合併並提交 repository，由 GitHub Actions／平台工作流程建置 Pages，不要求本機 Hugo；GitHub 可使用 `gh` 或 Git Credential Manager／SSH；遠端失敗時可自動或手動執行「本機部署備援」產生 `public/`。
+9. **Git 部署** → 查看「線上版本監控」；Hugoer 每 5 分鐘確認 Pages／靜態網站是否已更新至本次推送版本
 
 ## 專案結構
 

@@ -11,7 +11,7 @@ namespace Hugoer.Services;
 
 public sealed partial class HugoService
 {
-    private const string UserAgent = "Hugoer/1.6.0";
+    private const string UserAgent = "Hugoer/1.7.0";
     private static readonly HttpClient DefaultHttpClient = CreateHttpClient();
     private readonly SettingsService _settings;
     private readonly HttpClient _httpClient;

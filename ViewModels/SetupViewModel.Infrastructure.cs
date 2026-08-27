@@ -65,7 +65,7 @@ public partial class SetupViewModel
         });
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         var process = _previewProcess;
         _previewProcess = null;
@@ -75,6 +75,7 @@ public partial class SetupViewModel
             try { process.Exited -= HandlePreviewProcessExited; } catch { /* ignore */ }
             try { Services.Hugo.StopServer(process); } catch { /* ignore */ }
         }
+        base.Dispose();
         GC.SuppressFinalize(this);
     }
 

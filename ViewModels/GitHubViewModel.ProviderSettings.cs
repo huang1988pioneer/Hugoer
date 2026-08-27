@@ -26,6 +26,33 @@ public partial class GitHubViewModel
     }
 
     [RelayCommand]
+    private void OpenRepositoryUrl()
+    {
+        var target = GetActiveRepositoryTarget();
+        var url = target?.CanonicalUrl;
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            StatusMessage = "尚未設定有效的 repository 網址。";
+            AppendLog(StatusMessage);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = ex.Message;
+            AppendLog(StatusMessage);
+        }
+    }
+
+    [RelayCommand]
     private async Task AddWorkflowOnlyAsync()
     {
         if (!RequireSite(out var site)) return;
@@ -40,6 +67,16 @@ public partial class GitHubViewModel
         if (string.IsNullOrWhiteSpace(message)) return;
         var line = $"[{DateTime.Now:HH:mm:ss}] {message.Trim()}";
         Log = string.IsNullOrEmpty(Log) ? line : Log + Environment.NewLine + line;
+    }
+
+    private void AppendPublishResult(PublishResult result)
+    {
+        if (!string.IsNullOrWhiteSpace(result.RemoteResult?.CombinedOutput))
+            AppendLog(result.RemoteResult.CombinedOutput);
+        if (!string.IsNullOrWhiteSpace(result.LocalResult?.CombinedOutput))
+            AppendLog(result.LocalResult.CombinedOutput);
+        if (!string.IsNullOrWhiteSpace(result.Message))
+            AppendLog(result.Message);
     }
 
     [RelayCommand]

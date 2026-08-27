@@ -10,6 +10,12 @@ namespace Hugoer.ViewModels;
 public partial class ThemesViewModel : PageViewModelBase
 {
     public ThemesViewModel()
+        : this(AppServices.Instance)
+    {
+    }
+
+    public ThemesViewModel(AppServices services)
+        : base(services)
     {
         Title = "主題 Themes";
         foreach (var p in ThemeService.Presets)

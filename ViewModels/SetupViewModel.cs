@@ -4,12 +4,19 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Hugoer.Helpers;
 using Hugoer.Models;
+using Hugoer.Services;
 
 namespace Hugoer.ViewModels;
 
 public partial class SetupViewModel : PageViewModelBase, IDisposable
 {
     public SetupViewModel()
+        : this(AppServices.Instance)
+    {
+    }
+
+    public SetupViewModel(AppServices services)
+        : base(services)
     {
         Title = "環境設定";
     }
@@ -85,7 +92,7 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
     [
         "建議安裝 Hugo Extended（支援 SCSS / SASS）",
         "建立網站後可安裝 Stack 等主題",
-        "GitHub Pages 自動啟用需要 GitHub CLI (gh)",
+        "GitHub Pages 可用 gh 或 Git Credential Manager／SSH 推送；Pages 設定仍可能需要 owner 權限",
         "也可從 GitLab、Codeberg、Bitbucket 複製 Hugo 原始碼 repository"
     ];
 
@@ -405,7 +412,7 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
             AppendLog("hugo build…");
             var result = await Services.Hugo.BuildAsync(site);
             AppendLog(result.CombinedOutput);
-            StatusMessage = result.Succeeded ? "建置成功（public/）" : "建置失敗";
+            StatusMessage = result.Succeeded ? "本機備援建置成功（public/）" : "本機備援建置失敗";
         }
         finally
         {

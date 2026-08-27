@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Hugoer.Helpers;
 using Hugoer.Models;
+using Hugoer.Services;
 
 namespace Hugoer.ViewModels;
 
@@ -53,13 +54,44 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         }
     ];
 
+    /// <summary>
+    /// Publishing is remote-first by default, matching the repository-backed
+    /// workflow used by Hugoer Mobile.  Local output remains an explicit
+    /// offline/diagnostic route.
+    /// </summary>
+    public IReadOnlyList<DeploymentModeOption> DeploymentModeOptions { get; } =
+    [
+        new()
+        {
+            Mode = DeploymentMode.GitHubPages,
+            DisplayName = DeploymentMode.GitHubPages.DisplayName(),
+            Description = DeploymentMode.GitHubPages.Description()
+        },
+        new()
+        {
+            Mode = DeploymentMode.Local,
+            DisplayName = DeploymentMode.Local.DisplayName(),
+            Description = DeploymentMode.Local.Description()
+        }
+    ];
+
     public GitHubViewModel()
+        : this(AppServices.Instance)
+    {
+    }
+
+    public GitHubViewModel(AppServices services)
+        : base(services)
     {
         Title = "Git 部署";
         var path = Services.CurrentSitePath;
         HasLocalSite = !string.IsNullOrWhiteSpace(path) && Directory.Exists(path);
         SelectedProvider = ProviderOptions[0];
         LoadProviderSettings(GitHostingProvider.GitHub);
+        SelectedDeploymentMode = DeploymentModeOptions.FirstOrDefault(option =>
+            option.Mode == Services.Settings.GetDeploymentMode()) ?? DeploymentModeOptions[0];
+        AllowLocalDeploymentFallback = Services.Settings.GetAllowLocalDeploymentFallback();
+        RefreshPublishModePresentation();
         ReloadRecentRepositories();
     }
 
@@ -160,6 +192,24 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     [ObservableProperty]
     public partial bool IsCheckingDeployment { get; set; }
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRemoteDeploymentMode))]
+    [NotifyPropertyChangedFor(nameof(IsLocalDeploymentMode))]
+    [NotifyPropertyChangedFor(nameof(PublishButtonText))]
+    public partial DeploymentModeOption? SelectedDeploymentMode { get; set; }
+
+    [ObservableProperty]
+    public partial bool AllowLocalDeploymentFallback { get; set; } = true;
+
+    [ObservableProperty]
+    public partial string DeploymentModeSummary { get; set; } = DeploymentMode.GitHubPages.Description();
+
+    [ObservableProperty]
+    public partial string PublishButtonText { get; set; } = "直接推送至 GitHub Pages";
+
+    public bool IsRemoteDeploymentMode => SelectedDeploymentMode?.Mode == DeploymentMode.GitHubPages;
+    public bool IsLocalDeploymentMode => SelectedDeploymentMode?.Mode == DeploymentMode.Local;
+
     partial void OnRepositoryUrlChanged(string value)
     {
         MaybeAdoptProviderFromUrl(value);
@@ -181,6 +231,16 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     partial void OnProviderPagesUrlChanged(string value) => PersistProviderSettings();
     partial void OnSyncRecommendedBaseUrlChanged(bool value) => PersistProviderSettings();
     partial void OnCommitMessageChanged(string value) => PersistProviderSettings();
+
+    partial void OnSelectedDeploymentModeChanged(DeploymentModeOption? value)
+    {
+        var mode = value?.Mode ?? DeploymentMode.GitHubPages;
+        Services.Settings.SetDeploymentMode(mode);
+        RefreshPublishModePresentation();
+    }
+
+    partial void OnAllowLocalDeploymentFallbackChanged(bool value) =>
+        Services.Settings.SetAllowLocalDeploymentFallback(value);
 
     partial void OnCloneParentChanged(string value)
     {
@@ -212,6 +272,15 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     }
 
     protected override void OnBusyChanged(bool isBusy) => UpdateCloneAvailability();
+
+    private void RefreshPublishModePresentation()
+    {
+        var mode = SelectedDeploymentMode?.Mode ?? DeploymentMode.GitHubPages;
+        DeploymentModeSummary = mode.Description();
+        PublishButtonText = mode == DeploymentMode.GitHubPages
+            ? "直接推送至 GitHub Pages"
+            : "執行本機部署備援";
+    }
 
     public override async Task OnNavigatedToAsync()
     {
@@ -370,14 +439,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         IsBusy = true;
         try
         {
-            StatusMessage = $"正在確認 {target.ProviderName} repository 推送方式…";
-            var access = await Services.GitHub.CheckPushAccessAsync(target);
-            AppendLog(access.Message);
-            if (!access.HasAccess)
-            {
-                StatusMessage = access.Message;
-                return;
-            }
+            StatusMessage = $"正在以遠端優先方式連結 {target.ProviderName} repository…";
 
             if (SyncRecommendedBaseUrl && !string.IsNullOrWhiteSpace(target.PagesUrl))
             {
@@ -385,36 +447,24 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                 AppendLog($"已將 baseURL 設為 {target.PagesUrl}");
             }
 
-            StatusMessage = "正在以 production 設定驗證 Hugo 網站…";
-            AppendLog("hugo build…");
-            var build = await Services.Hugo.BuildAsync(site);
-            AppendLog(build.CombinedOutput);
-            if (!build.Succeeded)
-            {
-                StatusMessage = "建置失敗；尚未連結或推送 repository。";
-                return;
-            }
-
             var progress = new Progress<string>(message =>
             {
                 AppendLog(message);
                 StatusMessage = message;
             });
-            var result = await Services.GitHub.ConnectExistingRepositoryAndPushAsync(
+            var result = await Services.Publishing.ConnectAndPublishAsync(
                 site,
                 target,
                 CommitMessage,
-                progress);
-            AppendLog(result.CombinedOutput);
-            StatusMessage = result.IsPartialSuccess
-                ? $"{target.ProviderName} 推送成功；請依平台提示完成 Pages/靜態網站設定"
-                : result.Succeeded
-                    ? $"已連結 {target.ProviderName} repository 並推送網站"
-                    : "連結或部署失敗；請查看操作日誌";
-            if (result.Succeeded || result.IsPartialSuccess)
+                allowLocalFallback: AllowLocalDeploymentFallback,
+                progress: progress);
+            AppendPublishResult(result);
+            StatusMessage = result.Message;
+            if (result.RemotePushSucceeded)
                 RecordRecentRepository(target, site);
             await RefreshAsync();
-            if (result.Succeeded)
+            StatusMessage = result.Message;
+            if (result.RemotePushSucceeded)
                 await CheckDeploymentVersionAfterPushAsync(CancellationToken.None);
         }
         finally
@@ -534,18 +584,20 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
                 AppendLog(m);
                 StatusMessage = m;
             });
-            var result = await Services.GitHub.CreateRepoAndPushAsync(
-                site, requestedName, IsPublicRepo, progress);
-            AppendLog(result.CombinedOutput);
-            StatusMessage = result.IsPartialSuccess
-                ? "推送成功；請由 Repository 擁有者在 GitHub Pages 設定中選擇 GitHub Actions 來源"
-                : result.Succeeded
-                    ? "已推送並嘗試啟用 GitHub Pages"
-                    : "部署過程有錯誤，請查看日誌";
+            var result = await Services.Publishing.CreateAndPublishAsync(
+                site,
+                requestedName,
+                IsPublicRepo,
+                commitMessage: CommitMessage,
+                allowLocalFallback: AllowLocalDeploymentFallback,
+                progress: progress);
+            AppendPublishResult(result);
+            StatusMessage = result.Message;
             await RefreshAsync();
-            if (result.Succeeded || result.IsPartialSuccess)
+            StatusMessage = result.Message;
+            if (result.RemotePushSucceeded || result.UsedLocalFallback)
                 RecordRecentRepository(GetActiveRepositoryTarget(), site);
-            if (result.Succeeded)
+            if (result.RemotePushSucceeded)
                 await CheckDeploymentVersionAfterPushAsync(CancellationToken.None);
         }
         finally
@@ -559,20 +611,61 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     {
         if (!RequireSite(out var site)) return;
 
+        var requestedMode = SelectedDeploymentMode?.Mode ?? DeploymentMode.GitHubPages;
+        if (requestedMode == DeploymentMode.Local)
+        {
+            // Local mode is intentionally independent of Git credentials and
+            // an origin. The primary button must keep the selected mode's
+            // promise instead of stopping at the remote precondition.
+            await DeployLocallyAsync();
+            return;
+        }
+
         var info = await Services.GitHub.GetInfoAsync(site);
         if (string.IsNullOrWhiteSpace(info.RemoteUrl))
         {
             var candidate = !string.IsNullOrWhiteSpace(RepositoryUrl) ? RepositoryUrl : RepoName;
-            var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(candidate);
-            if (target.IsValid)
+            var candidateTarget = Hugoer.Services.GitHubService.ParseRepositoryTarget(candidate);
+            if (candidateTarget.IsValid)
             {
                 RepositoryUrl = candidate;
-                AppendLog($"尚未設定 origin；改用安全連結流程：{target.Owner}/{target.Repository}");
+                AppendLog($"尚未設定 origin；改用安全連結流程：{candidateTarget.Owner}/{candidateTarget.Repository}");
                 await ConnectExistingRepositoryAsync();
                 return;
             }
 
-            StatusMessage = "尚未連結 repository。請先在上方貼上完整 Repository URL，再按「連結、推送並設定 Pages」。";
+            // A missing origin is a remote-route failure. Keep the default
+            // remote-first policy observable and use its configured local
+            // fallback rather than silently doing nothing.
+            IsBusy = true;
+            try
+            {
+                var progress = new Progress<string>(message =>
+                {
+                    AppendLog(message);
+                    StatusMessage = message;
+                });
+                var result = await Services.Publishing.PublishAsync(
+                    site,
+                    requestedMode,
+                    target: null,
+                    CommitMessage,
+                    allowLocalFallback: AllowLocalDeploymentFallback,
+                    progress: progress);
+                AppendPublishResult(result);
+                StatusMessage = result.Message;
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+            return;
+        }
+
+        var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(info.RemoteUrl);
+        if (!target.IsValid)
+        {
+            StatusMessage = "目前 origin 不是可辨識的 Git 平台 repository；為避免推錯位置，已停止發佈。";
             AppendLog(StatusMessage);
             return;
         }
@@ -580,29 +673,50 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         IsBusy = true;
         try
         {
-            StatusMessage = "正在以 production 設定建置 Hugo 網站…";
-            AppendLog("hugo build…");
-            var build = await Services.Hugo.BuildAsync(site);
-            AppendLog(build.CombinedOutput);
-            if (!build.Succeeded)
-            {
-                StatusMessage = "建置失敗；已停止提交與推送。請依日誌修正網站內容。";
-                return;
-            }
-
             var progress = new Progress<string>(m =>
             {
                 AppendLog(m);
                 StatusMessage = m;
             });
-            var result = await Services.GitHub.PushAsync(site, CommitMessage, progress);
-            AppendLog(result.CombinedOutput);
-            StatusMessage = result.Succeeded ? "推送完成" : "推送失敗";
-            if (result.Succeeded)
-                RecordRecentRepository(Hugoer.Services.GitHubService.ParseRepositoryTarget(info.RemoteUrl), site);
-            await RefreshPagesStatusAsync();
-            if (result.Succeeded)
+            var result = await Services.Publishing.PublishAsync(
+                site,
+                requestedMode,
+                target,
+                CommitMessage,
+                allowLocalFallback: AllowLocalDeploymentFallback,
+                progress: progress);
+            AppendPublishResult(result);
+            StatusMessage = result.Message;
+            if (result.RemotePushSucceeded)
+                RecordRecentRepository(target, site);
+            if (result.RemotePushSucceeded)
+                await RefreshPagesStatusAsync();
+            StatusMessage = result.Message;
+            if (result.RemotePushSucceeded)
                 await CheckDeploymentVersionAfterPushAsync(CancellationToken.None);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeployLocallyAsync()
+    {
+        if (!RequireSite(out var site)) return;
+
+        IsBusy = true;
+        try
+        {
+            var progress = new Progress<string>(message =>
+            {
+                AppendLog(message);
+                StatusMessage = message;
+            });
+            var result = await Services.Publishing.DeployLocallyAsync(site, progress);
+            AppendPublishResult(result);
+            StatusMessage = result.Message;
         }
         finally
         {

@@ -6,6 +6,17 @@ public sealed class AppSettings
 {
     public string? LastSitePath { get; set; }
     public string? PreferredHugoPath { get; set; }
+    /// <summary>
+    /// Preferred publishing target.  The string form keeps settings files
+    /// backward compatible and makes a missing value naturally default to the
+    /// repository-backed GitHub Pages workflow.
+    /// </summary>
+    public string DeploymentMode { get; set; } = nameof(Hugoer.Models.DeploymentMode.GitHubPages);
+    /// <summary>
+    /// When the remote route cannot complete, build the static output locally
+    /// instead of silently leaving the author without a usable result.
+    /// </summary>
+    public bool AllowLocalDeploymentFallback { get; set; } = true;
     public string ThemeVariant { get; set; } = "Default";
     /// <summary>Last Markdown editor mode: Wysiwyg or Source.</summary>
     public string MarkdownEditorMode { get; set; } = "Wysiwyg";
@@ -19,6 +30,48 @@ public enum MarkdownEditorMode
 {
     Wysiwyg,
     Source
+}
+
+/// <summary>
+/// Where a publish operation should be completed.  GitHub Pages is the
+/// repository/source-of-truth path; Local is an explicit offline fallback.
+/// </summary>
+public enum DeploymentMode
+{
+    GitHubPages,
+    Local
+}
+
+public static class DeploymentModeExtensions
+{
+    public static DeploymentMode Parse(string? value) =>
+        Enum.TryParse<DeploymentMode>(value, ignoreCase: true, out var mode)
+            && Enum.IsDefined(mode)
+            ? mode
+            : DeploymentMode.GitHubPages;
+
+    public static string DisplayName(this DeploymentMode mode) => mode switch
+    {
+        DeploymentMode.GitHubPages => "GitHub Pages（遠端優先）",
+        DeploymentMode.Local => "本機部署（備援）",
+        _ => "GitHub Pages（遠端優先）"
+    };
+
+    public static string Description(this DeploymentMode mode) => mode switch
+    {
+        DeploymentMode.GitHubPages =>
+            "直接提交到 repository，由 GitHub Actions 建置並發布 Pages；不要求本機安裝 Hugo。",
+        DeploymentMode.Local =>
+            "在本機執行 hugo build，適合離線或遠端服務暫時不可用時使用。",
+        _ => string.Empty
+    };
+}
+
+public sealed class DeploymentModeOption
+{
+    public required DeploymentMode Mode { get; init; }
+    public required string DisplayName { get; init; }
+    public string Description { get; init; } = string.Empty;
 }
 
 /// <summary>

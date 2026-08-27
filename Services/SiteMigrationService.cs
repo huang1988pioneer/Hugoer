@@ -76,7 +76,12 @@ public sealed partial class SiteMigrationService
 
     private static readonly string[] HugoPostSections = ["post", "posts", "blog"];
 
-    private readonly FrontMatterService _frontMatter = new();
+    private readonly FrontMatterService _frontMatter;
+
+    public SiteMigrationService(FrontMatterService? frontMatter = null)
+    {
+        _frontMatter = frontMatter ?? new FrontMatterService();
+    }
 
     public StaticSiteKind Detect(string? path) => StaticSiteDetector.Detect(path);
 

@@ -8,6 +8,13 @@ Directory.CreateDirectory(temp);
 try
 {
     var service = new SettingsService(Path.Combine(temp, "settings.json"));
+    service.Load();
+    Assert(service.GetDeploymentMode() == DeploymentMode.GitHubPages,
+        "a fresh settings profile must default to remote GitHub Pages publishing");
+    Assert(service.GetAllowLocalDeploymentFallback(),
+        "local deployment fallback should be enabled by default");
+    service.SetDeploymentMode(DeploymentMode.Local);
+    service.SetAllowLocalDeploymentFallback(false);
 
     Parallel.For(0, 16, index =>
     {
@@ -30,6 +37,17 @@ try
     var reloaded = new SettingsService(path);
     reloaded.Load();
     Assert(reloaded.GetRecentRepositories().Count == service.GetRecentRepositories().Count, "settings should reload atomically");
+    Assert(reloaded.GetDeploymentMode() == DeploymentMode.Local,
+        "publishing mode should persist across reloads");
+    Assert(!reloaded.GetAllowLocalDeploymentFallback(),
+        "fallback preference should persist across reloads");
+
+    var invalidPath = Path.Combine(temp, "invalid-settings.json");
+    File.WriteAllText(invalidPath, "{\"deploymentMode\":\"999\"}");
+    var invalid = new SettingsService(invalidPath);
+    invalid.Load();
+    Assert(invalid.GetDeploymentMode() == DeploymentMode.GitHubPages,
+        "undefined publishing enum values must migrate to the remote default");
     Console.WriteLine("SETTINGS_HARNESS_OK");
 }
 finally

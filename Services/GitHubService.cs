@@ -13,13 +13,16 @@ public sealed partial class GitHubService
 
     private readonly DeploymentMonitorService _deploymentMonitor;
     private readonly HugoService? _hugo;
+    private readonly TomlParamsService _params;
 
     public GitHubService(
         DeploymentMonitorService? deploymentMonitor = null,
-        HugoService? hugo = null)
+        HugoService? hugo = null,
+        TomlParamsService? paramsService = null)
     {
         _deploymentMonitor = deploymentMonitor ?? new DeploymentMonitorService();
         _hugo = hugo;
+        _params = paramsService ?? new TomlParamsService();
     }
 
     public static GitHubRepositoryTarget ParseRepositoryTarget(string? input) =>
@@ -35,7 +38,7 @@ public sealed partial class GitHubService
         var original = File.Exists(config)
             ? await File.ReadAllTextAsync(config, cancellationToken).ConfigureAwait(false)
             : string.Empty;
-        var updated = new TomlParamsService().UpsertSimpleRootKeys(original, new Dictionary<string, string>
+        var updated = _params.UpsertSimpleRootKeys(original, new Dictionary<string, string>
         {
             ["baseURL"] = baseUrl
         });
@@ -138,16 +141,46 @@ public sealed partial class GitHubService
             $"api repos/{target.Owner}/{target.Repository} --jq .permissions.push",
             timeoutMs: 30_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (!result.Succeeded)
+        if (result.Succeeded)
         {
-            return (false,
-                $"無法確認 repository 權限。請確認 gh 已登入，且 repository 存在或目前帳號可存取。\n{result.CombinedOutput}");
+            var canPush = result.StdOut.Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
+            if (canPush)
+                return (true, $"已確認具有 {target.Owner}/{target.Repository} 的推送權限。");
         }
 
-        var canPush = result.StdOut.Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
-        return canPush
-            ? (true, $"已確認具有 {target.Owner}/{target.Repository} 的推送權限。")
-            : (false, $"目前 GitHub 登入帳號沒有 {target.Owner}/{target.Repository} 的推送權限。請由 owner 加入 collaborator，或改用有權限的帳號執行 gh auth login。");
+        // gh is convenient, but it is not the only supported GitHub
+        // credential path. A user may be authenticated through Git
+        // Credential Manager or SSH while gh is missing/expired. Probe the
+        // repository with the same Git transport used by the actual push
+        // before deciding that the remote route is unavailable.
+        if (!string.IsNullOrWhiteSpace(target.CanonicalUrl))
+        {
+            var gitProbe = await ProcessRunner.RunAsync(
+                "git",
+                GitHostingAccessChecks.LsRemoteHeadArguments(target),
+                timeoutMs: 60_000,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (gitProbe.Succeeded)
+            {
+                return (true,
+                    $"gh 無法回報權限，但已確認 GitHub repository 可由本機 Git 存取；將直接使用 Git 推送（實際寫入仍由遠端 Git 驗證）。");
+            }
+
+            var ghMessage = result.Succeeded
+                ? $"gh 回報目前登入帳號沒有 {target.Owner}/{target.Repository} 的推送權限。\n"
+                : string.IsNullOrWhiteSpace(result.CombinedOutput)
+                    ? string.Empty
+                    : $"gh：{result.CombinedOutput}\n";
+            var gitMessage = GitHostingProcessErrors.WithRepositoryAccessHint(
+                GitHostingProvider.GitHub,
+                "存取",
+                gitProbe).CombinedOutput;
+            return (false,
+                $"無法確認 GitHub repository 權限。請確認 gh 已登入，或設定 Git Credential Manager／SSH。\n{ghMessage}{gitMessage}");
+        }
+
+        return (false,
+            $"無法確認 repository 權限。請確認 gh 已登入，且 repository 存在或目前帳號可存取。\n{result.CombinedOutput}");
     }
 
     public async Task<GitHubPagesRepositoryList> ListPagesRepositoriesAsync(
@@ -738,7 +771,7 @@ jobs:
             --baseURL "${{ steps.pages.outputs.base_url }}/"
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: ./public
 

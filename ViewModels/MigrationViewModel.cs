@@ -2,12 +2,19 @@ using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Hugoer.Helpers;
+using Hugoer.Services;
 
 namespace Hugoer.ViewModels;
 
 public partial class MigrationViewModel : PageViewModelBase
 {
     public MigrationViewModel()
+        : this(AppServices.Instance)
+    {
+    }
+
+    public MigrationViewModel(AppServices services)
+        : base(services)
     {
         Title = "遷移";
         DestinationParent = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);

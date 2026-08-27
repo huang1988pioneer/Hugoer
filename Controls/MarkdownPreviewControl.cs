@@ -17,6 +17,9 @@ public sealed class MarkdownPreviewControl : UserControl
     public static readonly StyledProperty<string?> MarkdownProperty =
         AvaloniaProperty.Register<MarkdownPreviewControl, string?>(nameof(Markdown));
 
+    public static readonly StyledProperty<string?> SitePathProperty =
+        AvaloniaProperty.Register<MarkdownPreviewControl, string?>(nameof(SitePath));
+
     private readonly NativeWebView? _webView;
     private readonly ScrollViewer _fallbackScroll;
     private readonly StackPanel _fallbackPanel;
@@ -75,10 +78,17 @@ public sealed class MarkdownPreviewControl : UserControl
         set => SetValue(MarkdownProperty, value);
     }
 
+    /// <summary>Local site used to resolve relative media in the preview.</summary>
+    public string? SitePath
+    {
+        get => GetValue(SitePathProperty);
+        set => SetValue(SitePathProperty, value);
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == MarkdownProperty)
+        if (change.Property == MarkdownProperty || change.Property == SitePathProperty)
             ScheduleRefresh();
     }
 
@@ -152,7 +162,7 @@ public sealed class MarkdownPreviewControl : UserControl
             return;
 
         var fragment = MarkdownPreviewService.ToHtmlFragment(Markdown ?? string.Empty);
-        var site = AppServices.Instance.CurrentSitePath;
+        var site = SitePath;
         var media = TakeNewMedia(fragment, site);
         var script = media.Count == 0
             ? $"window.hugoerSetPreview({JsonSerializer.Serialize(fragment)})"
@@ -375,9 +385,9 @@ public sealed class MarkdownPreviewControl : UserControl
         FlushPara();
     }
 
-    private static Control CreateMarkdownImage(string alt, string url)
+    private Control CreateMarkdownImage(string alt, string url)
     {
-        var site = AppServices.Instance.CurrentSitePath;
+        var site = SitePath;
         if (!string.IsNullOrWhiteSpace(site))
         {
             var staticDir = Path.GetFullPath(Path.Combine(site, MediaAssetService.StaticDirectoryName));

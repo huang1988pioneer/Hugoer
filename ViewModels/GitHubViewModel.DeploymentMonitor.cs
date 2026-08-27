@@ -144,11 +144,12 @@ public partial class GitHubViewModel
         }
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         _deploymentMonitorCts?.Cancel();
         _deploymentMonitorCts?.Dispose();
         _deploymentMonitorCts = null;
+        base.Dispose();
         GC.SuppressFinalize(this);
     }
 }

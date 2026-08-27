@@ -321,6 +321,7 @@
                             </Border>
                             <Panel>
                                 <ctrl:MarkdownPreviewControl Markdown="{Binding PreviewMarkdown}"
+                                                             SitePath="{Binding CurrentSitePath}"
                                                              IsVisible="{Binding IsRenderPreview}"/>
                                 <Grid IsVisible="{Binding IsMarkdownOutputPreview}">
                                     <TextBox Classes="markdownOutput"

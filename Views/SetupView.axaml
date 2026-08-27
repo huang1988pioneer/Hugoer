@@ -8,7 +8,7 @@
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="24">
         <StackPanel Spacing="16" MaxWidth="980">
             <TextBlock Text="環境設定" Classes="pageTitle"/>
-            <TextBlock Text="一鍵安裝 Hugo、建立新站、開啟既有網站，或從 GitHub / GitLab / Codeberg / Bitbucket 複製到本機，並可本機預覽與建置。"
+            <TextBlock Text="一鍵安裝 Hugo、建立新站、開啟既有網站，或從 GitHub / GitLab / Codeberg / Bitbucket 複製到本機；本機預覽與建置是離線備援工具。"
                        Classes="muted" TextWrapping="Wrap"/>
 
             <Border Classes="card">
@@ -58,7 +58,7 @@
                             <Button Content="在瀏覽器開啟" Command="{Binding OpenPreviewInBrowserCommand}"
                                     IsEnabled="{Binding PreviewReady}"
                                     ToolTip.Tip="{Binding PreviewUrl}"/>
-                            <Button Content="建置 (hugo build)" Command="{Binding BuildSiteCommand}"
+                            <Button Content="本機建置（備援）" Command="{Binding BuildSiteCommand}"
                                     IsEnabled="{Binding !IsBusy}"/>
                         </StackPanel>
                         <Button Grid.Column="1" Content="關閉預覽"

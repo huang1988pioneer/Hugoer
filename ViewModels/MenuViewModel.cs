@@ -109,6 +109,12 @@ public partial class MenuEntryItem : ObservableObject
 public partial class MenuViewModel : PageViewModelBase, IDisposable
 {
     public MenuViewModel()
+        : this(AppServices.Instance)
+    {
+    }
+
+    public MenuViewModel(AppServices services)
+        : base(services)
     {
         Title = "選單";
         _autoSave = new IdleAutoSave(
@@ -786,11 +792,12 @@ public partial class MenuViewModel : PageViewModelBase, IDisposable
         return string.IsNullOrWhiteSpace(value) ? $"page-{DateTime.Now:yyyyMMddHHmmss}" : value;
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
         CancelPageLoad();
         _autoSave.Dispose();
+        base.Dispose();
     }
 }

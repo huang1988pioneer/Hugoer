@@ -7,15 +7,23 @@ namespace Hugoer.ViewModels;
 
 public partial class MainViewModel : ViewModelBase, IDisposable
 {
+    private readonly AppServices _services;
+
     public MainViewModel()
+        : this(AppServices.Instance)
     {
-        SetupPage = new SetupViewModel();
-        ConfigPage = new ConfigViewModel();
-        ThemesPage = new ThemesViewModel();
-        ContentPage = new ContentViewModel();
-        MigrationPage = new MigrationViewModel();
-        MenuPage = new MenuViewModel();
-        GitHubPage = new GitHubViewModel();
+    }
+
+    public MainViewModel(AppServices services)
+    {
+        _services = services ?? throw new ArgumentNullException(nameof(services));
+        SetupPage = new SetupViewModel(_services);
+        ConfigPage = new ConfigViewModel(_services);
+        ThemesPage = new ThemesViewModel(_services);
+        ContentPage = new ContentViewModel(_services);
+        MigrationPage = new MigrationViewModel(_services);
+        MenuPage = new MenuViewModel(_services);
+        GitHubPage = new GitHubViewModel(_services);
 
         NavItems =
         [
@@ -29,8 +37,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         ];
 
         SelectedNav = NavItems[0];
-        AppServices.Instance.SiteChanged += OnSiteChanged;
-        AppServices.Instance.AppStatusChanged += OnAppStatusChanged;
+        _services.SiteChanged += OnSiteChanged;
+        _services.AppStatusChanged += OnAppStatusChanged;
         UpdateSiteBanner();
         _ = RefreshCodeStatisticsAsync();
         _ = NavigateToPageAsync(SelectedNav.Page, ++_navigationGeneration);
@@ -130,7 +138,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     private void UpdateSiteBanner()
     {
-        var path = AppServices.Instance.CurrentSitePath;
+        var path = _services.CurrentSitePath;
         SiteBanner = string.IsNullOrWhiteSpace(path)
             ? "尚未選擇網站 — 請到「環境」開啟、建立或從 Git 平台複製"
             : $"目前網站：{path}";
@@ -142,11 +150,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             return;
 
         _disposed = true;
-        AppServices.Instance.SiteChanged -= OnSiteChanged;
-        AppServices.Instance.AppStatusChanged -= OnAppStatusChanged;
+        _services.SiteChanged -= OnSiteChanged;
+        _services.AppStatusChanged -= OnAppStatusChanged;
         SetupPage.Dispose();
         ConfigPage.Dispose();
+        ThemesPage.Dispose();
         ContentPage.Dispose();
+        MigrationPage.Dispose();
         MenuPage.Dispose();
         GitHubPage.Dispose();
         GC.SuppressFinalize(this);

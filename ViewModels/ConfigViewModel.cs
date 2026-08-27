@@ -9,12 +9,20 @@ namespace Hugoer.ViewModels;
 
 public partial class ConfigViewModel : PageViewModelBase, IDisposable
 {
-    private readonly TomlParamsService _paramsService = new();
-    private readonly HugoConfigService _configService = new();
+    private readonly TomlParamsService _paramsService;
+    private readonly HugoConfigService _configService;
     private List<ConfigFieldItem> _allConfigFields = [];
 
     public ConfigViewModel()
+        : this(AppServices.Instance)
     {
+    }
+
+    public ConfigViewModel(AppServices services)
+        : base(services)
+    {
+        _paramsService = services.Params;
+        _configService = services.Config;
         Title = "設定檔";
         _autoSave = new IdleAutoSave(
             () => IsDirty && !string.IsNullOrWhiteSpace(SelectedFile),
@@ -567,7 +575,7 @@ theme = ''
         }
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         if (_disposed)
             return;
@@ -575,6 +583,7 @@ theme = ''
         _autoSave.Dispose();
         _loadCts?.Cancel();
         _loadCts = null;
+        base.Dispose();
         GC.SuppressFinalize(this);
     }
 }

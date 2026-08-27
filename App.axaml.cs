@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Hugoer.Services;
 using Hugoer.ViewModels;
 using Hugoer.Views;
 
@@ -17,7 +18,11 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var viewModel = new MainViewModel();
+            // Compose the runtime once at the application seam. Page models
+            // receive this graph explicitly, which keeps the desktop lifetime
+            // in charge of the shared session and service instances.
+            var services = AppServices.Instance;
+            var viewModel = new MainViewModel(services);
             desktop.MainWindow = new MainWindow
             {
                 DataContext = viewModel,

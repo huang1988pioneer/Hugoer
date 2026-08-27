@@ -211,7 +211,7 @@ public partial class ContentView : UserControl
         IReadOnlyList<FilePickerFileType> types)
     {
         if (DataContext is not ContentViewModel viewModel) return;
-        if (string.IsNullOrWhiteSpace(AppServices.Instance.CurrentSitePath))
+        if (string.IsNullOrWhiteSpace(viewModel.CurrentSitePath))
         {
             viewModel.StatusMessage = "請先在「環境設定」開啟或建立 Hugo 網站。";
             return;
@@ -227,7 +227,7 @@ public partial class ContentView : UserControl
         MediaKind? forcedKind)
     {
         if (paths.Count == 0) return;
-        var site = AppServices.Instance.CurrentSitePath;
+        var site = viewModel.CurrentSitePath;
         if (string.IsNullOrWhiteSpace(site))
         {
             viewModel.StatusMessage = "請先在「環境設定」開啟或建立 Hugo 網站。";
@@ -547,8 +547,11 @@ public partial class ContentView : UserControl
     private void SyncWysiwygFromViewModel(string text)
     {
         if (_syncingFromDocument) return;
-        WysiwygEditor.SitePath = AppServices.Instance.CurrentSitePath;
-        var body = AppServices.Instance.FrontMatter.Parse(text ?? string.Empty).Body;
+        if (DataContext is not ContentViewModel viewModel)
+            return;
+
+        WysiwygEditor.SitePath = viewModel.CurrentSitePath;
+        var body = viewModel.Runtime.FrontMatter.Parse(text ?? string.Empty).Body;
         if (string.Equals(WysiwygEditor.Markdown, body, StringComparison.Ordinal))
             return;
         WysiwygEditor.Markdown = body;
@@ -562,7 +565,7 @@ public partial class ContentView : UserControl
         _syncingFromDocument = true;
         try
         {
-            viewModel.EditorText = AppServices.Instance.FrontMatter.ReplaceBody(
+            viewModel.EditorText = viewModel.Runtime.FrontMatter.ReplaceBody(
                 viewModel.EditorText,
                 WysiwygEditor.Markdown ?? string.Empty);
         }

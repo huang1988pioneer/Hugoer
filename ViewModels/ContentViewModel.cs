@@ -11,6 +11,12 @@ namespace Hugoer.ViewModels;
 public partial class ContentViewModel : PageViewModelBase, IDisposable
 {
     public ContentViewModel()
+        : this(AppServices.Instance)
+    {
+    }
+
+    public ContentViewModel(AppServices services)
+        : base(services)
     {
         Title = "文章";
         _autoSave = new IdleAutoSave(
@@ -991,7 +997,7 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
             document.Fields[key] = value.Trim();
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         if (_disposed)
             return;
@@ -1004,6 +1010,7 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
         _previewCts = null;
         _loadCts?.Cancel();
         _loadCts = null;
+        base.Dispose();
         GC.SuppressFinalize(this);
     }
 }

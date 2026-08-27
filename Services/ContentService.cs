@@ -9,7 +9,12 @@ namespace Hugoer.Services;
 
 public sealed class ContentService
 {
-    private readonly FrontMatterService _frontMatter = new();
+    private readonly FrontMatterService _frontMatter;
+
+    public ContentService(FrontMatterService? frontMatter = null)
+    {
+        _frontMatter = frontMatter ?? new FrontMatterService();
+    }
 
     public IReadOnlyList<ContentItem> ListContent(string sitePath, string? relativeDir = null)
     {

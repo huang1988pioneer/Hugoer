@@ -43,6 +43,16 @@ public sealed class SettingsService
                 _settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
                 _settings.GitProviderSettings ??= [];
                 _settings.RecentRepositories ??= [];
+                // Older settings files do not contain a publishing target;
+                // remote GitHub Pages is the safe, repository-backed default.
+                if (!Enum.TryParse<DeploymentMode>(
+                        _settings.DeploymentMode,
+                        ignoreCase: true,
+                        out var deploymentMode)
+                    || !Enum.IsDefined(deploymentMode))
+                {
+                    _settings.DeploymentMode = nameof(DeploymentMode.GitHubPages);
+                }
                 foreach (var profile in _settings.GitProviderSettings)
                 {
                     if (profile is not null && GitProviderSettings.IsAutomaticCommitMessage(profile.CommitMessage))
@@ -88,6 +98,40 @@ public sealed class SettingsService
         lock (_gate)
         {
             _settings.PreferredHugoPath = path;
+            Save();
+        }
+    }
+
+    public DeploymentMode GetDeploymentMode()
+    {
+        lock (_gate)
+        {
+            return DeploymentModeExtensions.Parse(_settings.DeploymentMode);
+        }
+    }
+
+    public void SetDeploymentMode(DeploymentMode mode)
+    {
+        lock (_gate)
+        {
+            _settings.DeploymentMode = mode.ToString();
+            Save();
+        }
+    }
+
+    public bool GetAllowLocalDeploymentFallback()
+    {
+        lock (_gate)
+        {
+            return _settings.AllowLocalDeploymentFallback;
+        }
+    }
+
+    public void SetAllowLocalDeploymentFallback(bool allow)
+    {
+        lock (_gate)
+        {
+            _settings.AllowLocalDeploymentFallback = allow;
             Save();
         }
     }

@@ -10,7 +10,8 @@ public sealed partial class GitHubService
         string repoName,
         bool isPublic = true,
         IProgress<string>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? commitMessage = null)
     {
         progress?.Report("初始化 Git…");
         var init = await InitRepoAsync(sitePath, cancellationToken).ConfigureAwait(false);
@@ -23,7 +24,10 @@ public sealed partial class GitHubService
         if (markerError is not null) return markerError;
 
         progress?.Report("提交檔案…");
-        var commit = await CommitAllAsync(sitePath, "Initial commit via Hugoer", cancellationToken)
+        var initialMessage = string.IsNullOrWhiteSpace(commitMessage)
+            ? "Initial commit via Hugoer"
+            : commitMessage.Trim();
+        var commit = await CommitAllAsync(sitePath, initialMessage, cancellationToken)
             .ConfigureAwait(false);
         if (!commit.Succeeded)
             return commit;
@@ -94,12 +98,13 @@ public sealed partial class GitHubService
         }
 
         progress?.Report("啟用 GitHub Pages（GitHub Actions）…");
-        var pages = await EnablePagesFromActionsAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        var pages = await EnablePagesAfterRemotePushAsync(sitePath, cancellationToken).ConfigureAwait(false);
         return new CommandResult
         {
-            ExitCode = pages.Succeeded ? 0 : pages.ExitCode,
-            StdOut = $"Repo ready.\n{pages.CombinedOutput}",
-            StdErr = pages.Succeeded ? string.Empty : pages.StdErr
+            ExitCode = pages.ExitCode,
+            IsPartialSuccess = pages.IsPartialSuccess,
+            StdOut = $"Repo ready.\n{pages.StdOut}",
+            StdErr = pages.StdErr
         };
     }
 
@@ -255,10 +260,52 @@ public sealed partial class GitHubService
         if (target.Provider == GitHostingProvider.GitHub)
         {
             progress?.Report("啟用 GitHub Pages（Actions）…");
-            return await EnablePagesFromActionsAsync(sitePath, cancellationToken).ConfigureAwait(false);
+            // The source push above is the primary operation. A collaborator
+            // may be allowed to push but not manage Pages, so a failed Pages
+            // API call must remain an observable partial success instead of
+            // making the caller retry/fallback and potentially duplicate the
+            // remote commit.
+            return await EnablePagesAfterRemotePushAsync(sitePath, cancellationToken).ConfigureAwait(false);
         }
 
         return ProviderPushResult(target);
+    }
+
+    private async Task<CommandResult> EnablePagesAfterRemotePushAsync(
+        string sitePath,
+        CancellationToken cancellationToken)
+    {
+        CommandResult pages;
+        try
+        {
+            pages = await EnablePagesFromActionsAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            pages = new CommandResult
+            {
+                ExitCode = -1,
+                StdErr = $"GitHub Pages 設定發生錯誤：{ex.Message}"
+            };
+        }
+
+        if (pages.Succeeded)
+            return pages;
+
+        var details = string.IsNullOrWhiteSpace(pages.CombinedOutput)
+            ? "請由 repository 擁有者在 Settings > Pages 將 Source 設為 GitHub Actions。"
+            : pages.CombinedOutput;
+        return new CommandResult
+        {
+            ExitCode = 0,
+            IsPartialSuccess = true,
+            StdOut = "網站檔案與 GitHub Actions workflow 已成功推送。",
+            StdErr = $"GitHub Pages 尚未自動設定：{details}"
+        };
     }
 
     public async Task<CommandResult> PushAsync(
