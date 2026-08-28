@@ -7,7 +7,7 @@ using Hugoer.Services;
 
 namespace Hugoer.ViewModels;
 
-public partial class ThemesViewModel : PageViewModelBase
+public partial class ThemesViewModel : PageViewModelBase, IDisposable
 {
     public ThemesViewModel()
         : this(AppServices.Instance)
@@ -45,15 +45,25 @@ public partial class ThemesViewModel : PageViewModelBase
     [ObservableProperty]
     public partial string Log { get; set; } = string.Empty;
 
+    // Theme installation and config writes touch the same site tree. A view
+    // can still receive a second command from keyboard automation while the
+    // first task is awaiting git or disk I/O, so serialize those operations.
+    private readonly SemaphoreSlim _operationGate = new(1, 1);
+    private bool _disposed;
+
     public override Task OnNavigatedToAsync()
     {
-        RefreshInstalled();
+        if (!_disposed)
+            RefreshInstalled();
         return Task.CompletedTask;
     }
 
     [RelayCommand]
     private void RefreshInstalled()
     {
+        if (_disposed)
+            return;
+
         InstalledThemes.Clear();
         if (!RequireSite(out var site)) return;
 
@@ -68,9 +78,14 @@ public partial class ThemesViewModel : PageViewModelBase
     }
 
     [RelayCommand]
-    private async Task InstallSelectedAsync()
+    private Task InstallSelectedAsync() => RunOperationAsync(
+        "安裝主題",
+        InstallSelectedCoreAsync);
+
+    private async Task InstallSelectedCoreAsync()
     {
-        if (SelectedPreset is null)
+        var preset = SelectedPreset;
+        if (preset is null)
         {
             StatusMessage = "請選擇主題";
             return;
@@ -78,38 +93,39 @@ public partial class ThemesViewModel : PageViewModelBase
 
         if (!RequireSite(out var site)) return;
 
-        IsBusy = true;
-        try
+        var installAsSubmodule = InstallAsSubmodule;
+        var progress = new Progress<string>(m =>
         {
-            var progress = new Progress<string>(m =>
-            {
-                AppendLog(m);
-                StatusMessage = m;
-            });
-            AppendLog($"安裝 {SelectedPreset.DisplayName}…");
-            var result = await Services.Themes.InstallThemeAsync(
-                site, SelectedPreset, InstallAsSubmodule, progress);
-            AppendLog(result.CombinedOutput);
-            StatusMessage = result.Succeeded
-                ? $"{SelectedPreset.DisplayName} 安裝完成"
-                : "安裝失敗";
-            RefreshInstalled();
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+            AppendLog(m);
+            StatusMessage = m;
+        });
+        AppendLog($"安裝 {preset.DisplayName}…");
+        var result = await Services.Themes.InstallThemeAsync(
+            site, preset, installAsSubmodule, progress);
+        AppendLog(result.CombinedOutput);
+        StatusMessage = result.Succeeded
+            ? $"{preset.DisplayName} 安裝完成"
+            : "安裝失敗";
+        RefreshInstalled();
     }
 
     [RelayCommand]
-    private async Task InstallStackAsync()
+    private Task InstallStackAsync() => RunOperationAsync(
+        "安裝 Stack",
+        InstallStackCoreAsync);
+
+    private async Task InstallStackCoreAsync()
     {
         SelectedPreset = Presets.FirstOrDefault(p => p.Id == "stack");
-        await InstallSelectedAsync();
+        await InstallSelectedCoreAsync();
     }
 
     [RelayCommand]
-    private async Task ActivateThemeAsync()
+    private Task ActivateThemeAsync() => RunOperationAsync(
+        "啟用主題",
+        ActivateThemeCoreAsync);
+
+    private async Task ActivateThemeCoreAsync()
     {
         if (string.IsNullOrWhiteSpace(SelectedInstalled)) return;
         if (!RequireSite(out var site)) return;
@@ -123,6 +139,9 @@ public partial class ThemesViewModel : PageViewModelBase
     [RelayCommand]
     private void LoadThemeConfigs()
     {
+        if (_disposed)
+            return;
+
         ThemeConfigFiles.Clear();
         if (!RequireSite(out var site)) return;
 
@@ -135,6 +154,9 @@ public partial class ThemesViewModel : PageViewModelBase
 
     partial void OnSelectedConfigFileChanged(string? value)
     {
+        if (_disposed)
+            return;
+
         if (value is null || !File.Exists(value)) return;
         try
         {
@@ -149,11 +171,18 @@ public partial class ThemesViewModel : PageViewModelBase
 
     partial void OnSelectedInstalledChanged(string? value)
     {
+        if (_disposed)
+            return;
+
         LoadThemeConfigs();
     }
 
     [RelayCommand]
-    private async Task SaveThemeConfigAsync()
+    private Task SaveThemeConfigAsync() => RunOperationAsync(
+        "儲存主題設定",
+        SaveThemeConfigCoreAsync);
+
+    private async Task SaveThemeConfigCoreAsync()
     {
         var path = SelectedConfigFile;
         if (string.IsNullOrWhiteSpace(path)) return;
@@ -176,6 +205,9 @@ public partial class ThemesViewModel : PageViewModelBase
     [RelayCommand]
     private void OpenDocs()
     {
+        if (_disposed)
+            return;
+
         if (SelectedPreset is null || string.IsNullOrWhiteSpace(SelectedPreset.DocsUrl)) return;
         try
         {
@@ -196,5 +228,48 @@ public partial class ThemesViewModel : PageViewModelBase
         if (string.IsNullOrWhiteSpace(message)) return;
         var line = $"[{DateTime.Now:HH:mm:ss}] {message.Trim()}";
         Log = string.IsNullOrEmpty(Log) ? line : Log + Environment.NewLine + line;
+    }
+
+    private async Task RunOperationAsync(string operationName, Func<Task> operation)
+    {
+        if (_disposed)
+            return;
+
+        if (!await _operationGate.WaitAsync(0).ConfigureAwait(true))
+        {
+            StatusMessage = "已有主題操作進行中，請稍候完成後再試。";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            await operation().ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = $"{operationName}已取消。";
+            AppendLog(StatusMessage);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"{operationName}失敗：{ex.Message}";
+            AppendLog(StatusMessage);
+        }
+        finally
+        {
+            IsBusy = false;
+            _operationGate.Release();
+        }
+    }
+
+    public override void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        base.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

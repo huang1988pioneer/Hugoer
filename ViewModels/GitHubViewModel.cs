@@ -17,6 +17,15 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         TimeSpan.FromSeconds(20)
     ];
     private readonly SemaphoreSlim _deploymentCheckGate = new(1, 1);
+    // A remote publish mutates both the local repository and its deployment
+    // marker. The visual layer disables buttons while busy, but commands can
+    // still be invoked twice through keyboard input or automation. Keep one
+    // serialized operation lane for all repository-changing workflows.
+    private readonly SemaphoreSlim _operationGate = new(1, 1);
+    // Cancels post-push polling and any deployment HTTP request when the
+    // window closes. Without a lifetime token a disposed page could continue
+    // waiting for Pages and then write stale status back into the UI.
+    private readonly CancellationTokenSource _lifetimeCts = new();
     private CancellationTokenSource? _deploymentMonitorCts;
     private DeploymentVersionState? _lastDeploymentState;
     private string? _lastExpectedDeploymentId;
@@ -25,6 +34,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     private GitHostingProvider _activeProvider = GitHostingProvider.GitHub;
     private bool _switchingProviderSettings;
     private bool _providerWasSelectedByUser;
+    private bool _disposed;
 
     public IReadOnlyList<GitHostingProviderOption> ProviderOptions { get; } =
     [
@@ -284,64 +294,74 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
 
     public override async Task OnNavigatedToAsync()
     {
+        if (_disposed)
+            return;
+
         await RefreshAsync();
+        if (_disposed)
+            return;
+
         EnsureDeploymentMonitorStarted();
     }
 
     [RelayCommand]
-    private async Task RefreshAsync()
+    private Task RefreshAsync() => RunOperationAsync("重新整理狀態", RefreshCoreAsync);
+
+    private async Task RefreshCoreAsync()
     {
-        IsBusy = true;
-        try
+        var gitOk = await Services.GitHub.IsGitAvailableAsync();
+        var ghOk = await Services.GitHub.IsGhAvailableAsync();
+        GitStatus = gitOk ? "Git：已安裝" : "Git：未找到（請安裝 Git for Windows）";
+        GhStatus = ghOk ? "GitHub CLI (gh)：已安裝" : "GitHub CLI：未找到（請安裝 gh）";
+
+        HasLocalSite = !string.IsNullOrWhiteSpace(Services.CurrentSitePath)
+                       && Directory.Exists(Services.CurrentSitePath);
+        if (!HasLocalSite)
         {
-            var gitOk = await Services.GitHub.IsGitAvailableAsync();
-            var ghOk = await Services.GitHub.IsGhAvailableAsync();
-            GitStatus = gitOk ? "Git：已安裝" : "Git：未找到（請安裝 Git for Windows）";
-            GhStatus = ghOk ? "GitHub CLI (gh)：已安裝" : "GitHub CLI：未找到（請安裝 gh）";
+            RemoteSummary = "尚未選擇本機網站。若 Git 平台已有 Hugo 原始碼 repository，可貼上網址複製到本機。";
+            PagesSummary = "尚未選擇本機網站";
+            UpdateCloneAvailability();
+            return;
+        }
 
-            HasLocalSite = !string.IsNullOrWhiteSpace(Services.CurrentSitePath)
-                           && Directory.Exists(Services.CurrentSitePath);
-            if (!HasLocalSite)
-            {
-                RemoteSummary = "尚未選擇本機網站。若 Git 平台已有 Hugo 原始碼 repository，可貼上網址複製到本機。";
-                PagesSummary = "尚未選擇本機網站";
-                UpdateCloneAvailability();
-                return;
-            }
+        var site = Services.CurrentSitePath!;
 
-            var site = Services.CurrentSitePath!;
+        if (string.IsNullOrWhiteSpace(RepoName))
+            RepoName = Path.GetFileName(site.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
-            if (string.IsNullOrWhiteSpace(RepoName))
-                RepoName = Path.GetFileName(site.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-
-            var info = await Services.GitHub.GetInfoAsync(site);
-            if (GitProviderSelectionPolicy.ShouldAdoptDetectedProvider(
-                    _providerWasSelectedByUser,
-                    info.Provider,
-                    _activeProvider))
-            {
-                var detectedProvider = info.Provider!.Value;
-                LoadProviderSettings(detectedProvider);
-            }
-            if (string.IsNullOrWhiteSpace(RepositoryUrl) && !string.IsNullOrWhiteSpace(info.RemoteUrl))
-            {
-                var originTarget = Hugoer.Services.GitHubService.ParseRepositoryTarget(info.RemoteUrl);
-                if (!originTarget.IsValid || originTarget.Provider == _activeProvider)
-                    RepositoryUrl = info.RemoteUrl;
-            }
-            RemoteSummary = GitProviderStatusFormatter.BuildRemoteSummary(
-                info,
-                _activeProvider,
+        var info = await Services.GitHub.GetInfoAsync(site);
+        if (_disposed || !IsCurrentSite(site))
+            return;
+        if (GitProviderSelectionPolicy.ShouldAdoptDetectedProvider(
                 _providerWasSelectedByUser,
-                GetActiveRepositoryTarget(),
-                ProviderAccount);
-
-            await RefreshPagesStatusAsync();
-        }
-        finally
+                info.Provider,
+                _activeProvider))
         {
-            IsBusy = false;
+            var detectedProvider = info.Provider!.Value;
+            LoadProviderSettings(detectedProvider);
         }
+        // Once a local site has an origin, that origin is the source of truth
+        // for the deployment page.  A previous site's saved RepositoryUrl must
+        // never survive a site switch and make the next push/Pages check point
+        // at the wrong repository.  Preserve an explicitly selected provider
+        // only when it disagrees with the site's origin; the service will then
+        // show the mismatch instead of silently changing the user's choice.
+        if (!string.IsNullOrWhiteSpace(info.RemoteUrl))
+        {
+            var originTarget = Hugoer.Services.GitHubService.ParseRepositoryTarget(info.RemoteUrl);
+            if (!originTarget.IsValid
+                || !_providerWasSelectedByUser
+                || originTarget.Provider == _activeProvider)
+                RepositoryUrl = info.RemoteUrl;
+        }
+        RemoteSummary = GitProviderStatusFormatter.BuildRemoteSummary(
+            info,
+            _activeProvider,
+            _providerWasSelectedByUser,
+            GetActiveRepositoryTarget(),
+            ProviderAccount);
+
+        await RefreshPagesStatusCoreAsync(site);
     }
 
     [RelayCommand]
@@ -353,25 +373,25 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
     }
 
     [RelayCommand]
-    private async Task ListPagesRepositoriesAsync()
+    private Task ListPagesRepositoriesAsync() => RunOperationAsync(
+        "列出 Pages 網站",
+        ListPagesRepositoriesCoreAsync);
+
+    private async Task ListPagesRepositoriesCoreAsync()
     {
-        IsBusy = true;
-        try
-        {
-            StatusMessage = "正在列出 GitHub Pages 網站…";
-            var list = await Services.GitHub.ListPagesRepositoriesAsync();
-            ApplyPagesRepositories(list);
-            StatusMessage = list.Message;
-            AppendLog(list.Message);
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        StatusMessage = "正在列出 GitHub Pages 網站…";
+        var list = await Services.GitHub.ListPagesRepositoriesAsync();
+        ApplyPagesRepositories(list);
+        StatusMessage = list.Message;
+        AppendLog(list.Message);
     }
 
     [RelayCommand]
-    private async Task CloneSiteToLocalAsync()
+    private Task CloneSiteToLocalAsync() => RunOperationAsync(
+        "複製網站",
+        CloneSiteToLocalCoreAsync);
+
+    private async Task CloneSiteToLocalCoreAsync()
     {
         var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(RepositoryUrl);
         if (!target.IsValid)
@@ -393,34 +413,30 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             return;
         }
 
-        IsBusy = true;
-        try
+        var progress = new Progress<string>(message =>
         {
-            var progress = new Progress<string>(message =>
-            {
-                AppendLog(message);
-                StatusMessage = message;
-            });
-            var result = await Services.GitHub.CloneSiteFromGitHubAsync(RepositoryUrl, CloneParent, progress);
-            if (!string.IsNullOrWhiteSpace(result.CombinedOutput))
-                AppendLog(result.CombinedOutput);
-            StatusMessage = result.Message;
-            if (!result.Succeeded || string.IsNullOrWhiteSpace(result.SitePath))
-                return;
+            AppendLog(message);
+            StatusMessage = message;
+        });
+        var result = await Services.GitHub.CloneSiteFromGitHubAsync(RepositoryUrl, CloneParent, progress);
+        if (!string.IsNullOrWhiteSpace(result.CombinedOutput))
+            AppendLog(result.CombinedOutput);
+        StatusMessage = result.Message;
+        if (!result.Succeeded || string.IsNullOrWhiteSpace(result.SitePath))
+            return;
 
-            Services.SetSite(result.SitePath);
-            RepoName = result.Target?.Repository ?? RepoName;
-            RecordRecentRepository(result.Target, result.SitePath);
-            await RefreshAsync();
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        Services.SetSite(result.SitePath);
+        RepoName = result.Target?.Repository ?? RepoName;
+        RecordRecentRepository(result.Target, result.SitePath);
+        await RefreshCoreAsync();
     }
 
     [RelayCommand]
-    private async Task ConnectExistingRepositoryAsync()
+    private Task ConnectExistingRepositoryAsync() => RunOperationAsync(
+        "連結並推送 repository",
+        ConnectExistingRepositoryCoreAsync);
+
+    private async Task ConnectExistingRepositoryCoreAsync()
     {
         if (!RequireSite(out var site)) return;
         var target = Hugoer.Services.GitHubService.ParseRepositoryTarget(RepositoryUrl);
@@ -436,63 +452,53 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             return;
         }
 
-        IsBusy = true;
-        try
-        {
-            StatusMessage = $"正在以遠端優先方式連結 {target.ProviderName} repository…";
+        StatusMessage = $"正在以遠端優先方式連結 {target.ProviderName} repository…";
 
-            if (SyncRecommendedBaseUrl && !string.IsNullOrWhiteSpace(target.PagesUrl))
-            {
-                await Services.GitHub.UpdateBaseUrlAsync(site, target.PagesUrl);
-                AppendLog($"已將 baseURL 設為 {target.PagesUrl}");
-            }
-
-            var progress = new Progress<string>(message =>
-            {
-                AppendLog(message);
-                StatusMessage = message;
-            });
-            var result = await Services.Publishing.ConnectAndPublishAsync(
-                site,
-                target,
-                CommitMessage,
-                allowLocalFallback: AllowLocalDeploymentFallback,
-                progress: progress);
-            AppendPublishResult(result);
-            StatusMessage = result.Message;
-            if (result.RemotePushSucceeded)
-                RecordRecentRepository(target, site);
-            await RefreshAsync();
-            StatusMessage = result.Message;
-            if (result.RemotePushSucceeded)
-                await CheckDeploymentVersionAfterPushAsync(CancellationToken.None);
-        }
-        finally
+        if (SyncRecommendedBaseUrl && !string.IsNullOrWhiteSpace(target.PagesUrl))
         {
-            IsBusy = false;
+            await Services.GitHub.UpdateBaseUrlAsync(site, target.PagesUrl);
+            AppendLog($"已將 baseURL 設為 {target.PagesUrl}");
         }
+
+        var progress = new Progress<string>(message =>
+        {
+            AppendLog(message);
+            StatusMessage = message;
+        });
+        var result = await Services.Publishing.ConnectAndPublishAsync(
+            site,
+            target,
+            CommitMessage,
+            allowLocalFallback: AllowLocalDeploymentFallback,
+            progress: progress);
+        AppendPublishResult(result);
+        StatusMessage = result.Message;
+        if (result.RemotePushSucceeded)
+            RecordRecentRepository(target, site);
+        await RefreshCoreAsync();
+        StatusMessage = result.Message;
+        if (result.RemotePushSucceeded)
+            await CheckDeploymentVersionAfterPushAsync(_lifetimeCts.Token);
     }
 
     [RelayCommand]
-    private async Task LoginAsync()
+    private Task LoginAsync() => RunOperationAsync("GitHub 登入", LoginCoreAsync);
+
+    private async Task LoginCoreAsync()
     {
-        IsBusy = true;
-        try
-        {
-            AppendLog("啟動 gh auth login…");
-            StatusMessage = "請在瀏覽器完成 GitHub 登入";
-            var result = await Services.GitHub.OpenGhAuthLoginAsync();
-            AppendLog(result.CombinedOutput);
-            await RefreshAsync();
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        AppendLog("啟動 gh auth login…");
+        StatusMessage = "請在瀏覽器完成 GitHub 登入";
+        var result = await Services.GitHub.OpenGhAuthLoginAsync();
+        AppendLog(result.CombinedOutput);
+        await RefreshCoreAsync();
     }
 
     [RelayCommand]
-    private async Task CreateAndDeployAsync()
+    private Task CreateAndDeployAsync() => RunOperationAsync(
+        "建立並部署 repository",
+        CreateAndDeployCoreAsync);
+
+    private async Task CreateAndDeployCoreAsync()
     {
         if (!RequireSite(out var site)) return;
         if (string.IsNullOrWhiteSpace(RepoName))
@@ -506,7 +512,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
         {
             RepositoryUrl = RepoName.Trim();
             AppendLog($"偵測到既有 repository 網址，改用安全連結流程：{existingTarget.Owner}/{existingTarget.Repository}");
-            await ConnectExistingRepositoryAsync();
+            await ConnectExistingRepositoryCoreAsync();
             return;
         }
 
@@ -521,93 +527,79 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
 
         var requestedName = RepoName.Trim();
         var reuseExisting = false;
-        IsBusy = true;
-        try
+        var info = await Services.GitHub.GetInfoAsync(site);
+        if (!string.IsNullOrWhiteSpace(info.Owner) && !string.IsNullOrWhiteSpace(info.Repo))
         {
-            var info = await Services.GitHub.GetInfoAsync(site);
-            if (!string.IsNullOrWhiteSpace(info.Owner) && !string.IsNullOrWhiteSpace(info.Repo))
+            if (!info.Repo.Equals(requestedName, StringComparison.OrdinalIgnoreCase))
             {
-                if (!info.Repo.Equals(requestedName, StringComparison.OrdinalIgnoreCase))
-                {
-                    StatusMessage =
-                        $"本機已連結 {info.Owner}/{info.Repo}，與要建立的「{requestedName}」不同。Hugoer 不會改指向新 repository。" +
-                        $"若這就是既有的 Hugo 網站，請把名稱改成 {info.Repo}，或用上方「連結既有 Repository」。";
-                    AppendLog(StatusMessage);
-                    return;
-                }
-
-                RepositoryUrl = $"https://github.com/{info.Owner}/{info.Repo}";
-                AppendLog($"本機已連結 {info.Owner}/{info.Repo}，改用安全連結既有 repository 流程。");
-                reuseExisting = true;
+                StatusMessage =
+                    $"本機已連結 {info.Owner}/{info.Repo}，與要建立的「{requestedName}」不同。Hugoer 不會改指向新 repository。" +
+                    $"若這就是既有的 Hugo 網站，請把名稱改成 {info.Repo}，或用上方「連結既有 Repository」。";
+                AppendLog(StatusMessage);
+                return;
             }
-            else
+
+            RepositoryUrl = $"https://github.com/{info.Owner}/{info.Repo}";
+            AppendLog($"本機已連結 {info.Owner}/{info.Repo}，改用安全連結既有 repository 流程。");
+            reuseExisting = true;
+        }
+        else
+        {
+            StatusMessage = $"正在確認 GitHub 上是否已有 {requestedName}…";
+            var lookup = await Services.GitHub.LookupOwnedRepositoryAsync(requestedName);
+            if (!lookup.CheckSucceeded)
             {
-                StatusMessage = $"正在確認 GitHub 上是否已有 {requestedName}…";
-                var lookup = await Services.GitHub.LookupOwnedRepositoryAsync(requestedName);
-                if (!lookup.CheckSucceeded)
+                StatusMessage = lookup.Message;
+                AppendLog(lookup.Message);
+                return;
+            }
+
+            if (lookup.Exists)
+            {
+                AppendLog(lookup.Message);
+                if (!lookup.CanReuse || lookup.Target is not { IsValid: true })
                 {
                     StatusMessage = lookup.Message;
-                    AppendLog(lookup.Message);
                     return;
                 }
 
-                if (lookup.Exists)
-                {
-                    AppendLog(lookup.Message);
-                    if (!lookup.CanReuse || lookup.Target is not { IsValid: true })
-                    {
-                        StatusMessage = lookup.Message;
-                        return;
-                    }
-
-                    RepositoryUrl = lookup.Target.CanonicalUrl ?? RepositoryUrl;
-                    reuseExisting = true;
-                }
+                RepositoryUrl = lookup.Target.CanonicalUrl ?? RepositoryUrl;
+                reuseExisting = true;
             }
-        }
-        finally
-        {
-            IsBusy = false;
         }
 
         if (reuseExisting)
         {
-            await ConnectExistingRepositoryAsync();
+            await ConnectExistingRepositoryCoreAsync();
             return;
         }
 
-        IsBusy = true;
-        try
+        var progress = new Progress<string>(m =>
         {
-            var progress = new Progress<string>(m =>
-            {
-                AppendLog(m);
-                StatusMessage = m;
-            });
-            var result = await Services.Publishing.CreateAndPublishAsync(
-                site,
-                requestedName,
-                IsPublicRepo,
-                commitMessage: CommitMessage,
-                allowLocalFallback: AllowLocalDeploymentFallback,
-                progress: progress);
-            AppendPublishResult(result);
-            StatusMessage = result.Message;
-            await RefreshAsync();
-            StatusMessage = result.Message;
-            if (result.RemotePushSucceeded || result.UsedLocalFallback)
-                RecordRecentRepository(GetActiveRepositoryTarget(), site);
-            if (result.RemotePushSucceeded)
-                await CheckDeploymentVersionAfterPushAsync(CancellationToken.None);
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+            AppendLog(m);
+            StatusMessage = m;
+        });
+        var result = await Services.Publishing.CreateAndPublishAsync(
+            site,
+            requestedName,
+            IsPublicRepo,
+            commitMessage: CommitMessage,
+            allowLocalFallback: AllowLocalDeploymentFallback,
+            progress: progress);
+        AppendPublishResult(result);
+        StatusMessage = result.Message;
+        await RefreshCoreAsync();
+        StatusMessage = result.Message;
+        if (result.RemotePushSucceeded || result.UsedLocalFallback)
+            RecordRecentRepository(GetActiveRepositoryTarget(), site);
+        if (result.RemotePushSucceeded)
+            await CheckDeploymentVersionAfterPushAsync(_lifetimeCts.Token);
     }
 
     [RelayCommand]
-    private async Task PushAsync()
+    private Task PushAsync() => RunOperationAsync("推送網站", PushCoreAsync);
+
+    private async Task PushCoreAsync()
     {
         if (!RequireSite(out var site)) return;
 
@@ -617,7 +609,7 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             // Local mode is intentionally independent of Git credentials and
             // an origin. The primary button must keep the selected mode's
             // promise instead of stopping at the remote precondition.
-            await DeployLocallyAsync();
+            await DeployLocallyCoreAsync();
             return;
         }
 
@@ -630,35 +622,27 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             {
                 RepositoryUrl = candidate;
                 AppendLog($"尚未設定 origin；改用安全連結流程：{candidateTarget.Owner}/{candidateTarget.Repository}");
-                await ConnectExistingRepositoryAsync();
+                await ConnectExistingRepositoryCoreAsync();
                 return;
             }
 
             // A missing origin is a remote-route failure. Keep the default
             // remote-first policy observable and use its configured local
             // fallback rather than silently doing nothing.
-            IsBusy = true;
-            try
+            var progress = new Progress<string>(message =>
             {
-                var progress = new Progress<string>(message =>
-                {
-                    AppendLog(message);
-                    StatusMessage = message;
-                });
-                var result = await Services.Publishing.PublishAsync(
-                    site,
-                    requestedMode,
-                    target: null,
-                    CommitMessage,
-                    allowLocalFallback: AllowLocalDeploymentFallback,
-                    progress: progress);
-                AppendPublishResult(result);
-                StatusMessage = result.Message;
-            }
-            finally
-            {
-                IsBusy = false;
-            }
+                AppendLog(message);
+                StatusMessage = message;
+            });
+            var result = await Services.Publishing.PublishAsync(
+                site,
+                requestedMode,
+                target: null,
+                CommitMessage,
+                allowLocalFallback: AllowLocalDeploymentFallback,
+                progress: progress);
+            AppendPublishResult(result);
+            StatusMessage = result.Message;
             return;
         }
 
@@ -670,90 +654,109 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             return;
         }
 
-        IsBusy = true;
-        try
+        var publishProgress = new Progress<string>(m =>
         {
-            var progress = new Progress<string>(m =>
-            {
-                AppendLog(m);
-                StatusMessage = m;
-            });
-            var result = await Services.Publishing.PublishAsync(
-                site,
-                requestedMode,
-                target,
-                CommitMessage,
-                allowLocalFallback: AllowLocalDeploymentFallback,
-                progress: progress);
-            AppendPublishResult(result);
-            StatusMessage = result.Message;
-            if (result.RemotePushSucceeded)
-                RecordRecentRepository(target, site);
-            if (result.RemotePushSucceeded)
-                await RefreshPagesStatusAsync();
-            StatusMessage = result.Message;
-            if (result.RemotePushSucceeded)
-                await CheckDeploymentVersionAfterPushAsync(CancellationToken.None);
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+            AppendLog(m);
+            StatusMessage = m;
+        });
+        var publishResult = await Services.Publishing.PublishAsync(
+            site,
+            requestedMode,
+            target,
+            CommitMessage,
+            allowLocalFallback: AllowLocalDeploymentFallback,
+            progress: publishProgress);
+        AppendPublishResult(publishResult);
+        StatusMessage = publishResult.Message;
+        if (publishResult.RemotePushSucceeded)
+            RecordRecentRepository(target, site);
+        if (publishResult.RemotePushSucceeded)
+            await RefreshPagesStatusCoreAsync(site);
+        StatusMessage = publishResult.Message;
+        if (publishResult.RemotePushSucceeded)
+            await CheckDeploymentVersionAfterPushAsync(_lifetimeCts.Token);
     }
 
     [RelayCommand]
-    private async Task DeployLocallyAsync()
+    private Task DeployLocallyAsync() => RunOperationAsync(
+        "本機部署備援",
+        DeployLocallyCoreAsync);
+
+    private async Task DeployLocallyCoreAsync()
     {
         if (!RequireSite(out var site)) return;
 
-        IsBusy = true;
-        try
+        var progress = new Progress<string>(message =>
         {
-            var progress = new Progress<string>(message =>
-            {
-                AppendLog(message);
-                StatusMessage = message;
-            });
-            var result = await Services.Publishing.DeployLocallyAsync(site, progress);
-            AppendPublishResult(result);
-            StatusMessage = result.Message;
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+            AppendLog(message);
+            StatusMessage = message;
+        });
+        var result = await Services.Publishing.DeployLocallyAsync(site, progress);
+        AppendPublishResult(result);
+        StatusMessage = result.Message;
     }
 
     [RelayCommand]
-    private async Task EnablePagesAsync()
+    private Task EnablePagesAsync() => RunOperationAsync(
+        "啟用 Pages",
+        EnablePagesCoreAsync);
+
+    private async Task EnablePagesCoreAsync()
     {
         if (!RequireSite(out var site)) return;
-        IsBusy = true;
-        try
-        {
-            await Services.GitHub.EnsureHostingWorkflowAsync(site, _activeProvider);
-            var result = await Services.GitHub.EnablePagesFromActionsAsync(site);
-            AppendLog(result.CombinedOutput);
-            StatusMessage = result.IsPartialSuccess
-                ? $"{_activeProvider.PagesProductName()} 已推送；請依平台提示完成設定"
-                : result.Succeeded
-                    ? $"已請求啟用 {_activeProvider.PagesProductName()}"
-                    : "啟用失敗";
-            await RefreshPagesStatusAsync();
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        await Services.GitHub.EnsureHostingWorkflowAsync(site, _activeProvider);
+        var result = await Services.GitHub.EnablePagesFromActionsAsync(site);
+        AppendLog(result.CombinedOutput);
+        StatusMessage = result.IsPartialSuccess
+            ? $"{_activeProvider.PagesProductName()} 已推送；請依平台提示完成設定"
+            : result.Succeeded
+                ? $"已請求啟用 {_activeProvider.PagesProductName()}"
+                : "啟用失敗";
+        await RefreshPagesStatusCoreAsync(site);
     }
 
     [RelayCommand]
-    private async Task RefreshPagesStatusAsync()
-    {
-        if (!RequireSite(out var site)) return;
+    private Task RefreshPagesStatusAsync() => RunOperationAsync(
+        "查詢 Pages 狀態",
+        async () =>
+        {
+            if (!RequireSite(out var site)) return;
+            await RefreshPagesStatusCoreAsync(site);
+        });
 
-        var status = await Services.GitHub.GetPagesStatusAsync(site, GetActiveRepositoryTarget());
-        PagesUrl = !string.IsNullOrWhiteSpace(ProviderPagesUrl) ? ProviderPagesUrl : status.HtmlUrl;
+    private async Task RefreshPagesStatusCoreAsync(string site)
+    {
+        var providerAtStart = _activeProvider;
+        var repositoryUrlAtStart = RepositoryUrl;
+        var targetAtStart = GetActiveRepositoryTarget();
+        var status = await Services.GitHub.GetPagesStatusAsync(site, targetAtStart);
+        if (_disposed || !IsCurrentSite(site))
+            return;
+
+        if (_activeProvider != providerAtStart
+            || !string.Equals(RepositoryUrl, repositoryUrlAtStart, StringComparison.Ordinal))
+        {
+            // The target changed while the network request was in flight.
+            return;
+        }
+
+        var target = GetActiveRepositoryTarget();
+        var targetChanged = targetAtStart is { IsValid: true }
+                            && (target is not { IsValid: true }
+                                || !GitRemoteSafety.IsSameRepository(targetAtStart, target));
+        if (targetChanged)
+        {
+            // A repository/provider switch happened while the network request
+            // was in flight. Do not let the old response overwrite the new
+            // Pages URL or deployment status.
+            return;
+        }
+        // The Pages endpoint returns 404 until the first deployment. Keep the
+        // parser-derived URL in that state so the browser action and marker
+        // monitor remain useful while the platform-side setup is pending.
+        PagesUrl = !string.IsNullOrWhiteSpace(ProviderPagesUrl)
+            ? ProviderPagesUrl
+            : status.HtmlUrl ?? target?.PagesUrl;
         PagesSummary =
             $"啟用：{(status.Enabled ? "是" : "否")}\n" +
             $"狀態：{status.Status ?? "—"}\n" +
@@ -763,6 +766,47 @@ public partial class GitHubViewModel : PageViewModelBase, IDisposable
             $"CNAME：{status.Cname ?? "—"}\n" +
             $"{status.Message}";
         StatusMessage = status.Message;
+    }
+
+    private bool IsCurrentSite(string site) =>
+        string.Equals(Services.CurrentSitePath, site, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Executes one repository/file-system operation at a time.  This is a
+    /// non-blocking gate so a second click gives immediate feedback instead of
+    /// queuing a duplicate push or marker update behind the first operation.
+    /// </summary>
+    private async Task RunOperationAsync(string operationName, Func<Task> operation)
+    {
+        if (_disposed)
+            return;
+
+        if (!await _operationGate.WaitAsync(0).ConfigureAwait(true))
+        {
+            StatusMessage = $"已有部署操作進行中，請稍候完成後再試。";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            await operation().ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = $"{operationName}已取消。";
+            AppendLog(StatusMessage);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"{operationName}失敗：{ex.Message}";
+            AppendLog(StatusMessage);
+        }
+        finally
+        {
+            IsBusy = false;
+            _operationGate.Release();
+        }
     }
 
 }

@@ -12,6 +12,12 @@ public partial class App : Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
+#if DEBUG
+        // Avalonia 12 moved the developer-tools bridge from AppBuilder to the
+        // application instance. Keep it in Debug only so release packages do
+        // not attach a diagnostics endpoint at runtime.
+        this.AttachDeveloperTools();
+#endif
     }
 
     public override void OnFrameworkInitializationCompleted()

@@ -591,6 +591,15 @@ public sealed partial class HugoService
         IReadOnlyList<string>? argumentList,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(sitePath) || !Directory.Exists(sitePath))
+        {
+            return new CommandResult
+            {
+                ExitCode = -1,
+                StdErr = "找不到 Hugo 網站資料夾。"
+            };
+        }
+
         await RepairDuplicateRootTomlKeysAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await MigrateDeprecatedLanguageCodeAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await RepairLegacyStackColorSchemeAsync(sitePath, cancellationToken).ConfigureAwait(false);
@@ -823,6 +832,12 @@ public sealed partial class HugoService
         int preferredPort = 1313,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(sitePath) || !Directory.Exists(sitePath))
+            return Fail("找不到 Hugo 網站資料夾。");
+
+        if (preferredPort is < 1 or > 65526)
+            return Fail("本機預覽埠必須介於 1 到 65526。", $"http://127.0.0.1:{preferredPort}/");
+
         await RepairDuplicateRootTomlKeysAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await MigrateDeprecatedLanguageCodeAsync(sitePath, cancellationToken).ConfigureAwait(false);
         await RepairLegacyStackColorSchemeAsync(sitePath, cancellationToken).ConfigureAwait(false);

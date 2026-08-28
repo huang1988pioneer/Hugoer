@@ -15,6 +15,14 @@ public static partial class GitHubRepositoryParser
         if (TryParsePagesUrl(value, out var pagesTarget))
             return pagesTarget;
 
+        // Git can report an SSH origin (git@github.com:owner/repo.git) even
+        // though the UI is primarily URL based. Normalize the common hosted
+        // SSH form so switching local sites never turns a valid origin into an
+        // unusable deployment target.
+        var ssh = SshRemoteRegex().Match(value);
+        if (ssh.Success)
+            return ParseRepositoryUrl($"https://{ssh.Groups["host"].Value}/{ssh.Groups["path"].Value}");
+
         return ParseRepositoryUrl(value);
     }
 
@@ -368,6 +376,9 @@ public static partial class GitHubRepositoryParser
 
     [GeneratedRegex(@"\]\s*\[")]
     private static partial Regex JsonArrayJoinRegex();
+
+    [GeneratedRegex(@"^git@(?<host>github\.com|gitlab\.com|codeberg\.org|bitbucket\.org):(?<path>.+?)(?:\.git)?/?$", RegexOptions.IgnoreCase)]
+    private static partial Regex SshRemoteRegex();
 
     [GeneratedRegex(@"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,98}[A-Za-z0-9])?$")]
     private static partial Regex OwnerSegmentRegex();

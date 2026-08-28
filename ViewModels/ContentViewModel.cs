@@ -192,6 +192,10 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
     private CancellationTokenSource? _loadCts;
     private int _loadGeneration;
     private readonly IdleAutoSave _autoSave;
+    // Manual and idle saves can overlap when a user clicks Save as the
+    // debounce timer fires. Serialize the file replacement so an older
+    // snapshot cannot overwrite a newer one.
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
 
     public override Task OnNavigatedToAsync()
     {
@@ -568,8 +572,12 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
             return;
         }
 
+        await _saveGate.WaitAsync().ConfigureAwait(true);
         try
         {
+            if (_disposed)
+                return;
+
             await Services.Content.SaveAsync(selected.FullPath, text);
             if (SelectedFile?.FullPath.Equals(selected.FullPath, StringComparison.OrdinalIgnoreCase) != true)
                 return;
@@ -586,6 +594,10 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
         {
             StatusMessage = auto ? $"自動儲存失敗：{ex.Message}" : ex.Message;
         }
+        finally
+        {
+            _saveGate.Release();
+        }
     }
 
     private async Task PersistSilentlyAsync(string fullPath, string text)
@@ -593,8 +605,12 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
         if (_disposed)
             return;
 
+        await _saveGate.WaitAsync().ConfigureAwait(true);
         try
         {
+            if (_disposed)
+                return;
+
             await Services.Content.SaveAsync(fullPath, text);
             if (SelectedFile?.FullPath.Equals(fullPath, StringComparison.OrdinalIgnoreCase) == true)
                 StatusMessage = $"已自動儲存：{Path.GetFileName(fullPath)}";
@@ -603,6 +619,10 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
         {
             if (SelectedFile?.FullPath.Equals(fullPath, StringComparison.OrdinalIgnoreCase) == true)
                 StatusMessage = $"自動儲存失敗：{ex.Message}";
+        }
+        finally
+        {
+            _saveGate.Release();
         }
     }
 

@@ -739,52 +739,126 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      HUGO_VERSION: 0.164.0
+      # Keep tool versions pinned so a future runner image cannot silently
+      # change the generated site.
+      DART_SASS_VERSION: 1.102.0
+      GO_VERSION: 1.26.5
+      HUGO_VERSION: 0.165.0
+      NODE_VERSION: 24.19.0
+      TZ: Asia/Taipei
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0
-
-      - name: Install Hugo CLI
-        run: |
-          wget -O ${{ runner.temp }}/hugo.tar.gz \
-            https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.tar.gz
-          tar -xzf ${{ runner.temp }}/hugo.tar.gz -C ${{ runner.temp }}
-          sudo mv ${{ runner.temp }}/hugo /usr/local/bin/hugo
-          hugo version
+          lfs: false
 
       - name: Setup Pages
         id: pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
+
+      - name: Create a local tools directory
+        run: |
+          mkdir -p "${HOME}/.local"
+
+      - name: Install Go
+        if: hashFiles('go.mod') != ''
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Install Node.js
+        if: hashFiles('package-lock.json') != ''
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Dart Sass
+        run: |
+          echo "Installing Dart Sass ${DART_SASS_VERSION}..."
+          curl -sfL --output-dir "${{ runner.temp }}" -O "https://github.com/sass/dart-sass/releases/download/${DART_SASS_VERSION}/dart-sass-${DART_SASS_VERSION}-linux-x64.tar.gz"
+          tar -C "${HOME}/.local" -xf "${{ runner.temp }}/dart-sass-${DART_SASS_VERSION}-linux-x64.tar.gz"
+          echo "${HOME}/.local/dart-sass" >> "${GITHUB_PATH}"
+
+      - name: Install Hugo Extended
+        run: |
+          echo "Installing Hugo Extended ${HUGO_VERSION}..."
+          curl -sfL --output-dir "${{ runner.temp }}" -O "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.tar.gz"
+          mkdir -p "${HOME}/.local/hugo"
+          tar -C "${HOME}/.local/hugo" -xf "${{ runner.temp }}/hugo_extended_${HUGO_VERSION}_linux-amd64.tar.gz"
+          echo "${HOME}/.local/hugo" >> "${GITHUB_PATH}"
+
+      - name: Log tool versions
+        run: |
+          command -v sass &> /dev/null && echo "Dart Sass: $(sass --version)" || echo "Dart Sass: not installed"
+          command -v go &> /dev/null && echo "Go: $(go version)" || echo "Go: not installed"
+          command -v hugo &> /dev/null && echo "Hugo: $(hugo version)" || echo "Hugo: not installed"
+          command -v node &> /dev/null && echo "Node.js: $(node --version)" || echo "Node.js: not installed"
+
+      - name: Configure Git
+        run: git config --global core.quotepath false
+
+      - name: Fetch full Git history
+        run: |
+          if [[ $(git rev-parse --is-shallow-repository) == true ]]; then
+            git fetch --unshallow
+          fi
+
+      - name: Initialize Git submodules
+        run: |
+          if [[ -f .gitmodules ]]; then
+            git submodule update --init --recursive
+          fi
+
+      - name: Install Node.js dependencies
+        run: |
+          if [[ -f package-lock.json ]]; then
+            npm ci
+          fi
+
+      - name: Cache restore
+        id: cache-restore
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/.cache/hugo
+          key: hugo-${{ github.run_id }}
+          restore-keys: hugo-
 
       - name: Build with Hugo
         env:
-          HUGO_CACHEDIR: ${{ runner.temp }}/hugo_cache
+          HUGO_CACHEDIR: ${{ runner.temp }}/.cache/hugo
           HUGO_ENVIRONMENT: production
-          TZ: Asia/Taipei
         run: |
-          hugo \
+          hugo build \
             --gc \
             --minify \
-            --baseURL "${{ steps.pages.outputs.base_url }}/"
+            --baseURL "${{ steps.pages.outputs.base_url }}/" \
+            --cacheDir "${{ runner.temp }}/.cache/hugo"
+
+      - name: Cache save
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/.cache/hugo
+          key: ${{ steps.cache-restore.outputs.cache-primary-key }}
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v5
         with:
+          include-hidden-files: false
           path: ./public
 
   deploy:
+    runs-on: ubuntu-latest
+    needs: build
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 """;
 
 private const string DefaultGitLabPagesWorkflow = """

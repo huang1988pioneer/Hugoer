@@ -6,7 +6,7 @@ using Hugoer.Services;
 
 namespace Hugoer.ViewModels;
 
-public partial class MigrationViewModel : PageViewModelBase
+public partial class MigrationViewModel : PageViewModelBase, IDisposable
 {
     public MigrationViewModel()
         : this(AppServices.Instance)
@@ -76,9 +76,14 @@ public partial class MigrationViewModel : PageViewModelBase
     public partial bool CanOpenMigratedSite { get; set; }
 
     private bool _refreshing;
+    private readonly SemaphoreSlim _operationGate = new(1, 1);
+    private bool _disposed;
 
     public override Task OnNavigatedToAsync()
     {
+        if (_disposed)
+            return Task.CompletedTask;
+
         if (string.IsNullOrWhiteSpace(SourcePath) && !string.IsNullOrWhiteSpace(Services.CurrentSitePath))
             SourcePath = Services.CurrentSitePath;
         RefreshDerivedState();
@@ -94,14 +99,20 @@ public partial class MigrationViewModel : PageViewModelBase
     [RelayCommand]
     private async Task BrowseSourceAsync()
     {
+        if (_disposed)
+            return;
+
         var folder = await DialogHelper.PickFolderAsync("選擇要遷移的網站資料夾");
-        if (!string.IsNullOrWhiteSpace(folder))
+        if (!_disposed && !string.IsNullOrWhiteSpace(folder))
             SourcePath = folder;
     }
 
     [RelayCommand]
     private void UseCurrentSite()
     {
+        if (_disposed)
+            return;
+
         if (!RequireSite(out var site))
             return;
         SourcePath = site;
@@ -111,13 +122,18 @@ public partial class MigrationViewModel : PageViewModelBase
     [RelayCommand]
     private async Task BrowseDestinationParentAsync()
     {
+        if (_disposed)
+            return;
+
         var folder = await DialogHelper.PickFolderAsync("選擇遷移輸出的父資料夾");
-        if (!string.IsNullOrWhiteSpace(folder))
+        if (!_disposed && !string.IsNullOrWhiteSpace(folder))
             DestinationParent = folder;
     }
 
     [RelayCommand]
-    private async Task MigrateAsync()
+    private Task MigrateAsync() => RunOperationAsync("遷移網站", MigrateCoreAsync);
+
+    private async Task MigrateCoreAsync()
     {
         var sourceKind = ResolveSourceKind();
         var targetKind = StaticSiteDetector.Parse(DestinationKind);
@@ -134,8 +150,15 @@ public partial class MigrationViewModel : PageViewModelBase
             return;
         }
 
-        var dest = Path.Combine(DestinationParent.Trim(), DestinationName.Trim());
-        IsBusy = true;
+        var parent = DestinationParent.Trim();
+        var name = DestinationName.Trim();
+        if (!PathHelper.TryResolveUnder(parent, name, out var dest, allowRoot: false))
+        {
+            StatusMessage = "目標資料夾名稱無效，請使用父資料夾內的相對名稱。";
+            AppendLog(StatusMessage);
+            return;
+        }
+
         CanMigrate = false;
         try
         {
@@ -165,16 +188,14 @@ public partial class MigrationViewModel : PageViewModelBase
             StatusMessage = "遷移失敗：" + ex.Message;
             AppendLog(StatusMessage);
         }
-        finally
-        {
-            IsBusy = false;
-            RefreshDerivedState();
-        }
     }
 
     [RelayCommand]
     private void OpenMigratedSite()
     {
+        if (_disposed)
+            return;
+
         if (string.IsNullOrWhiteSpace(LastDestinationPath) || !Directory.Exists(LastDestinationPath))
         {
             StatusMessage = "還沒有遷移完成的目標資料夾。";
@@ -205,12 +226,31 @@ public partial class MigrationViewModel : PageViewModelBase
 
     private void RefreshDerivedState()
     {
-        if (_refreshing)
+        if (_disposed || _refreshing)
             return;
         _refreshing = true;
         try
         {
             RefreshDerivedStateCore();
+        }
+        catch (Exception ex) when (ex is ArgumentException
+                                   or IOException
+                                   or UnauthorizedAccessException
+                                   or NotSupportedException)
+        {
+            // A path can be edited or become unavailable while the derived
+            // labels are recalculated. Keep the page responsive and make the
+            // invalid input actionable instead of allowing a property-change
+            // callback to surface as an unobserved UI exception.
+            const string message = "來源路徑格式無效，請重新選擇網站資料夾。";
+            DetectedKindLabel = "來源路徑無效";
+            MigrationPlanText = "請選擇有效的來源網站資料夾。";
+            CanMigrate = false;
+            if (!string.Equals(StatusMessage, message, StringComparison.Ordinal))
+            {
+                StatusMessage = message;
+                AppendLog(message + $"（{ex.Message}）");
+            }
         }
         finally
         {
@@ -272,5 +312,50 @@ public partial class MigrationViewModel : PageViewModelBase
             return;
         var line = $"[{DateTime.Now:HH:mm:ss}] {message.Trim()}";
         Log = string.IsNullOrEmpty(Log) ? line : Log + Environment.NewLine + line;
+    }
+
+    private async Task RunOperationAsync(string operationName, Func<Task> operation)
+    {
+        if (_disposed)
+            return;
+
+        if (!await _operationGate.WaitAsync(0).ConfigureAwait(true))
+        {
+            StatusMessage = "已有遷移操作進行中，請稍候完成後再試。";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            await operation().ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = $"{operationName}已取消。";
+            AppendLog(StatusMessage);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"{operationName}失敗：{ex.Message}";
+            AppendLog(StatusMessage);
+        }
+        finally
+        {
+            IsBusy = false;
+            _operationGate.Release();
+            if (!_disposed)
+                RefreshDerivedState();
+        }
+    }
+
+    public override void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        base.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

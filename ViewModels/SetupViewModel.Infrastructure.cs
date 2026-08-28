@@ -54,7 +54,7 @@ public partial class SetupViewModel
     {
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
-            if (!ReferenceEquals(sender, _previewProcess))
+            if (_disposed || !ReferenceEquals(sender, _previewProcess))
                 return;
 
             PreviewReady = false;
@@ -67,6 +67,10 @@ public partial class SetupViewModel
 
     public override void Dispose()
     {
+        if (_disposed)
+            return;
+
+        _disposed = true;
         var process = _previewProcess;
         _previewProcess = null;
         PreviewReady = false;

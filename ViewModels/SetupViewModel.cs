@@ -87,6 +87,12 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
     public partial string PreviewUrl { get; set; } = "http://127.0.0.1:1313/";
 
     private Process? _previewProcess;
+    // Commands can still be invoked directly while a previous invocation is
+    // awaiting Hugo, even when the view has disabled its buttons. Serialize
+    // lifecycle operations so a double-click cannot start two servers or run
+    // a build against a half-written configuration.
+    private readonly SemaphoreSlim _operationGate = new(1, 1);
+    private bool _disposed;
 
     public ObservableCollection<string> QuickTips { get; } =
     [
@@ -98,53 +104,41 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
 
     public override async Task OnNavigatedToAsync()
     {
+        if (_disposed)
+            return;
+
         SitePath = Services.CurrentSitePath ?? string.Empty;
         await RefreshHugoAsync();
-        RefreshSite();
+        if (!_disposed)
+            RefreshSite();
     }
 
     [RelayCommand]
     private async Task RefreshHugoAsync()
     {
-        IsBusy = true;
+        if (!await TryEnterOperationAsync())
+            return;
+
         try
         {
-            var info = await Services.Hugo.DetectAsync();
-            HugoInstalled = info.IsInstalled;
-            HugoStatus = info.StatusMessage;
-            HugoPath = info.ExecutablePath ?? string.Empty;
-            AppendLog(info.StatusMessage);
-
-            if (info.IsInstalled)
-            {
-                HugoUpdateMessage = "正在檢查 Hugo 最新版本…";
-                var latest = await Services.Hugo.CheckLatestVersionAsync(info.Version);
-                HugoLatestCheckSucceeded = latest.CheckSucceeded;
-                HugoUpdateAvailable = latest.UpdateAvailable;
-                HugoUpdateMessage = latest.Message;
-                HugoInstallButtonText = latest.UpdateAvailable
-                    ? $"更新到 Hugo Extended v{latest.LatestVersion}"
-                    : "一鍵安裝／更新 Hugo Extended";
-                AppendLog(latest.Message);
-            }
-            else
-            {
-                HugoLatestCheckSucceeded = false;
-                HugoUpdateAvailable = false;
-                HugoUpdateMessage = "尚未安裝 Hugo；安裝時會取得最新版 Hugo Extended。";
-                HugoInstallButtonText = "一鍵安裝 Hugo Extended";
-            }
+            await RefreshHugoCoreAsync();
+        }
+        catch (Exception ex)
+        {
+            ReportOperationFailure("Hugo 偵測", ex);
         }
         finally
         {
-            IsBusy = false;
+            ExitOperation();
         }
     }
 
     [RelayCommand]
     private async Task InstallHugoAsync()
     {
-        IsBusy = true;
+        if (!await TryEnterOperationAsync())
+            return;
+
         StatusMessage = HugoInstalled ? "正在更新 Hugo…" : "正在安裝 Hugo…";
         try
         {
@@ -156,19 +150,28 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
             var result = await Services.Hugo.InstallHugoAsync(progress);
             AppendLog(result.CombinedOutput);
             StatusMessage = result.Succeeded ? "Hugo 安裝／更新完成" : "安裝或更新失敗，請查看日誌";
-            await RefreshHugoAsync();
+            // Refresh in the same operation scope. Calling the command wrapper
+            // here would release IsBusy while the install is still unwinding.
+            await RefreshHugoCoreAsync();
+        }
+        catch (Exception ex)
+        {
+            ReportOperationFailure("Hugo 安裝／更新", ex);
         }
         finally
         {
-            IsBusy = false;
+            ExitOperation();
         }
     }
 
     [RelayCommand]
     private async Task BrowseSiteAsync()
     {
+        if (_disposed)
+            return;
+
         var folder = await DialogHelper.PickFolderAsync("選擇 Hugo 網站資料夾");
-        if (string.IsNullOrWhiteSpace(folder)) return;
+        if (_disposed || string.IsNullOrWhiteSpace(folder)) return;
 
         if (!PathHelper.LooksLikeHugoSite(folder))
         {
@@ -186,16 +189,22 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
     [RelayCommand]
     private async Task BrowseParentAsync()
     {
+        if (_disposed)
+            return;
+
         var folder = await DialogHelper.PickFolderAsync("選擇新網站的父資料夾");
-        if (!string.IsNullOrWhiteSpace(folder))
+        if (!_disposed && !string.IsNullOrWhiteSpace(folder))
             NewSiteParent = folder;
     }
 
     [RelayCommand]
     private async Task BrowseCloneParentAsync()
     {
+        if (_disposed)
+            return;
+
         var folder = await DialogHelper.PickFolderAsync("選擇複製到本機的父資料夾");
-        if (!string.IsNullOrWhiteSpace(folder))
+        if (!_disposed && !string.IsNullOrWhiteSpace(folder))
             CloneParent = folder;
     }
 
@@ -214,7 +223,9 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
     [RelayCommand]
     private async Task ListPagesRepositoriesAsync()
     {
-        IsBusy = true;
+        if (!await TryEnterOperationAsync())
+            return;
+
         try
         {
             StatusMessage = "正在列出 GitHub Pages 網站…";
@@ -223,9 +234,13 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
             StatusMessage = list.Message;
             AppendLog(list.Message);
         }
+        catch (Exception ex)
+        {
+            ReportOperationFailure("列出 GitHub Pages 網站", ex);
+        }
         finally
         {
-            IsBusy = false;
+            ExitOperation();
         }
     }
 
@@ -246,7 +261,9 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
             return;
         }
 
-        IsBusy = true;
+        if (!await TryEnterOperationAsync())
+            return;
+
         try
         {
             var progress = new Progress<string>(message =>
@@ -265,9 +282,13 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
             SitePath = result.SitePath;
             RefreshSite();
         }
+        catch (Exception ex)
+        {
+            ReportOperationFailure("複製網站", ex);
+        }
         finally
         {
-            IsBusy = false;
+            ExitOperation();
         }
     }
 
@@ -280,7 +301,9 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
             return;
         }
 
-        IsBusy = true;
+        if (!await TryEnterOperationAsync())
+            return;
+
         try
         {
             AppendLog($"建立網站 {NewSiteName} 於 {NewSiteParent}…");
@@ -298,9 +321,13 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
             RefreshSite();
             StatusMessage = $"網站已建立：{path}";
         }
+        catch (Exception ex)
+        {
+            ReportOperationFailure("建立網站", ex);
+        }
         finally
         {
-            IsBusy = false;
+            ExitOperation();
         }
     }
 
@@ -308,17 +335,21 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
     private async Task StartPreviewAsync()
     {
         if (!RequireSite(out var site)) return;
-        if (_previewProcess is { HasExited: false })
-        {
-            PreviewReady = true;
-            StatusMessage = $"本機預覽已就緒：{PreviewUrl}";
+        if (!await TryEnterOperationAsync())
             return;
-        }
 
-        PreviewReady = false;
-        IsBusy = true;
         try
         {
+            // Re-check inside the gate. Two command invocations can both pass
+            // the outer state check before the first one has started Hugo.
+            if (_previewProcess is { HasExited: false })
+            {
+                PreviewReady = true;
+                StatusMessage = $"本機預覽已就緒：{PreviewUrl}";
+                return;
+            }
+
+            PreviewReady = false;
             var result = await Services.Hugo.StartServerAsync(site);
             AppendLog(result.Message);
             StatusMessage = result.Message;
@@ -331,35 +362,44 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
                 PreviewReady = true;
             }
         }
+        catch (Exception ex)
+        {
+            PreviewReady = false;
+            ReportOperationFailure("啟動本機預覽", ex);
+        }
         finally
         {
-            IsBusy = false;
+            ExitOperation();
         }
     }
 
     [RelayCommand]
     private async Task StopPreviewAsync()
     {
-        var process = _previewProcess;
-        _previewProcess = null;
-        PreviewReady = false;
-
-        if (process is null || process.HasExited)
-        {
-            try { process?.Dispose(); } catch { /* ignore */ }
-            StatusMessage = "本機預覽未在執行。";
+        if (!await TryEnterOperationAsync())
             return;
-        }
 
         try
         {
-            process.Exited -= HandlePreviewProcessExited;
-        }
-        catch { /* ignore */ }
+            var process = _previewProcess;
+            _previewProcess = null;
+            PreviewReady = false;
 
-        IsBusy = true;
-        try
-        {
+            if (process is null || process.HasExited)
+            {
+                try { process?.Dispose(); } catch { /* ignore */ }
+                StatusMessage = "本機預覽未在執行。";
+                return;
+            }
+
+            try
+            {
+                process.Exited -= HandlePreviewProcessExited;
+            }
+            catch { /* ignore */ }
+
+            StatusMessage = "正在關閉本機預覽…";
+            AppendLog(StatusMessage);
             await Task.Run(() => Services.Hugo.StopServer(process));
             StatusMessage = "本機預覽已關閉。";
             AppendLog(StatusMessage);
@@ -371,13 +411,16 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
         }
         finally
         {
-            IsBusy = false;
+            ExitOperation();
         }
     }
 
     [RelayCommand]
     private void OpenPreviewInBrowser()
     {
+        if (_disposed)
+            return;
+
         if (_previewProcess is null || _previewProcess.HasExited)
         {
             PreviewReady = false;
@@ -406,7 +449,9 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
     private async Task BuildSiteAsync()
     {
         if (!RequireSite(out var site)) return;
-        IsBusy = true;
+        if (!await TryEnterOperationAsync())
+            return;
+
         try
         {
             AppendLog("hugo build…");
@@ -414,9 +459,83 @@ public partial class SetupViewModel : PageViewModelBase, IDisposable
             AppendLog(result.CombinedOutput);
             StatusMessage = result.Succeeded ? "本機備援建置成功（public/）" : "本機備援建置失敗";
         }
+        catch (Exception ex)
+        {
+            ReportOperationFailure("本機備援建置", ex);
+        }
         finally
         {
-            IsBusy = false;
+            ExitOperation();
+        }
+    }
+
+    private async Task<bool> TryEnterOperationAsync()
+    {
+        if (_disposed)
+            return false;
+
+        if (!await _operationGate.WaitAsync(0).ConfigureAwait(true))
+        {
+            StatusMessage = "已有環境操作進行中，請稍候完成後再試。";
+            return false;
+        }
+
+        IsBusy = true;
+        return true;
+    }
+
+    private void ExitOperation()
+    {
+        IsBusy = false;
+        try { _operationGate.Release(); } catch (SemaphoreFullException) { /* defensive */ }
+    }
+
+    private void ReportOperationFailure(string operationName, Exception ex)
+    {
+        StatusMessage = ex is OperationCanceledException
+            ? $"{operationName}已取消。"
+            : $"{operationName}失敗：{ex.Message}";
+        AppendLog(StatusMessage);
+    }
+
+    private async Task RefreshHugoCoreAsync()
+    {
+        try
+        {
+            var info = await Services.Hugo.DetectAsync();
+            HugoInstalled = info.IsInstalled;
+            HugoStatus = info.StatusMessage;
+            HugoPath = info.ExecutablePath ?? string.Empty;
+            AppendLog(info.StatusMessage);
+
+            if (info.IsInstalled)
+            {
+                HugoUpdateMessage = "正在檢查 Hugo 最新版本…";
+                var latest = await Services.Hugo.CheckLatestVersionAsync(info.Version);
+                HugoLatestCheckSucceeded = latest.CheckSucceeded;
+                HugoUpdateAvailable = latest.UpdateAvailable;
+                HugoUpdateMessage = latest.Message;
+                HugoInstallButtonText = latest.UpdateAvailable
+                    ? $"更新到 Hugo Extended v{latest.LatestVersion}"
+                    : "一鍵安裝／更新 Hugo Extended";
+                AppendLog(latest.Message);
+            }
+            else
+            {
+                HugoLatestCheckSucceeded = false;
+                HugoUpdateAvailable = false;
+                HugoUpdateMessage = "尚未安裝 Hugo；安裝時會取得最新版 Hugo Extended。";
+                HugoInstallButtonText = "一鍵安裝 Hugo Extended";
+            }
+        }
+        catch (Exception ex)
+        {
+            HugoInstalled = false;
+            HugoLatestCheckSucceeded = false;
+            HugoUpdateAvailable = false;
+            HugoStatus = $"Hugo 偵測失敗：{ex.Message}";
+            HugoUpdateMessage = "暫時無法偵測 Hugo；請稍後重試。";
+            AppendLog(HugoStatus);
         }
     }
 

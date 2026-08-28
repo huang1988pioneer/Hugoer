@@ -1,0 +1,13 @@
+<Project>
+  <!--
+    Avalonia.BuildServices adds an optional telemetry target to every project
+    that references Avalonia.  The telemetry is not used by Hugoer or its
+    offline harnesses, and it can fail a build when LocalAppData is locked down
+    (for example in CI or a packaged desktop environment).  This property is
+    intentionally set in Directory.Build.targets so it is evaluated after the
+    NuGet package props have appended their marker.
+  -->
+  <PropertyGroup Condition="'$(AvaloniaMainPackageVersion)' != ''">
+    <UsedAvaloniaProducts></UsedAvaloniaProducts>
+  </PropertyGroup>
+</Project>

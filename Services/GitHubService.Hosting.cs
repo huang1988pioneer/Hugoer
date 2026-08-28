@@ -111,9 +111,19 @@ public sealed partial class GitHubService
             };
         }
 
+        // Keep the full repository metadata instead of querying only
+        // `.permissions.admin`. GitHub Pages can also be managed by a
+        // maintainer (or an organization role that exposes a pages flag),
+        // while a collaborator with push-only access must receive the manual
+        // setup guidance below.
         var permission = await ProcessRunner.RunAsync(
             "gh",
-            $"api repos/{info.Owner}/{info.Repo} --jq .permissions.admin",
+            [
+                "api",
+                $"repos/{info.Owner}/{info.Repo}",
+                "-H",
+                "Accept: application/vnd.github+json"
+            ],
             sitePath,
             30_000,
             cancellationToken).ConfigureAwait(false);
@@ -127,7 +137,7 @@ public sealed partial class GitHubService
             };
         }
 
-        var canManagePages = permission.StdOut.Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
+        var canManagePages = HasPagesManagementPermission(permission.StdOut);
         if (!canManagePages)
         {
             return new CommandResult
@@ -135,14 +145,19 @@ public sealed partial class GitHubService
                 ExitCode = 0,
                 IsPartialSuccess = true,
                 StdOut = "網站檔案與 GitHub Actions workflow 已成功推送。",
-                StdErr = $"目前登入帳號具有 {info.Owner}/{info.Repo} 的推送權限，但沒有管理 GitHub Pages 設定所需的 admin 權限。\n" +
+                StdErr = $"目前登入帳號具有 {info.Owner}/{info.Repo} 的推送權限，但沒有管理 GitHub Pages 設定所需的 admin／maintain 或 Pages 管理權限。\n" +
                          "請 Repository 擁有者開啟 Settings > Pages，在 Build and deployment 的 Source 選擇 GitHub Actions；完成後回到 Hugoer 按「查詢 Pages 狀態」。"
             };
         }
 
         var current = await ProcessRunner.RunAsync(
             "gh",
-            $"api repos/{info.Owner}/{info.Repo}/pages",
+            [
+                "api",
+                $"repos/{info.Owner}/{info.Repo}/pages",
+                "-H",
+                "Accept: application/vnd.github+json"
+            ],
             sitePath,
             30_000,
             cancellationToken).ConfigureAwait(false);
@@ -156,9 +171,39 @@ public sealed partial class GitHubService
         }
 
         var method = pagesExist ? "PUT" : "POST";
+        // Pages should follow the repository's default branch, not whatever
+        // feature branch happens to be checked out locally when the command
+        // is invoked. Fall back to the local branch for older API payloads.
+        var sourceBranch = GetRepositoryDefaultBranch(permission.StdOut)
+                           ?? (string.IsNullOrWhiteSpace(info.Branch) ? "main" : info.Branch.Trim());
+        if (!GitBranchRegex().IsMatch(sourceBranch))
+        {
+            return new CommandResult
+            {
+                ExitCode = -1,
+                StdErr = "目前分支名稱格式不安全，無法設定 GitHub Pages。"
+            };
+        }
+
+        // The Pages API requires a source object even for workflow builds.
+        // gh api's bracket syntax emits the nested JSON object while the
+        // structured argument list keeps branch names out of a shell parser.
         var update = await ProcessRunner.RunAsync(
             "gh",
-            $"api -X {method} repos/{info.Owner}/{info.Repo}/pages -f build_type=workflow",
+            [
+                "api",
+                "-X",
+                method,
+                $"repos/{info.Owner}/{info.Repo}/pages",
+                "-H",
+                "Accept: application/vnd.github+json",
+                "-f",
+                "build_type=workflow",
+                "-f",
+                $"source[branch]={sourceBranch}",
+                "-f",
+                "source[path]=/"
+            ],
             sitePath,
             60_000,
             cancellationToken).ConfigureAwait(false);
@@ -212,7 +257,12 @@ public sealed partial class GitHubService
 
         var result = await ProcessRunner.RunAsync(
             "gh",
-            $"api repos/{info.Owner}/{info.Repo}/pages",
+            [
+                "api",
+                $"repos/{info.Owner}/{info.Repo}/pages",
+                "-H",
+                "Accept: application/vnd.github+json"
+            ],
             sitePath,
             30_000,
             cancellationToken).ConfigureAwait(false);
@@ -326,6 +376,55 @@ public sealed partial class GitHubService
                 ? $"{target.PagesProductName} 建議網址：{target.PagesUrl}\n{ProviderManualSetupMessage(target.Provider)}"
                 : ProviderManualSetupMessage(target.Provider)
         };
+    }
+
+    private static bool HasPagesManagementPermission(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty("permissions", out var permissions)
+                || permissions.ValueKind != JsonValueKind.Object)
+                return false;
+
+            // `maintain` is accepted by the Pages API for repositories where
+            // the role is available. Include the newer pages/manage_pages role
+            // names defensively for organization-specific permission payloads.
+            foreach (var propertyName in new[] { "admin", "maintain", "pages", "manage_pages" })
+            {
+                if (permissions.TryGetProperty(propertyName, out var value)
+                    && value.ValueKind == JsonValueKind.True)
+                    return true;
+            }
+        }
+        catch (JsonException)
+        {
+            // Treat an unexpected response as no confirmed management access;
+            // the caller will return actionable manual setup instructions.
+        }
+
+        return false;
+    }
+
+    private static string? GetRepositoryDefaultBranch(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.TryGetProperty("default_branch", out var branch)
+                && branch.ValueKind == JsonValueKind.String)
+            {
+                var value = branch.GetString()?.Trim();
+                return string.IsNullOrWhiteSpace(value) ? null : value;
+            }
+        }
+        catch (JsonException)
+        {
+            // The permission response is validated by the caller; a missing
+            // branch simply uses the checked-out/default fallback above.
+        }
+
+        return null;
     }
 
     public async Task<CommandResult> OpenGhAuthLoginAsync(CancellationToken cancellationToken = default)

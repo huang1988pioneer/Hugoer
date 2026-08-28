@@ -21,6 +21,12 @@ var structured = await ProcessRunner.RunAsync(
 Assert(structured.Succeeded, structured.CombinedOutput);
 Assert(structured.StdOut.Contains("structured argument with spaces", StringComparison.Ordinal), structured.StdOut);
 
+var shell = await ProcessRunner.RunShellAsync(
+    "echo shell argument with spaces",
+    timeoutMs: 10_000);
+Assert(shell.Succeeded, shell.CombinedOutput);
+Assert(shell.StdOut.Contains("shell argument with spaces", StringComparison.Ordinal), shell.StdOut);
+
 var invalidTimeout = await ProcessRunner.RunAsync("cmd.exe", "/c echo ignored", timeoutMs: 0);
 Assert(!invalidTimeout.Succeeded && invalidTimeout.StdErr.Contains("positive", StringComparison.OrdinalIgnoreCase),
     invalidTimeout.CombinedOutput);

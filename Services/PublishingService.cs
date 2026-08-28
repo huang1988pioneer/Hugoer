@@ -223,6 +223,10 @@ public sealed class PublishingService
             .ConfigureAwait(false);
         if (remote.Succeeded)
         {
+            var completedMessage = remote.IsPartialSuccess
+                && !string.IsNullOrWhiteSpace(remote.StdErr)
+                ? $"{successMessage}\n{remote.StdErr.Trim()}"
+                : successMessage;
             return new PublishResult
             {
                 RequestedMode = requestedMode,
@@ -230,7 +234,7 @@ public sealed class PublishingService
                 RemoteAttempted = true,
                 RemotePushSucceeded = true,
                 RemoteResult = remote,
-                Message = successMessage
+                Message = completedMessage
             };
         }
 

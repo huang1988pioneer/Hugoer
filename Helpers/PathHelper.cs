@@ -1,3 +1,5 @@
+using System.Security;
+
 namespace Hugoer.Helpers;
 
 public static class PathHelper
@@ -12,11 +14,43 @@ public static class PathHelper
     {
         get
         {
-            var dir = Path.Combine(
+            var preferred = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "Hugoer");
-            Directory.CreateDirectory(dir);
-            return dir;
+            try
+            {
+                Directory.CreateDirectory(preferred);
+                return preferred;
+            }
+            catch (Exception ex) when (
+                ex is IOException
+                or UnauthorizedAccessException
+                or SecurityException
+                or ArgumentException
+                or NotSupportedException)
+            {
+                // Portable and managed desktop environments can expose a
+                // read-only roaming profile. Keep the app usable by placing
+                // transient preferences/tools in the OS temp directory; the
+                // normal AppData path remains unchanged when it is writable.
+                try
+                {
+                    var fallback = Path.Combine(Path.GetTempPath(), "Hugoer");
+                    Directory.CreateDirectory(fallback);
+                    return fallback;
+                }
+                catch (Exception fallbackError) when (
+                    fallbackError is IOException
+                    or UnauthorizedAccessException
+                    or SecurityException
+                    or ArgumentException
+                    or NotSupportedException)
+                {
+                    // Let callers handle the final write failure, but avoid
+                    // throwing while merely resolving a path during startup.
+                    return preferred;
+                }
+            }
         }
     }
 

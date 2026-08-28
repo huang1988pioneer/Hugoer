@@ -188,6 +188,10 @@ public partial class MenuViewModel : PageViewModelBase, IDisposable
     private bool _loading;
     private bool _syncingSelection;
     private readonly IdleAutoSave _autoSave;
+    // Menu config and page front matter are separate files, but both can be
+    // saved by the same idle timer while a manual save is in flight. Serialize
+    // replacements so an older snapshot cannot overwrite a newer edit.
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
     private bool _disposed;
     private int _pageLoadGeneration;
     private CancellationTokenSource? _pageLoadCts;
@@ -486,6 +490,9 @@ public partial class MenuViewModel : PageViewModelBase, IDisposable
 
     private async Task AutoSaveAsync()
     {
+        if (_disposed)
+            return;
+
         if (IsDirty)
             await SaveCoreAsync(reload: false, auto: true);
         if (PageIsDirty)
@@ -494,11 +501,16 @@ public partial class MenuViewModel : PageViewModelBase, IDisposable
 
     private async Task SaveCoreAsync(bool reload, bool auto)
     {
-        if (!RequireSite(out var site)) return;
-        _document ??= Services.Menus.Load(site);
+        if (_disposed)
+            return;
 
+        await _saveGate.WaitAsync().ConfigureAwait(true);
         try
         {
+            if (_disposed || !RequireSite(out var site))
+                return;
+
+            _document ??= Services.Menus.Load(site);
             var entries = _all.Select(item => item.ToEntry()).ToList();
             Services.Menus.Save(site, _document, entries);
             IsDirty = false;
@@ -520,24 +532,35 @@ public partial class MenuViewModel : PageViewModelBase, IDisposable
         {
             StatusMessage = auto ? $"自動儲存失敗：{ex.Message}" : ex.Message;
         }
+        finally
+        {
+            _saveGate.Release();
+        }
     }
 
     private async Task SavePageCoreAsync(bool reload, bool auto)
     {
-        var selectedPage = SelectedPage;
-        if (selectedPage is null)
-        {
-            if (!auto)
-                StatusMessage = "請先選擇網站頁面";
+        if (_disposed)
             return;
-        }
 
-        var selectedPath = selectedPage.FullPath;
-        var title = PageTitle;
-        var body = PageBody ?? string.Empty;
-
+        await _saveGate.WaitAsync().ConfigureAwait(true);
         try
         {
+            if (_disposed)
+                return;
+
+            var selectedPage = SelectedPage;
+            if (selectedPage is null)
+            {
+                if (!auto)
+                    StatusMessage = "請先選擇網站頁面";
+                return;
+            }
+
+            var selectedPath = selectedPage.FullPath;
+            var title = PageTitle;
+            var body = PageBody ?? string.Empty;
+
             var document = Services.FrontMatter.Parse(await Services.Content.ReadAsync(selectedPath));
             if (!string.IsNullOrWhiteSpace(title))
                 document.Fields["title"] = title.Trim();
@@ -566,11 +589,18 @@ public partial class MenuViewModel : PageViewModelBase, IDisposable
         {
             StatusMessage = auto ? $"自動儲存失敗：{ex.Message}" : ex.Message;
         }
+        finally
+        {
+            _saveGate.Release();
+        }
     }
 
     [RelayCommand]
     private async Task CreatePageAsync()
     {
+        if (_disposed)
+            return;
+
         if (!RequireSite(out var site)) return;
         if (string.IsNullOrWhiteSpace(NewPageTitle))
         {
@@ -580,8 +610,12 @@ public partial class MenuViewModel : PageViewModelBase, IDisposable
 
         var folder = string.IsNullOrWhiteSpace(NewPageFolder) ? Slugify(NewPageTitle) : Slugify(NewPageFolder);
         var relative = $"{folder}/index.md";
+        await _saveGate.WaitAsync().ConfigureAwait(true);
         try
         {
+            if (_disposed)
+                return;
+
             await Services.Content.CreateMarkdownAsync(site, relative, NewPageTitle.Trim());
             NewPageTitle = string.Empty;
             StatusMessage = $"已建立頁面：{relative}";
@@ -592,6 +626,10 @@ public partial class MenuViewModel : PageViewModelBase, IDisposable
         catch (Exception ex)
         {
             StatusMessage = ex.Message;
+        }
+        finally
+        {
+            _saveGate.Release();
         }
     }
 

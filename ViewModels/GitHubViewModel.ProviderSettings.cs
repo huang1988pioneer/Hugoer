@@ -53,7 +53,11 @@ public partial class GitHubViewModel
     }
 
     [RelayCommand]
-    private async Task AddWorkflowOnlyAsync()
+    private Task AddWorkflowOnlyAsync() => RunOperationAsync(
+        "加入部署設定",
+        AddWorkflowOnlyCoreAsync);
+
+    private async Task AddWorkflowOnlyCoreAsync()
     {
         if (!RequireSite(out var site)) return;
         var provider = GetActiveRepositoryTarget()?.Provider ?? _activeProvider;
@@ -114,9 +118,10 @@ public partial class GitHubViewModel
             ProviderHint = option.Hint;
             IsGitHubProvider = provider == GitHostingProvider.GitHub;
             ProviderAccount = profile.AccountOrWorkspace;
-            ProviderPagesUrl = string.IsNullOrWhiteSpace(profile.PagesUrl)
-                ? ProviderPagesUrl
-                : profile.PagesUrl;
+            // Provider profiles are independent. Clear a previous provider's
+            // Pages URL when the newly selected profile has none; retaining it
+            // would make the five-minute monitor poll the wrong website.
+            ProviderPagesUrl = profile.PagesUrl?.Trim() ?? string.Empty;
             SyncRecommendedBaseUrl = profile.SyncRecommendedBaseUrl;
             CommitMessage = Hugoer.Services.GitHubService.IsAutomaticCommitMessage(profile.CommitMessage)
                 ? string.Empty
@@ -125,8 +130,9 @@ public partial class GitHubViewModel
                 RepositoryUrl = profile.RepositoryUrl;
             else
                 RepositoryUrl = urlToKeep;
-            if (!string.IsNullOrWhiteSpace(ProviderPagesUrl))
-                PagesUrl = ProviderPagesUrl;
+            PagesUrl = string.IsNullOrWhiteSpace(ProviderPagesUrl)
+                ? null
+                : ProviderPagesUrl;
             HasPagesRepositories = provider == GitHostingProvider.GitHub && PagesRepositories.Count > 0;
             ResetDeploymentMonitorForProvider(option.DisplayName);
         }
@@ -185,6 +191,21 @@ public partial class GitHubViewModel
             RepositoryTargetSummary =
                 $"這個網址屬於 {target.ProviderName}，目前選擇的是 {_activeProvider.DisplayName()}。請先切換上方 Git 平台，再使用此網址。";
             return;
+        }
+
+        // Provider profiles are intentionally durable, but a Pages URL is
+        // repository-specific.  When the user points this page at a different
+        // repository, discard the old profile URL before it can be used by the
+        // five-minute deployment monitor.  The parser-derived URL remains
+        // visible through PagesUrl and the user may enter a custom URL again.
+        var savedProfile = Services.Settings.GetGitProviderSettings(_activeProvider);
+        var savedTarget = Hugoer.Services.GitHubService.ParseRepositoryTarget(savedProfile.RepositoryUrl);
+        if (savedTarget.IsValid
+            && !GitRemoteSafety.IsSameRepository(savedTarget, target))
+        {
+            ProviderPagesUrl = string.Empty;
+            PagesUrl = target.PagesUrl;
+            ResetDeploymentMonitorForProvider(_activeProvider.DisplayName());
         }
 
         RepoName = target.Repository!;

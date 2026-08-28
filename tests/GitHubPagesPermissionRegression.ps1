@@ -9,15 +9,19 @@ $source = (Get-ChildItem -LiteralPath $serviceDirectory -Filter "GitHubService*.
     Sort-Object Name |
     ForEach-Object { Get-Content -Raw -LiteralPath $_.FullName }) -join "`n"
 
-$permissionCheck = $source.IndexOf(".permissions.admin", [System.StringComparison]::Ordinal)
-$managePagesCall = $source.IndexOf('api -X {method} repos/', [System.StringComparison]::Ordinal)
+$permissionCheck = $source.IndexOf("HasPagesManagementPermission(permission.StdOut)", [System.StringComparison]::Ordinal)
+$managePagesCall = $source.IndexOf('source[branch]={sourceBranch}', [System.StringComparison]::Ordinal)
 
 if ($permissionCheck -lt 0) {
-    throw "GitHub Pages management does not check repository admin permission."
+    throw "GitHub Pages management does not check repository admin/maintainer permission."
 }
 
 if ($managePagesCall -lt 0) {
     throw "GitHub Pages management API call was not found."
+}
+
+if ($source.IndexOf("GetRepositoryDefaultBranch(permission.StdOut)", [System.StringComparison]::Ordinal) -lt 0) {
+    throw "GitHub Pages source branch should follow the repository default branch."
 }
 
 if ($permissionCheck -gt $managePagesCall) {

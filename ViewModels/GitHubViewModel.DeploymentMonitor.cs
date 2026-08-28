@@ -8,10 +8,11 @@ public partial class GitHubViewModel
 {
     [RelayCommand]
     private Task CheckDeploymentNowAsync() =>
-        CheckDeploymentVersionAsync(manual: true, CancellationToken.None);
+        CheckDeploymentVersionAsync(manual: true, cancellationToken: _lifetimeCts.Token, waitForGate: true);
 
     private void EnsureDeploymentMonitorStarted()
     {
+        if (_disposed) return;
         if (_deploymentMonitorCts is not null) return;
         _deploymentMonitorCts = new CancellationTokenSource();
         _ = MonitorDeploymentLoopAsync(_deploymentMonitorCts.Token);
@@ -23,7 +24,7 @@ public partial class GitHubViewModel
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                await CheckDeploymentVersionAsync(manual: false, cancellationToken);
+                await CheckDeploymentVersionAsync(manual: false, cancellationToken, waitForGate: false);
                 await Task.Delay(DeploymentCheckInterval, cancellationToken);
             }
         }
@@ -33,9 +34,24 @@ public partial class GitHubViewModel
         }
     }
 
-    private async Task CheckDeploymentVersionAsync(bool manual, CancellationToken cancellationToken)
+    private async Task CheckDeploymentVersionAsync(
+        bool manual,
+        CancellationToken cancellationToken,
+        bool waitForGate = false)
     {
-        if (!await _deploymentCheckGate.WaitAsync(0, cancellationToken)) return;
+        if (_disposed)
+            return;
+
+        var entered = true;
+        if (waitForGate)
+        {
+            await _deploymentCheckGate.WaitAsync(cancellationToken);
+        }
+        else
+        {
+            entered = await _deploymentCheckGate.WaitAsync(0, cancellationToken);
+        }
+        if (!entered) return;
 
         var providerAtStart = _activeProvider;
         var pagesUrlAtStart = PagesUrl;
@@ -57,7 +73,10 @@ public partial class GitHubViewModel
             if (string.IsNullOrWhiteSpace(PagesUrl))
             {
                 var pages = await Services.GitHub.GetPagesStatusAsync(site, GetActiveRepositoryTarget(), cancellationToken);
-                PagesUrl = pages.HtmlUrl;
+                var target = GetActiveRepositoryTarget();
+                PagesUrl = !string.IsNullOrWhiteSpace(ProviderPagesUrl)
+                    ? ProviderPagesUrl
+                    : pages.HtmlUrl ?? target?.PagesUrl;
                 pagesUrlAtStart = PagesUrl;
             }
 
@@ -125,7 +144,13 @@ public partial class GitHubViewModel
 
     private async Task CheckDeploymentVersionAfterPushAsync(CancellationToken cancellationToken)
     {
-        await CheckDeploymentVersionAsync(manual: false, cancellationToken);
+        if (_disposed || cancellationToken.IsCancellationRequested)
+            return;
+
+        await CheckDeploymentVersionAsync(manual: false, cancellationToken, waitForGate: true);
+        if (_disposed || cancellationToken.IsCancellationRequested)
+            return;
+
         if (_lastDeploymentState == DeploymentVersionState.Latest)
             return;
 
@@ -138,7 +163,13 @@ public partial class GitHubViewModel
             StatusMessage = "網站已推送，正在等待線上版本更新。";
 
             await Task.Delay(delay, cancellationToken);
-            await CheckDeploymentVersionAsync(manual: true, cancellationToken);
+            if (_disposed || cancellationToken.IsCancellationRequested)
+                return;
+
+            await CheckDeploymentVersionAsync(manual: true, cancellationToken, waitForGate: true);
+            if (_disposed || cancellationToken.IsCancellationRequested)
+                return;
+
             if (_lastDeploymentState == DeploymentVersionState.Latest)
                 return;
         }
@@ -146,9 +177,18 @@ public partial class GitHubViewModel
 
     public override void Dispose()
     {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        _lifetimeCts.Cancel();
         _deploymentMonitorCts?.Cancel();
         _deploymentMonitorCts?.Dispose();
         _deploymentMonitorCts = null;
+        // Keep the lifetime CTS undisposed: a command continuation may still
+        // evaluate its token while unwinding after the page has detached.
+        // Cancellation releases the HTTP waits without risking an
+        // ObjectDisposedException in that continuation.
         base.Dispose();
         GC.SuppressFinalize(this);
     }

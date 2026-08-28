@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Security;
 using Hugoer.Helpers;
 using Hugoer.Models;
 
@@ -17,6 +18,7 @@ public sealed class SettingsService
     private readonly object _gate = new();
     private readonly string _settingsPath;
     private AppSettings _settings = new();
+    private string? _lastPersistenceError;
 
     public SettingsService(string? settingsPath = null)
     {
@@ -27,10 +29,25 @@ public sealed class SettingsService
 
     public AppSettings Current => _settings;
 
+    /// <summary>
+    /// The last file-persistence failure, if any. Settings remain available in
+    /// memory when the profile directory is read-only (common in portable or
+    /// managed environments), so a permissions issue never crashes startup.
+    /// </summary>
+    public string? LastPersistenceError
+    {
+        get
+        {
+            lock (_gate)
+                return _lastPersistenceError;
+        }
+    }
+
     public void Load()
     {
         lock (_gate)
         {
+            _lastPersistenceError = null;
             try
             {
                 if (!File.Exists(_settingsPath))
@@ -70,8 +87,24 @@ public sealed class SettingsService
     {
         lock (_gate)
         {
-            var json = JsonSerializer.Serialize(_settings, JsonOptions);
-            AtomicFileWriter.WriteAllText(_settingsPath, json);
+            try
+            {
+                var json = JsonSerializer.Serialize(_settings, JsonOptions);
+                AtomicFileWriter.WriteAllText(_settingsPath, json);
+                _lastPersistenceError = null;
+            }
+            catch (Exception ex) when (
+                ex is IOException
+                or UnauthorizedAccessException
+                or SecurityException
+                or ArgumentException
+                or NotSupportedException)
+            {
+                // Keep the in-memory settings usable. Callers can surface the
+                // diagnostic through LastPersistenceError without turning a
+                // read-only profile directory into an unhandled UI exception.
+                _lastPersistenceError = ex.Message;
+            }
         }
     }
 

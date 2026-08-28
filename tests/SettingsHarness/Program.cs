@@ -48,6 +48,14 @@ try
     invalid.Load();
     Assert(invalid.GetDeploymentMode() == DeploymentMode.GitHubPages,
         "undefined publishing enum values must migrate to the remote default");
+
+    var blockedDirectory = Path.Combine(temp, "blocked");
+    File.WriteAllText(blockedDirectory, "not a directory");
+    var readOnlyProfile = new SettingsService(Path.Combine(blockedDirectory, "settings.json"));
+    readOnlyProfile.Load();
+    readOnlyProfile.SetDeploymentMode(DeploymentMode.Local);
+    Assert(readOnlyProfile.LastPersistenceError is not null,
+        "a profile write failure should be captured without throwing");
     Console.WriteLine("SETTINGS_HARNESS_OK");
 }
 finally

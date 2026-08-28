@@ -88,6 +88,20 @@ vpk pack --packId Hugoer --packVersion 1.7.0 --packDir .\dist\publish\win-x64 --
 8. 遠端模式會直接讀取／合併並提交 repository，由 GitHub Actions／平台工作流程建置 Pages，不要求本機 Hugo；GitHub 可使用 `gh` 或 Git Credential Manager／SSH；遠端失敗時可自動或手動執行「本機部署備援」產生 `public/`。
 9. **Git 部署** → 查看「線上版本監控」；Hugoer 每 5 分鐘確認 Pages／靜態網站是否已更新至本次推送版本
 
+## GitHub Pages 工作流程與權限
+
+第一次使用 GitHub Pages 時，Hugoer 會在網站 repository 寫入
+`.github/workflows/hugo.yml`。範本依照 [Hugo 官方 GitHub Pages 指南](https://gohugo.io/host-and-deploy/host-on-github-pages/)產生，包含：
+
+- `push`（`main`／`master`）及 `workflow_dispatch` 觸發器。
+- `contents: read`、`pages: write`、`id-token: write` 最小部署權限與不可取消的 `pages` concurrency。
+- recursive submodule、完整 Git 歷史、條件式 Go／Node.js、Dart Sass 與 Hugo Extended 工具安裝。
+- Hugo `--gc --minify --baseURL "${{ steps.pages.outputs.base_url }}/"` production build、cache restore/save，以及 Pages artifact 上傳與部署。
+
+GitHub REST Pages API 的自動設定需要 repository 的 `admin`、`maintain` 或 Pages 管理權限；只有推送權限的協作者仍可正常提交網站，但必須由 repository 擁有者在 **Settings → Pages → Build and deployment → Source** 選擇 **GitHub Actions**。若 API 回傳 404，這通常代表 Pages 尚未啟用或目前帳號沒有管理權限，不代表網站檔案沒有推送成功。
+
+GitHub Pages 的 `source[branch]` 會以 repository 預設分支（若 API 回應沒有提供才退回目前分支），`source[path]` 使用根目錄 `/` 傳給 API；個人網站與專案網站的 `baseURL` 則由 `configure-pages` 在 Actions 執行時提供，避免子路徑網站的 CSS、圖片及連結失效。詳細 API 欄位請參閱 [GitHub Pages REST API](https://docs.github.com/en/rest/pages/pages?apiVersion=2022-11-28)。
+
 ## 專案結構
 
 ```

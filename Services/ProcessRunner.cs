@@ -183,7 +183,7 @@ public static class ProcessRunner
         {
             return await RunAsync(
                 "cmd.exe",
-                $"/c {command}",
+                ["/c", command],
                 workingDirectory,
                 timeoutMs,
                 cancellationToken).ConfigureAwait(false);
@@ -191,7 +191,7 @@ public static class ProcessRunner
 
         return await RunAsync(
             "/bin/bash",
-            $"-lc \"{command.Replace("\"", "\\\"")}\"",
+            ["-lc", command],
             workingDirectory,
             timeoutMs,
             cancellationToken).ConfigureAwait(false);

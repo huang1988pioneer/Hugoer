@@ -83,6 +83,9 @@ public partial class ConfigViewModel : PageViewModelBase, IDisposable
 
     public override async Task OnNavigatedToAsync()
     {
+        if (_disposed)
+            return;
+
         await RefreshFilesAsync();
     }
 
@@ -447,11 +450,16 @@ public partial class ConfigViewModel : PageViewModelBase, IDisposable
     [RelayCommand]
     private async Task CreateDefaultConfigAsync()
     {
+        if (_disposed)
+            return;
+
         if (!RequireSite(out var site)) return;
-        var path = Path.Combine(site, "hugo.toml");
-        if (!File.Exists(path))
+        try
         {
-            var content = """
+            var path = Path.Combine(site, "hugo.toml");
+            if (!File.Exists(path))
+            {
+                var content = """
 baseURL = 'https://example.org/'
 locale = 'zh-tw'
 title = 'My Hugo Site'
@@ -465,12 +473,24 @@ theme = ''
   toggle = true
   default = 'auto'
 """;
-            await AtomicFileWriter.WriteAllTextAsync(path, content);
-        }
+                await AtomicFileWriter.WriteAllTextAsync(path, content);
+            }
 
-        await RefreshFilesAsync();
-        SelectedFile = path;
-        StatusMessage = "已建立 hugo.toml";
+            await RefreshFilesAsync();
+            if (!_disposed)
+            {
+                SelectedFile = path;
+                StatusMessage = "已建立 hugo.toml";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "建立設定檔已取消。";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"建立 hugo.toml 失敗：{ex.Message}";
+        }
     }
 
     private void ParseQuickFields(string text)

@@ -11,6 +11,10 @@ Assert(!github.IsUserOrOrganizationSite, "hello-world is not a user site.");
 var gitSuffix = GitHubRepositoryParser.Parse("https://github.com/octocat/hello-world.git");
 Assert(gitSuffix.IsValid && gitSuffix.Repository == "hello-world", ".git suffix must be stripped.");
 
+var ssh = GitHubRepositoryParser.Parse("git@github.com:octocat/hello-world.git");
+Assert(ssh.IsValid && ssh.Owner == "octocat" && ssh.Repository == "hello-world",
+    "common hosted SSH remotes must normalize to the same repository target.");
+
 var shortForm = GitHubRepositoryParser.Parse("octocat/hello-world");
 Assert(shortForm.IsValid && shortForm.Owner == "octocat" && shortForm.Repository == "hello-world",
     "owner/repo shorthand must parse.");
