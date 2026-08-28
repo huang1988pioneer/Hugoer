@@ -1,4 +1,4 @@
-name: Android mobile release
+name: Mobile package and release
 
 on:
   push:
@@ -7,19 +7,72 @@ on:
   pull_request:
     paths:
       - "mobile/android/**"
+      - "mobile/ios/**"
       - ".github/workflows/android-mobile-release.yml"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a GitHub Release after packaging both platforms
+        required: false
+        default: false
+        type: boolean
+      release_tag:
+        description: Existing or new mobile-vX.Y.Z tag to publish when publish is true
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
 
+env:
+  # A manual run can package artifacts for a branch, or publish them under an
+  # explicitly supplied mobile release tag. Tag pushes naturally use the tag
+  # that triggered the workflow.
+  MOBILE_RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+
 concurrency:
-  group: android-mobile-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: mobile-release-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  package:
+  resolve:
+    name: Resolve mobile source
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
+    steps:
+      - name: Check out source metadata
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve source for packaging
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          WORKFLOW_REF: ${{ github.ref }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          checkout_ref="$WORKFLOW_SHA"
+
+          if [[ "$EVENT_NAME" == "push" && "$WORKFLOW_REF" == refs/tags/* ]]; then
+            checkout_ref="$WORKFLOW_REF"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" && -n "$INPUT_RELEASE_TAG" ]]; then
+            if git rev-parse --verify --quiet "refs/tags/$INPUT_RELEASE_TAG" >/dev/null; then
+              checkout_ref="$INPUT_RELEASE_TAG"
+            fi
+          fi
+
+          echo "checkout_ref=$checkout_ref" >> "$GITHUB_OUTPUT"
+
+  android:
     name: Test and package Android APKs
+    needs: resolve
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,6 +82,9 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.checkout_ref }}
+          fetch-depth: 0
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -45,7 +101,7 @@ jobs:
       - name: Stage optimized unsigned APK
         working-directory: .
         run: |
-          release_name="${GITHUB_REF_NAME//\//-}"
+          release_name="${MOBILE_RELEASE_REF//\//-}"
           mkdir -p artifacts/android
           cp mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk artifacts/android/HugoerMobile-${release_name}-unsigned.apk
 
@@ -55,7 +111,7 @@ jobs:
       - name: Stage installable preview APK
         working-directory: .
         run: |
-          release_name="${GITHUB_REF_NAME//\//-}"
+          release_name="${MOBILE_RELEASE_REF//\//-}"
           mkdir -p artifacts/android
           cp mobile/android/app/build/outputs/apk/release/app-release.apk artifacts/android/HugoerMobile-${release_name}-preview-signed.apk
 
@@ -66,29 +122,234 @@ jobs:
           if-no-files-found: error
           path: artifacts/android/*.apk
 
+  ios:
+    name: Package iOS IPA
+    if: github.event_name != 'pull_request'
+    needs: resolve
+    runs-on: macos-14
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.checkout_ref }}
+          fetch-depth: 0
+
+      - name: Detect iOS signing material
+        id: signing
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          if [[ -n "$APPLE_TEAM_ID" && -n "$BUILD_CERTIFICATE_BASE64" && -n "$P12_PASSWORD" && -n "$BUILD_PROVISION_PROFILE_BASE64" && -n "$KEYCHAIN_PASSWORD" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Apple signing certificate and provisioning profile
+        id: install_signing
+        if: steps.signing.outputs.available == 'true'
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          certificate_path="$RUNNER_TEMP/build_certificate.p12"
+          profile_path="$RUNNER_TEMP/build_profile.mobileprovision"
+          profile_plist="$RUNNER_TEMP/build_profile.plist"
+          keychain_path="$RUNNER_TEMP/hugoer-signing.keychain-db"
+
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$certificate_path"
+          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o "$profile_path"
+          security cms -D -i "$profile_path" > "$profile_plist"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security list-keychain -d user -s "$keychain_path"
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/"
+          profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$profile_plist")"
+          echo "profile_uuid=$profile_uuid" >> "$GITHUB_OUTPUT"
+
+      - name: Build IPA
+        id: package
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SIGNING_AVAILABLE: ${{ steps.signing.outputs.available }}
+          PROFILE_UUID: ${{ steps.install_signing.outputs.profile_uuid }}
+        run: |
+          set -euo pipefail
+          release_name="${MOBILE_RELEASE_REF//\//-}"
+          archive_path="$RUNNER_TEMP/HugoerMobile.xcarchive"
+          artifact_dir="$GITHUB_WORKSPACE/artifacts/ios"
+          mkdir -p "$artifact_dir"
+
+          if [[ "$SIGNING_AVAILABLE" == "true" ]]; then
+            export_path="$RUNNER_TEMP/HugoerMobile-export"
+            export_options="$RUNNER_TEMP/HugoerMobile-ExportOptions.plist"
+            cat > "$export_options" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>ad-hoc</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>provisioningProfiles</key><dict>
+              <key>com.huang1988pioneer.hugoer.mobile</key><string>$PROFILE_UUID</string>
+            </dict>
+          </dict></plist>
+          EOF
+            xcodebuild \
+              -project mobile/ios/HugoerMobile.xcodeproj \
+              -scheme HugoerMobile \
+              -configuration Release \
+              -sdk iphoneos \
+              -destination 'generic/platform=iOS' \
+              -archivePath "$archive_path" \
+              DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+              CODE_SIGN_STYLE=Manual \
+              PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+              archive
+            xcodebuild -exportArchive \
+              -archivePath "$archive_path" \
+              -exportOptionsPlist "$export_options" \
+              -exportPath "$export_path"
+            ipa_path="$(find "$export_path" -type f -name '*.ipa' -print -quit)"
+            test -n "$ipa_path"
+            output="$artifact_dir/HugoerMobile-${release_name}-ad-hoc-signed.ipa"
+            cp "$ipa_path" "$output"
+            echo "signing=signed" >> "$GITHUB_OUTPUT"
+          else
+            xcodebuild \
+              -project mobile/ios/HugoerMobile.xcodeproj \
+              -scheme HugoerMobile \
+              -configuration Release \
+              -sdk iphoneos \
+              -destination 'generic/platform=iOS' \
+              -archivePath "$archive_path" \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              archive
+            app_path="$archive_path/Products/Applications/HugoerMobile.app"
+            test -d "$app_path"
+            payload_root="$RUNNER_TEMP/HugoerMobile-ipa-payload"
+            mkdir -p "$payload_root/Payload"
+            cp -R "$app_path" "$payload_root/Payload/HugoerMobile.app"
+            output="$artifact_dir/HugoerMobile-${release_name}-unsigned.ipa"
+            (cd "$payload_root" && /usr/bin/zip -qry "$output" Payload)
+            echo "signing=unsigned" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "artifact_name=$(basename "$output")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload IPA build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HugoerMobile-${{ github.run_id }}-ipa
+          if-no-files-found: error
+          path: artifacts/ios/*.ipa
+
   release:
-    name: Publish Android release
-    if: startsWith(github.ref, 'refs/tags/mobile-v')
-    needs: package
+    name: Publish mobile release
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/mobile-v')) || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    needs: [resolve, android, ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - name: Check out source for release metadata
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.checkout_ref }}
+          fetch-depth: 0
+
+      - name: Validate release tag and app versions
+        id: metadata
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUBLISH: ${{ inputs.publish }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_REF: ${{ env.MOBILE_RELEASE_REF }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$PUBLISH" == "true" && -z "$INPUT_RELEASE_TAG" ]]; then
+            echo "::error::Set release_tag when publishing from a manual workflow run."
+            exit 1
+          fi
+
+          if [[ ! "$RELEASE_REF" =~ ^mobile-v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Release publishing requires a semver tag such as mobile-v2.0.1 (or a prerelease suffix). Received: $RELEASE_REF"
+            exit 1
+          fi
+
+          android_version="$(sed -nE 's/.*versionName = "([^"]+)".*/\1/p' mobile/android/app/build.gradle.kts | head -n 1)"
+          ios_version="$(sed -nE 's/.*MARKETING_VERSION = ([^;]+);/\1/p' mobile/ios/HugoerMobile.xcodeproj/project.pbxproj | head -n 1)"
+          if [[ -z "$android_version" || -z "$ios_version" ]]; then
+            echo "::error::Could not read Android/iOS marketing versions from the source tree."
+            exit 1
+          fi
+          if [[ "$android_version" != "$ios_version" ]]; then
+            echo "::error::Android version $android_version does not match iOS version $ios_version."
+            exit 1
+          fi
+
+          source_commit="$(git rev-parse HEAD)"
+
+          if git rev-parse --verify --quiet "refs/tags/${RELEASE_REF}" >/dev/null; then
+            tag_commit="$(git rev-list -n 1 "refs/tags/${RELEASE_REF}")"
+            if [[ "$tag_commit" != "$source_commit" ]]; then
+              echo "::error::Existing tag $RELEASE_REF points to $tag_commit, not the packaged source commit $source_commit."
+              exit 1
+            fi
+          fi
+
+          release_notes="docs/releases/${RELEASE_REF}.md"
+          if [[ ! -f "$release_notes" ]]; then
+            echo "::error::Release notes are required at $release_notes."
+            exit 1
+          fi
+
+          base_tag="$(printf '%s' "$RELEASE_REF" | sed -E 's/^(mobile-v[0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+          expected_tag="mobile-v${android_version}"
+          if [[ "$base_tag" != "$expected_tag" ]]; then
+            echo "::error::Release tag $RELEASE_REF does not match app version $android_version (expected ${expected_tag})."
+            exit 1
+          fi
+
+          echo "release_version=${RELEASE_REF#mobile-v}" >> "$GITHUB_OUTPUT"
+          echo "source_commit=$source_commit" >> "$GITHUB_OUTPUT"
+
       - name: Download packaged APKs
         uses: actions/download-artifact@v4
         with:
           name: HugoerMobile-${{ github.run_id }}-apk
           path: artifacts/android
 
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Download packaged IPA
+        uses: actions/download-artifact@v4
         with:
-          name: Hugoer Mobile ${{ github.ref_name }}
-          body: |
-            ## APKs
+          name: HugoerMobile-${{ github.run_id }}-ipa
+          path: artifacts/ios
 
-            - `*-preview-signed.apk` is optimized and installable, signed with the Android debug key solely for device QA. It is **not** for Play Store submission.
-            - `*-unsigned.apk` is optimized and must be signed with the production upload key before distribution.
-
-            The release runs the Android unit tests before packaging both assets.
-          files: artifacts/android/*.apk
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.MOBILE_RELEASE_REF }}
+          name: Hugoer Mobile ${{ steps.metadata.outputs.release_version }}
+          target_commitish: ${{ steps.metadata.outputs.source_commit }}
+          body_path: docs/releases/${{ env.MOBILE_RELEASE_REF }}.md
+          files: |
+            artifacts/android/*.apk
+            artifacts/ios/*.ipa

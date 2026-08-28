@@ -2,14 +2,16 @@ import SwiftUI
 
 struct ArticleEditorView: View {
     let article: Article
+    let previewBaseURL: String?
     let onSave: (String, String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var title: String
     @State private var markdown: String
     @State private var preview = false
 
-    init(article: Article, onSave: @escaping (String, String) -> Void) {
+    init(article: Article, previewBaseURL: String? = nil, onSave: @escaping (String, String) -> Void) {
         self.article = article
+        self.previewBaseURL = previewBaseURL
         self.onSave = onSave
         _title = State(initialValue: article.title)
         _markdown = State(initialValue: article.body)
@@ -31,9 +33,7 @@ struct ArticleEditorView: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.title3.weight(.semibold))
                     if preview {
-                        MarkdownPreview(markdown: markdown)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(4)
+                        ArticlePreview(title: title, markdown: markdown, baseURL: previewBaseURL)
                     } else {
                         TextEditor(text: $markdown)
                             .font(.body.monospaced())
@@ -62,19 +62,4 @@ struct ArticleEditorView: View {
             }
         }
     }
-}
-
-private struct MarkdownPreview: View {
-    let markdown: String
-
-    var bodyView: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(markdown.split(separator: "\n").map(String.init).filter { !$0.isEmpty && !$0.hasPrefix("---") }.prefix(14).enumerated()), id: \.offset) { _, line in
-                Text(line.trimmingCharacters(in: CharacterSet(charactersIn: "# ")))
-                    .font(line.hasPrefix("#") ? .title2.bold() : .body)
-            }
-        }
-    }
-
-    var body: some View { bodyView }
 }
