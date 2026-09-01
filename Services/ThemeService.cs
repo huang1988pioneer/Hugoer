@@ -101,7 +101,7 @@ public sealed partial class ThemeService
             progress?.Report($"以 git submodule 安裝 {preset.DisplayName}…");
             result = await ProcessRunner.RunAsync(
                 "git",
-                $"submodule add --depth 1 {preset.RepoUrl} themes/{preset.FolderName}",
+                ["submodule", "add", "--depth", "1", preset.RepoUrl, $"themes/{preset.FolderName}"],
                 sitePath,
                 timeoutMs: 180_000,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -111,7 +111,7 @@ public sealed partial class ThemeService
                 progress?.Report("submodule 失敗，改為 clone…");
                 result = await ProcessRunner.RunAsync(
                     "git",
-                    $"clone --depth 1 {preset.RepoUrl} \"{target}\"",
+                    ["clone", "--depth", "1", preset.RepoUrl, target],
                     sitePath,
                     timeoutMs: 180_000,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -122,7 +122,7 @@ public sealed partial class ThemeService
             progress?.Report($"git clone {preset.DisplayName}…");
             result = await ProcessRunner.RunAsync(
                 "git",
-                $"clone --depth 1 {preset.RepoUrl} \"{target}\"",
+                ["clone", "--depth", "1", preset.RepoUrl, target],
                 sitePath,
                 timeoutMs: 180_000,
                 cancellationToken: cancellationToken).ConfigureAwait(false);

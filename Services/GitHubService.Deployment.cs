@@ -36,7 +36,7 @@ public sealed partial class GitHubService
         progress?.Report($"建立 GitHub repository：{repoName}…");
 
         var remote = await ProcessRunner.RunAsync(
-            "git", "remote get-url origin", sitePath, 10_000, cancellationToken).ConfigureAwait(false);
+            "git", ["remote", "get-url", "origin"], sitePath, 10_000, cancellationToken).ConfigureAwait(false);
 
         if (remote.Succeeded)
         {
@@ -61,7 +61,7 @@ public sealed partial class GitHubService
 
             progress?.Report("本機已有 origin，推送到既有 repository…");
             var push = await ProcessRunner.RunAsync(
-                "git", "push -u origin HEAD", sitePath, 180_000, cancellationToken).ConfigureAwait(false);
+                "git", ["push", "-u", "origin", "HEAD"], sitePath, 180_000, cancellationToken).ConfigureAwait(false);
             if (!push.Succeeded)
                 return push;
         }
@@ -123,7 +123,7 @@ public sealed partial class GitHubService
         if (!init.Succeeded) return init;
 
         var remote = await ProcessRunner.RunAsync(
-            "git", "remote get-url origin", sitePath, 10_000, cancellationToken).ConfigureAwait(false);
+            "git", ["remote", "get-url", "origin"], sitePath, 10_000, cancellationToken).ConfigureAwait(false);
         if (remote.Succeeded)
         {
             var existing = ParseRemoteTarget(remote.StdOut.Trim());
@@ -151,12 +151,12 @@ public sealed partial class GitHubService
 
         progress?.Report("抓取遠端預設分支…");
         var fetch = await ProcessRunner.RunAsync(
-            "git", "fetch origin --prune", sitePath, 120_000, cancellationToken).ConfigureAwait(false);
+            "git", ["fetch", "origin", "--prune"], sitePath, 120_000, cancellationToken).ConfigureAwait(false);
         if (!fetch.Succeeded)
             return GitHostingProcessErrors.WithRepositoryAccessHint(target.Provider, "抓取遠端預設分支", fetch);
 
         var remoteHead = await ProcessRunner.RunAsync(
-            "git", "ls-remote --symref origin HEAD", sitePath, 30_000, cancellationToken).ConfigureAwait(false);
+            "git", ["ls-remote", "--symref", "origin", "HEAD"], sitePath, 30_000, cancellationToken).ConfigureAwait(false);
         var branchMatch = RemoteHeadRegex().Match(remoteHead.StdOut);
         var remoteBranch = StaticPagesDeployment.ResolveSourceBranch(
             target,
@@ -166,7 +166,7 @@ public sealed partial class GitHubService
 
         var remoteRef = await ProcessRunner.RunAsync(
             "git",
-            $"rev-parse --verify \"refs/remotes/origin/{remoteBranch}\"",
+            ["rev-parse", "--verify", $"refs/remotes/origin/{remoteBranch}"],
             sitePath,
             10_000,
             cancellationToken).ConfigureAwait(false);
@@ -180,7 +180,7 @@ public sealed partial class GitHubService
         }
 
         var localHead = await ProcessRunner.RunAsync(
-            "git", "rev-parse --verify HEAD", sitePath, 10_000, cancellationToken).ConfigureAwait(false);
+            "git", ["rev-parse", "--verify", "HEAD"], sitePath, 10_000, cancellationToken).ConfigureAwait(false);
         if (StaticPagesDeployment.ShouldPushSourceBranch(target))
         {
             if (remoteHasCommit && !localHead.Succeeded)
@@ -509,11 +509,11 @@ public sealed partial class GitHubService
     {
         progress?.Report($"抓取遠端 {branch} 更新…");
         var fetch = await ProcessRunner.RunAsync(
-            "git", "fetch origin --prune", sitePath, 120_000, cancellationToken).ConfigureAwait(false);
+            "git", ["fetch", "origin", "--prune"], sitePath, 120_000, cancellationToken).ConfigureAwait(false);
         if (!fetch.Succeeded) return WithGitPushHint(fetch);
 
         var localHead = await ProcessRunner.RunAsync(
-            "git", "rev-parse --verify HEAD", sitePath, 10_000, cancellationToken).ConfigureAwait(false);
+            "git", ["rev-parse", "--verify", "HEAD"], sitePath, 10_000, cancellationToken).ConfigureAwait(false);
         if (!localHead.Succeeded)
             return new CommandResult { ExitCode = 0, StdOut = "本機尚無 commit，略過合併遠端更新。" };
 
@@ -557,7 +557,7 @@ public sealed partial class GitHubService
         if (merge.Succeeded)
             return merge;
 
-        await ProcessRunner.RunAsync("git", "merge --abort", sitePath, 15_000, cancellationToken)
+        await ProcessRunner.RunAsync("git", ["merge", "--abort"], sitePath, 15_000, cancellationToken)
             .ConfigureAwait(false);
         return new CommandResult
         {

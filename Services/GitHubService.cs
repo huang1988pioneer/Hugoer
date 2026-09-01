@@ -54,7 +54,10 @@ public sealed partial class GitHubService
             return GitHubRepositoryLookup.Fail("Repository 名稱格式無效。");
 
         var user = await ProcessRunner.RunAsync(
-            "gh", "api user --jq .login", timeoutMs: 15_000, cancellationToken: cancellationToken)
+            "gh",
+            ["api", "user", "--jq", ".login"],
+            timeoutMs: 15_000,
+            cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         if (!user.Succeeded || string.IsNullOrWhiteSpace(user.StdOut))
             return GitHubRepositoryLookup.Fail("無法取得目前 GitHub 帳號。請先執行 gh auth login。");
@@ -66,7 +69,7 @@ public sealed partial class GitHubService
 
         var meta = await ProcessRunner.RunAsync(
             "gh",
-            $"api repos/{owner}/{name}",
+            ["api", $"repos/{owner}/{name}"],
             timeoutMs: 30_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!meta.Succeeded)
@@ -79,7 +82,7 @@ public sealed partial class GitHubService
 
         var contents = await ProcessRunner.RunAsync(
             "gh",
-            $"api repos/{owner}/{name}/contents",
+            ["api", $"repos/{owner}/{name}/contents"],
             timeoutMs: 30_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -138,7 +141,7 @@ public sealed partial class GitHubService
 
         var result = await ProcessRunner.RunAsync(
             "gh",
-            $"api repos/{target.Owner}/{target.Repository} --jq .permissions.push",
+            ["api", $"repos/{target.Owner}/{target.Repository}", "--jq", ".permissions.push"],
             timeoutMs: 30_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (result.Succeeded)
@@ -188,7 +191,7 @@ public sealed partial class GitHubService
     {
         var result = await ProcessRunner.RunAsync(
             "gh",
-            "api --paginate user/repos?per_page=100&affiliation=owner,collaborator&sort=updated",
+            ["api", "--paginate", "user/repos?per_page=100&affiliation=owner,collaborator&sort=updated"],
             timeoutMs: 45_000,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!result.Succeeded)
@@ -312,14 +315,16 @@ public sealed partial class GitHubService
 
     public async Task<bool> IsGitAvailableAsync(CancellationToken cancellationToken = default)
     {
-        var r = await ProcessRunner.RunAsync("git", "--version", timeoutMs: 10_000, cancellationToken: cancellationToken)
+        var r = await ProcessRunner.RunAsync(
+            "git", ["--version"], timeoutMs: 10_000, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         return r.Succeeded;
     }
 
     public async Task<bool> IsGhAvailableAsync(CancellationToken cancellationToken = default)
     {
-        var r = await ProcessRunner.RunAsync("gh", "--version", timeoutMs: 10_000, cancellationToken: cancellationToken)
+        var r = await ProcessRunner.RunAsync(
+            "gh", ["--version"], timeoutMs: 10_000, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         return r.Succeeded;
     }
@@ -328,13 +333,17 @@ public sealed partial class GitHubService
     {
         var data = new GitRemoteInfo();
 
-        var branch = await ProcessRunner.RunAsync(
-            "git", "branch --show-current", sitePath, 10_000, cancellationToken).ConfigureAwait(false);
+        var branchTask = ProcessRunner.RunAsync(
+            "git", ["branch", "--show-current"], sitePath, 10_000, cancellationToken);
+        var remoteTask = ProcessRunner.RunAsync(
+            "git", ["remote", "get-url", "origin"], sitePath, 10_000, cancellationToken);
+        await Task.WhenAll(branchTask, remoteTask).ConfigureAwait(false);
+
+        var branch = await branchTask.ConfigureAwait(false);
         if (branch.Succeeded)
             data.Branch = branch.StdOut.Trim();
 
-        var remote = await ProcessRunner.RunAsync(
-            "git", "remote get-url origin", sitePath, 10_000, cancellationToken).ConfigureAwait(false);
+        var remote = await remoteTask.ConfigureAwait(false);
         if (remote.Succeeded)
         {
             data.RemoteUrl = remote.StdOut.Trim();
@@ -346,13 +355,17 @@ public sealed partial class GitHubService
 
         if (data.Provider is null or GitHostingProvider.GitHub)
         {
-            var auth = await ProcessRunner.RunAsync(
-                "gh", "auth status", sitePath, 15_000, cancellationToken).ConfigureAwait(false);
+            var authTask = ProcessRunner.RunAsync(
+                "gh", ["auth", "status"], sitePath, 15_000, cancellationToken);
+            var userTask = ProcessRunner.RunAsync(
+                "gh", ["api", "user", "--jq", ".login"], sitePath, 15_000, cancellationToken);
+            await Task.WhenAll(authTask, userTask).ConfigureAwait(false);
+
+            var auth = await authTask.ConfigureAwait(false);
             data.GhAuthenticated = auth.Succeeded
                 || auth.CombinedOutput.Contains("Logged in", StringComparison.OrdinalIgnoreCase);
 
-            var user = await ProcessRunner.RunAsync(
-                "gh", "api user --jq .login", sitePath, 15_000, cancellationToken).ConfigureAwait(false);
+            var user = await userTask.ConfigureAwait(false);
             if (user.Succeeded)
                 data.GhUser = user.StdOut.Trim();
         }
@@ -364,7 +377,8 @@ public sealed partial class GitHubService
     {
         if (!Directory.Exists(Path.Combine(sitePath, ".git")))
         {
-            var init = await ProcessRunner.RunAsync("git", "init -b main", sitePath, 30_000, cancellationToken)
+            var init = await ProcessRunner.RunAsync(
+                    "git", ["init", "-b", "main"], sitePath, 30_000, cancellationToken)
                 .ConfigureAwait(false);
             if (!init.Succeeded)
                 return init;
@@ -422,7 +436,7 @@ Thumbs.db
 
         var log = await ProcessRunner.RunAsync(
             "git",
-            "log --format=%s --all",
+            ["log", "--format=%s", "--all"],
             sitePath,
             30_000,
             cancellationToken).ConfigureAwait(false);
@@ -462,11 +476,13 @@ Thumbs.db
         string message,
         CancellationToken cancellationToken = default)
     {
-        var add = await ProcessRunner.RunAsync("git", "add -A", sitePath, 60_000, cancellationToken)
+        var add = await ProcessRunner.RunAsync(
+            "git", ["add", "-A"], sitePath, 60_000, cancellationToken)
             .ConfigureAwait(false);
         if (!add.Succeeded)
             return add;
-        var status = await ProcessRunner.RunAsync("git", "status --porcelain", sitePath, 30_000, cancellationToken)
+        var status = await ProcessRunner.RunAsync(
+            "git", ["status", "--porcelain"], sitePath, 30_000, cancellationToken)
             .ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(status.StdOut))
             return new CommandResult { ExitCode = 0, StdOut = "沒有需要提交的變更。" };
@@ -475,7 +491,8 @@ Thumbs.db
             ? await NextDatedCommitMessageAsync(sitePath, cancellationToken: cancellationToken)
             : message.Trim();
         var env = new Dictionary<string, string?>();
-        var email = await ProcessRunner.RunAsync("git", "config user.email", sitePath, 10_000, cancellationToken)
+        var email = await ProcessRunner.RunAsync(
+            "git", ["config", "user.email"], sitePath, 10_000, cancellationToken)
             .ConfigureAwait(false);
         if (!email.Succeeded || string.IsNullOrWhiteSpace(email.StdOut))
         {
@@ -563,7 +580,7 @@ Thumbs.db
     private async Task<string?> FindHugoSourceBranchAsync(string sitePath, CancellationToken cancellationToken)
     {
         var listed = await ProcessRunner.RunAsync(
-            "git", "branch -r", sitePath, 15_000, cancellationToken).ConfigureAwait(false);
+            "git", ["branch", "-r"], sitePath, 15_000, cancellationToken).ConfigureAwait(false);
         if (!listed.Succeeded)
             return null;
 

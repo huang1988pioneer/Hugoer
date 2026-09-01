@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
-    [string]$Version = "1.7.0",
+    [string]$Version = "1.8.0",
     [string]$Runtime = "win-x64",
     [switch]$SkipInstaller,
     [switch]$InstallTools,
@@ -44,7 +44,7 @@ function Reset-OutputDirectory([string]$Path, [string]$Root) {
 }
 
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') {
-    throw "Version 必須是語意版本（例如 1.7.0）：$Version"
+    throw "Version 必須是語意版本（例如 1.8.0）：$Version"
 }
 if ([string]::IsNullOrWhiteSpace($Runtime)) {
     throw "Runtime 不可為空。"

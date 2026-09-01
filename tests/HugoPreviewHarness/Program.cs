@@ -102,8 +102,11 @@ using (var occupied = BindLoopback())
     Assert(!TcpListeningPort.IsFree(port), "A bound loopback port must not look free.");
 
     var pid = WaitForListenerPid(port);
-    Assert(pid == Environment.ProcessId,
-        $"Listener PID should be this process ({Environment.ProcessId}), got {pid?.ToString() ?? "null"}.");
+    if (OperatingSystem.IsWindows())
+    {
+        Assert(pid == Environment.ProcessId,
+            $"Listener PID should be this process ({Environment.ProcessId}), got {pid?.ToString() ?? "null"}.");
+    }
 
     Assert(!TcpListeningPort.TryKillListener(port, "hugo"),
         "TryKillListener must not kill a non-hugo occupant.");
@@ -116,6 +119,60 @@ using (var occupied = BindLoopback())
     if (allocated is int chosen)
         Assert(TcpListeningPort.IsFree(chosen), "The allocated port must be bindable.");
 }
+
+var duplicateRoot = """
+baseURL = 'https://example.org/'
+title = 'One'
+title = 'Two'
+theme = 'Stack'
+""";
+var deduped = HugoTomlRepair.Repair(duplicateRoot, out var dedupedChanged);
+Assert(dedupedChanged, "Duplicate root keys must be dropped.");
+Assert(deduped.Contains("title = 'One'", StringComparison.Ordinal), "The first root key must be kept.");
+Assert(!deduped.Contains("title = 'Two'", StringComparison.Ordinal), "The duplicate root key must be removed.");
+
+var language = """
+baseURL = 'https://example.org/'
+languageCode = 'zh-tw'
+title = 'Site'
+""";
+var localized = HugoTomlRepair.Repair(language, out var localizedChanged);
+Assert(localizedChanged, "languageCode must migrate to locale.");
+Assert(localized.Contains("locale = 'zh-tw'", StringComparison.Ordinal), "locale must receive the previous value.");
+Assert(!localized.Contains("languageCode", StringComparison.OrdinalIgnoreCase), "languageCode must be removed.");
+
+var bothLocale = """
+locale = 'en'
+languageCode = 'zh-tw'
+""";
+var replacedLocale = HugoTomlRepair.Repair(bothLocale, out var replacedChanged);
+Assert(replacedChanged, "Existing locale must be overwritten by languageCode.");
+Assert(replacedLocale.Contains("locale = 'zh-tw'", StringComparison.Ordinal), "locale must take the languageCode value.");
+Assert(!replacedLocale.Contains("languageCode", StringComparison.OrdinalIgnoreCase), "languageCode must not remain beside locale.");
+
+var legacyScheme = """
+[params]
+description = 'blog'
+colorScheme = 'dark'
+""";
+var lifted = HugoTomlRepair.Repair(legacyScheme, out var liftedChanged);
+Assert(liftedChanged, "Legacy colorScheme scalar must be lifted.");
+Assert(!Regex.IsMatch(lifted, @"(?im)^\s*colorScheme\s*="), "The scalar must be removed from [params].");
+Assert(lifted.Contains("[params.colorScheme]", StringComparison.Ordinal), "The table must be created.");
+Assert(lifted.Contains("default = \"dark\"", StringComparison.Ordinal), "The scheme value must be preserved.");
+
+var combined = """
+title = 'A'
+title = 'B'
+languageCode = 'zh-tw'
+[params]
+colorScheme = 'auto'
+""";
+var repaired = HugoTomlRepair.Repair(combined, out var combinedChanged);
+Assert(combinedChanged, "Combined repairs must report a change.");
+var againRepaired = HugoTomlRepair.Repair(repaired, out var tomlAgainChanged);
+Assert(!tomlAgainChanged, "Repairs must be idempotent.");
+Assert(againRepaired == repaired, "Idempotent repair must not rewrite the text.");
 
 Console.WriteLine("HUGO_PREVIEW_HARNESS_OK");
 

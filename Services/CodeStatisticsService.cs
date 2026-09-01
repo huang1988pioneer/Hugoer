@@ -27,11 +27,16 @@ public static class CodeStatisticsService
     private static readonly HashSet<string> ExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         ".git",
+        ".gradle",
+        ".gradle-cache",
         ".tmp-hugo-invalid",
+        "artifacts",
         "bin",
-        "obj",
         "dist",
         "docs",
+        "installer",
+        "mobile",
+        "obj",
         "tests"
     };
 

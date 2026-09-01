@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\Helpers\GoldmarkUnsafeHtml.cs" Link="Helpers\GoldmarkUnsafeHtml.cs" />
+    <Compile Include="..\..\Helpers\HugoTomlRepair.cs" Link="Helpers\HugoTomlRepair.cs" />
     <Compile Include="..\..\Helpers\HugoServerOutput.cs" Link="Helpers\HugoServerOutput.cs" />
     <Compile Include="..\..\Helpers\TcpListeningPort.cs" Link="Helpers\TcpListeningPort.cs" />
   </ItemGroup>

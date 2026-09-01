@@ -13,6 +13,15 @@ interface (`CurrentPath`, `HasSite`, `Set`, `Changed`) owns path normalization,
 persistence and change notification. This keeps path rules out of views and
 prevents each page from maintaining a different notion of the open site.
 
+`Helpers/HugoTomlRepair.cs` is the deep module for root `hugo.toml` site prep.
+Build and preview call it once per operation: duplicate root keys, the
+`languageCode` → `locale` migration, and the legacy Stack `colorScheme` lift
+happen in memory against a single read, then the file is written only when the
+text actually changed. `HugoService` caches a successful Hugo detection until
+the executable disappears, the preferred path changes, or an install invalidates
+it, so environment, build and preview no longer re-probe the PATH on every
+click.
+
 The preview control accepts `SitePath` as a bindable input. Native controls and
 the Markdown preview therefore resolve media through the same page session,
 without reaching into a global singleton.
@@ -23,7 +32,9 @@ without reaching into a global singleton.
 - **Domain modules** (`FrontMatterService`, `ContentService`, `MenuService`,
   `SiteMigrationService`) own file-format and content rules.
 - **Adapters** (`HugoService`, `GitHubService`, `DeploymentMonitorService`)
-  own process and network integration.
+  own process and network integration. Git/GitHub CLI invocations use
+  structured `ArgumentList` values so repository URLs, branch names and
+  commit messages are never re-parsed as extra switches.
 - **Publishing policy** (`PublishingService`) defaults to the repository-backed
   Pages route, matching the repository/service boundary used by Hugoer Mobile.
   The desktop reads the selected repository with Git fetch/merge and writes it

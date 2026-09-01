@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.Http.Json;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -11,10 +13,12 @@ namespace Hugoer.Services;
 
 public sealed partial class HugoService
 {
-    private const string UserAgent = "Hugoer/1.7.0";
+    private static readonly string UserAgent = $"Hugoer/{ResolveProductVersion()}";
     private static readonly HttpClient DefaultHttpClient = CreateHttpClient();
     private readonly SettingsService _settings;
     private readonly HttpClient _httpClient;
+    private readonly SemaphoreSlim _detectGate = new(1, 1);
+    private HugoInfo? _detected;
 
     public HugoService(SettingsService settings, HttpClient? httpClient = null)
     {
@@ -28,6 +32,52 @@ public sealed partial class HugoService
     }
 
     public async Task<HugoInfo> DetectAsync(CancellationToken cancellationToken = default)
+    {
+        if (TryGetCachedDetection(out var cached))
+            return cached;
+
+        await _detectGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (TryGetCachedDetection(out cached))
+                return cached;
+
+            _detected = await DetectCoreAsync(cancellationToken).ConfigureAwait(false);
+            return _detected;
+        }
+        finally
+        {
+            _detectGate.Release();
+        }
+    }
+
+    public void InvalidateDetection() => _detected = null;
+
+    private bool TryGetCachedDetection(out HugoInfo cached)
+    {
+        var current = _detected;
+        if (current is { IsInstalled: true }
+            && !string.IsNullOrWhiteSpace(current.ExecutablePath)
+            && File.Exists(current.ExecutablePath))
+        {
+            var preferred = _settings.Current.PreferredHugoPath;
+            if (!string.IsNullOrWhiteSpace(preferred)
+                && File.Exists(preferred)
+                && !string.Equals(preferred, current.ExecutablePath, StringComparison.OrdinalIgnoreCase))
+            {
+                cached = current;
+                return false;
+            }
+
+            cached = current;
+            return true;
+        }
+
+        cached = current!;
+        return false;
+    }
+
+    private async Task<HugoInfo> DetectCoreAsync(CancellationToken cancellationToken)
     {
         var preferred = _settings.Current.PreferredHugoPath;
         if (!string.IsNullOrWhiteSpace(preferred) && File.Exists(preferred))
@@ -157,6 +207,8 @@ public sealed partial class HugoService
         IProgress<string>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        InvalidateDetection();
+
         if (!OperatingSystem.IsWindows())
         {
             progress?.Report("非 Windows：請使用套件管理員安裝 hugo（例如 brew install hugo）。");
@@ -390,6 +442,7 @@ public sealed partial class HugoService
             }
 
             _settings.SetPreferredHugoPath(exe);
+            InvalidateDetection();
             progress?.Report($"已安裝到 {exe}");
             return new CommandResult { ExitCode = 0, StdOut = exe };
         }
@@ -600,11 +653,7 @@ public sealed partial class HugoService
             };
         }
 
-        await RepairDuplicateRootTomlKeysAsync(sitePath, cancellationToken).ConfigureAwait(false);
-        await MigrateDeprecatedLanguageCodeAsync(sitePath, cancellationToken).ConfigureAwait(false);
-        await RepairLegacyStackColorSchemeAsync(sitePath, cancellationToken).ConfigureAwait(false);
-        await RepairLegacyStackSearchPageAsync(sitePath, cancellationToken).ConfigureAwait(false);
-        await EnsureGoldmarkUnsafeHtmlAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await PrepareSiteForHugoAsync(sitePath, cancellationToken).ConfigureAwait(false);
 
         var hugo = await DetectAsync(cancellationToken).ConfigureAwait(false);
         if (!hugo.IsInstalled || string.IsNullOrWhiteSpace(hugo.ExecutablePath))
@@ -631,149 +680,25 @@ public sealed partial class HugoService
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task RepairDuplicateRootTomlKeysAsync(
-        string sitePath,
-        CancellationToken cancellationToken)
+    private async Task PrepareSiteForHugoAsync(string sitePath, CancellationToken cancellationToken)
     {
         var config = Path.Combine(sitePath, "hugo.toml");
-        if (!File.Exists(config)) return;
-
-        var original = await File.ReadAllTextAsync(config, cancellationToken).ConfigureAwait(false);
-        var newline = original.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-        var lines = original.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var repaired = new List<string>(lines.Length);
-        var insideTable = false;
-        var changed = false;
-
-        foreach (var line in lines)
+        if (File.Exists(config))
         {
-            var trimmed = line.TrimStart();
-            if (trimmed.StartsWith("[", StringComparison.Ordinal))
-                insideTable = true;
-
-            if (!insideTable && !trimmed.StartsWith("#", StringComparison.Ordinal))
+            var original = await File.ReadAllTextAsync(config, cancellationToken).ConfigureAwait(false);
+            var repaired = HugoTomlRepair.Repair(original, out var changed);
+            if (changed)
             {
-                var match = SimpleTomlKeyRegex().Match(trimmed);
-                if (match.Success && !seen.Add(match.Groups["key"].Value))
-                {
-                    changed = true;
-                    continue;
-                }
+                var backup = config + ".hugoer.bak";
+                if (!File.Exists(backup))
+                    File.Copy(config, backup);
+                await AtomicFileWriter.WriteAllTextAsync(config, repaired, cancellationToken)
+                    .ConfigureAwait(false);
             }
-
-            repaired.Add(line);
         }
 
-        if (!changed) return;
-
-        var backup = config + ".hugoer.bak";
-        if (!File.Exists(backup))
-            File.Copy(config, backup);
-        await AtomicFileWriter.WriteAllTextAsync(config, string.Join(newline, repaired), cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private static async Task RepairLegacyStackColorSchemeAsync(
-        string sitePath,
-        CancellationToken cancellationToken)
-    {
-        var config = Path.Combine(sitePath, "hugo.toml");
-        if (!File.Exists(config)) return;
-
-        var original = await File.ReadAllTextAsync(config, cancellationToken).ConfigureAwait(false);
-        if (Regex.IsMatch(original, @"(?im)^\s*\[params\.colorScheme\]\s*$")) return;
-
-        var newline = original.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-        var lines = original.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
-        var repaired = new List<string>(lines.Length + 5);
-        var currentTable = string.Empty;
-        string? scheme = null;
-
-        foreach (var line in lines)
-        {
-            var table = TomlTableRegex().Match(line.Trim());
-            if (table.Success)
-                currentTable = table.Groups["table"].Value.Trim();
-
-            if (currentTable.Equals("params", StringComparison.OrdinalIgnoreCase))
-            {
-                var scalar = LegacyColorSchemeRegex().Match(line.Trim());
-                if (scalar.Success)
-                {
-                    scheme = scalar.Groups["value"].Value;
-                    continue;
-                }
-            }
-
-            repaired.Add(line);
-        }
-
-        if (scheme is null) return;
-
-        while (repaired.Count > 0 && string.IsNullOrWhiteSpace(repaired[^1]))
-            repaired.RemoveAt(repaired.Count - 1);
-        repaired.Add(string.Empty);
-        repaired.Add("[params.colorScheme]");
-        repaired.Add("  toggle = true");
-        repaired.Add($"  default = \"{scheme}\"");
-        repaired.Add(string.Empty);
-
-        var backup = config + ".hugoer.bak";
-        if (!File.Exists(backup))
-            File.Copy(config, backup);
-        await AtomicFileWriter.WriteAllTextAsync(config, string.Join(newline, repaired), cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private static async Task MigrateDeprecatedLanguageCodeAsync(
-        string sitePath,
-        CancellationToken cancellationToken)
-    {
-        var config = Path.Combine(sitePath, "hugo.toml");
-        if (!File.Exists(config)) return;
-
-        var original = await File.ReadAllTextAsync(config, cancellationToken).ConfigureAwait(false);
-        var newline = original.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-        var lines = original.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n').ToList();
-        var rootEnd = lines.FindIndex(line => line.TrimStart().StartsWith("[", StringComparison.Ordinal));
-        if (rootEnd < 0) rootEnd = lines.Count;
-
-        var languageIndex = -1;
-        var localeIndex = -1;
-        for (var index = 0; index < rootEnd; index++)
-        {
-            var key = SimpleTomlKeyRegex().Match(lines[index].TrimStart());
-            if (!key.Success) continue;
-            if (key.Groups["key"].Value.Equals("languageCode", StringComparison.OrdinalIgnoreCase))
-                languageIndex = index;
-            if (key.Groups["key"].Value.Equals("locale", StringComparison.OrdinalIgnoreCase))
-                localeIndex = index;
-        }
-
-        if (languageIndex < 0) return;
-
-        var equals = lines[languageIndex].IndexOf('=');
-        if (equals < 0) return;
-        var value = lines[languageIndex][(equals + 1)..].Trim();
-        var indent = new string(lines[languageIndex].TakeWhile(char.IsWhiteSpace).ToArray());
-
-        if (localeIndex >= 0)
-        {
-            var localeIndent = new string(lines[localeIndex].TakeWhile(char.IsWhiteSpace).ToArray());
-            lines[localeIndex] = $"{localeIndent}locale = {value}";
-            lines.RemoveAt(languageIndex);
-        }
-        else
-        {
-            lines[languageIndex] = $"{indent}locale = {value}";
-        }
-
-        var backup = config + ".hugoer.bak";
-        if (!File.Exists(backup))
-            File.Copy(config, backup);
-        await AtomicFileWriter.WriteAllTextAsync(config, string.Join(newline, lines), cancellationToken)
-            .ConfigureAwait(false);
+        await EnsureGoldmarkUnsafeHtmlAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await RepairLegacyStackSearchPageAsync(sitePath, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task EnsureGoldmarkUnsafeHtmlAsync(
@@ -838,11 +763,7 @@ public sealed partial class HugoService
         if (preferredPort is < 1 or > 65526)
             return Fail("本機預覽埠必須介於 1 到 65526。", $"http://127.0.0.1:{preferredPort}/");
 
-        await RepairDuplicateRootTomlKeysAsync(sitePath, cancellationToken).ConfigureAwait(false);
-        await MigrateDeprecatedLanguageCodeAsync(sitePath, cancellationToken).ConfigureAwait(false);
-        await RepairLegacyStackColorSchemeAsync(sitePath, cancellationToken).ConfigureAwait(false);
-        await RepairLegacyStackSearchPageAsync(sitePath, cancellationToken).ConfigureAwait(false);
-        await EnsureGoldmarkUnsafeHtmlAsync(sitePath, cancellationToken).ConfigureAwait(false);
+        await PrepareSiteForHugoAsync(sitePath, cancellationToken).ConfigureAwait(false);
 
         var hugo = await DetectAsync(cancellationToken).ConfigureAwait(false);
         if (!hugo.IsInstalled || string.IsNullOrWhiteSpace(hugo.ExecutablePath))
@@ -882,7 +803,6 @@ public sealed partial class HugoService
         var psi = new ProcessStartInfo
         {
             FileName = hugoExe,
-            Arguments = $"server --buildDrafts --navigateToChanged --port {port} --bind 127.0.0.1",
             WorkingDirectory = sitePath,
             UseShellExecute = false,
             RedirectStandardOutput = true,
@@ -891,6 +811,13 @@ public sealed partial class HugoService
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8
         };
+        psi.ArgumentList.Add("server");
+        psi.ArgumentList.Add("--buildDrafts");
+        psi.ArgumentList.Add("--navigateToChanged");
+        psi.ArgumentList.Add("--port");
+        psi.ArgumentList.Add(port.ToString(CultureInfo.InvariantCulture));
+        psi.ArgumentList.Add("--bind");
+        psi.ArgumentList.Add("127.0.0.1");
 
         Process? process = null;
         var collecting = true;
@@ -1025,6 +952,22 @@ public sealed partial class HugoService
         return client;
     }
 
+    private static string ResolveProductVersion()
+    {
+        var assembly = typeof(HugoService).Assembly;
+        var informational = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(informational))
+        {
+            var plus = informational.IndexOf('+');
+            return plus >= 0 ? informational[..plus] : informational;
+        }
+
+        var version = assembly.GetName().Version;
+        return version is null ? "1.8.0" : version.ToString(3);
+    }
+
     public void StopServer(Process? process) => KillServer(process);
 
     private static void KillServer(Process? process)
@@ -1096,15 +1039,6 @@ public sealed partial class HugoService
 
     [GeneratedRegex(@"theme\s*=\s*[\[""']?([^\]""'\r\n]+)", RegexOptions.IgnoreCase)]
     private static partial Regex ThemeRegex();
-
-    [GeneratedRegex(@"^(?<key>[A-Za-z0-9_.-]+)\s*=")]
-    private static partial Regex SimpleTomlKeyRegex();
-
-    [GeneratedRegex(@"^\[(?<table>[^\]]+)\]$")]
-    private static partial Regex TomlTableRegex();
-
-    [GeneratedRegex("""^colorScheme\s*=\s*['"](?<value>auto|light|dark)['"]\s*$""", RegexOptions.IgnoreCase)]
-    private static partial Regex LegacyColorSchemeRegex();
 }
 
 public sealed record HugoServerStartResult(Process? Process, string Message, string Url)
