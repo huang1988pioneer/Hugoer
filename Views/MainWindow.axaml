@@ -16,67 +16,190 @@
         <vm:MainViewModel />
     </Design.DataContext>
 
-    <Grid RowDefinitions="Auto,Auto,*">
-        <Border Grid.Row="0" Classes="topBar" Padding="16,12">
-            <Grid ColumnDefinitions="*,Auto">
-                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <TextBlock Text="Hugoer" Classes="appTitle" VerticalAlignment="Center"/>
-                    <Border Classes="pill" Padding="10,4" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding SiteBanner}" Classes="muted" TextWrapping="NoWrap"/>
-                    </Border>
-                </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <Border Classes="codeStats" Padding="10,5"
-                            ToolTip.Tip="{Binding CodeStatisticsDetails}">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="程式碼統計" Classes="caption"
-                                       Foreground="#9EDFF2" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding CodeStatisticsSummary}"
-                                       Foreground="#FFFFFF" FontSize="15" FontWeight="SemiBold"
-                                       VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
-                    <TextBlock Text="{Binding AppStatus}"
-                               Classes="muted"
-                               VerticalAlignment="Center"/>
-                </StackPanel>
-            </Grid>
-        </Border>
+    <!-- 全域快捷鍵：常用動作不必先找到正確分頁。 -->
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+1" Command="{Binding NavigateCommand}" CommandParameter="home"/>
+        <KeyBinding Gesture="Ctrl+2" Command="{Binding NavigateCommand}" CommandParameter="content"/>
+        <KeyBinding Gesture="Ctrl+3" Command="{Binding NavigateCommand}" CommandParameter="publish"/>
+        <KeyBinding Gesture="Ctrl+N" Command="{Binding NewPostCommand}"/>
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveCurrentCommand}"/>
+        <KeyBinding Gesture="Ctrl+P" Command="{Binding PreviewSiteCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+P" Command="{Binding GoPublishCommand}"/>
+    </Window.KeyBindings>
 
-        <Border Grid.Row="1" Classes="navigationBar" Padding="12,6">
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-                <ListBox ItemsSource="{Binding NavItems}"
-                         SelectedItem="{Binding SelectedNav}"
-                         Classes="navList"
-                         Background="Transparent"
-                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
-                    <ListBox.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal"/>
-                        </ItemsPanelTemplate>
-                    </ListBox.ItemsPanel>
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:NavItem">
-                            <TextBlock Text="{Binding Title}"
-                                       ToolTip.Tip="{Binding Description}"
-                                       FontWeight="SemiBold"
-                                       FontSize="14"
-                                       VerticalAlignment="Center"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+    <Grid>
+        <Grid RowDefinitions="Auto,Auto,*">
 
-                <StackPanel Grid.Column="1" Orientation="Vertical" Spacing="2"
-                            HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <TextBlock Text="Hugo · Themes · Pages" Classes="caption"/>
-                    <TextBlock Text="Local tool · Traditional Chinese UI" Classes="caption"/>
-                </StackPanel>
-            </Grid>
+            <!-- ===================== 頂列：身分 + 兩個全域動作 ===================== -->
+            <Border Grid.Row="0" Classes="topBar" Padding="16,10">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <TextBlock Text="Hugoer" Classes="appTitle" VerticalAlignment="Center"/>
+                        <Border Classes="pill" Padding="10,4" VerticalAlignment="Center"
+                                ToolTip.Tip="目前開啟的 Hugo 網站">
+                            <TextBlock Text="{Binding SiteBanner}" Classes="muted" TextWrapping="NoWrap"/>
+                        </Border>
+                    </StackPanel>
+
+                    <Button Grid.Column="1" Classes="searchBar"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            MaxWidth="420"
+                            Command="{Binding OpenPaletteCommand}"
+                            ToolTip.Tip="搜尋頁面與動作">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                            <TextBlock Text="🔍" FontSize="12" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="搜尋功能或動作…" Classes="caption"
+                                       VerticalAlignment="Center"/>
+                            <Border Grid.Column="2" Classes="kbd" Padding="6,1">
+                                <TextBlock Text="Ctrl+K" FontSize="11" Opacity="0.7"/>
+                            </Border>
+                        </Grid>
+                    </Button>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
+                                VerticalAlignment="Center">
+                        <Button Content="＋ 新文章" Classes="accent"
+                                Command="{Binding NewPostCommand}"
+                                IsEnabled="{Binding HasSite}"
+                                ToolTip.Tip="Ctrl+N — 建立文章並直接進入編輯器"/>
+                        <Button Content="▲ 發布" Classes="publish"
+                                Command="{Binding GoPublishCommand}"
+                                IsEnabled="{Binding HasSite}"
+                                ToolTip.Tip="Ctrl+Shift+P — 前往發布頁"/>
+                    </StackPanel>
+                </Grid>
             </Border>
 
-        <Border Grid.Row="2" Classes="contentHost" Padding="0">
-            <ContentControl Content="{Binding CurrentPage}" Margin="0"/>
+            <!-- ============ 導覽列：三個主要工作區 + 進階功能收在「更多」 ============ -->
+            <Border Grid.Row="1" Classes="navigationBar" Padding="12,6">
+                <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="12">
+                    <ItemsControl ItemsSource="{Binding PrimaryNavItems}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="4"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:NavItem">
+                                <Button Classes="navSeg"
+                                        Classes.selected="{Binding IsActive}"
+                                        Command="{Binding SelectCommand}"
+                                        CommandParameter="{Binding Key}"
+                                        ToolTip.Tip="{Binding Description}">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <TextBlock Text="{Binding Glyph}" FontSize="13"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                                                   FontSize="14" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Button Grid.Column="1" Classes="navSeg"
+                            Classes.selected="{Binding IsMoreActive}"
+                            Content="{Binding MoreLabel}">
+                        <Button.Flyout>
+                            <Flyout Placement="BottomEdgeAlignedLeft">
+                                <StackPanel Width="300" Spacing="2">
+                                    <TextBlock Text="進階功能" Classes="caption" Margin="8,6,8,4"/>
+                                    <ItemsControl ItemsSource="{Binding MoreNavItems}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:NavItem">
+                                                <Button Classes="rowItem"
+                                                        HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Stretch"
+                                                        Command="{Binding SelectCommand}"
+                                                        CommandParameter="{Binding Key}">
+                                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                                        <TextBlock Text="{Binding Glyph}" FontSize="14"
+                                                                   VerticalAlignment="Center" Opacity="0.8"/>
+                                                        <StackPanel Grid.Column="1" Spacing="1">
+                                                            <TextBlock Text="{Binding Title}"
+                                                                       FontWeight="SemiBold"/>
+                                                            <TextBlock Text="{Binding Description}"
+                                                                       Classes="caption"
+                                                                       TextWrapping="Wrap"/>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <Border Height="1" Background="#243041" Margin="8,6"/>
+                                    <StackPanel Margin="8,2,8,8" Spacing="2">
+                                        <TextBlock Text="程式碼統計" Classes="caption"/>
+                                        <TextBlock Text="{Binding CodeStatisticsSummary}"
+                                                   FontSize="12" FontWeight="SemiBold"
+                                                   ToolTip.Tip="{Binding CodeStatisticsDetails}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+
+                    <TextBlock Grid.Column="2" Text="{Binding AppStatus}" Classes="muted"
+                               VerticalAlignment="Center" HorizontalAlignment="Right"
+                               TextTrimming="CharacterEllipsis" Margin="12,0,4,0"/>
+                </Grid>
+            </Border>
+
+            <Border Grid.Row="2" Classes="contentHost" Padding="0">
+                <ContentControl Content="{Binding CurrentPage}" Margin="0"/>
+            </Border>
+        </Grid>
+
+        <!-- ===================== 命令面板（Ctrl+K）：任何功能一步到位 ===================== -->
+        <Border Name="PaletteOverlay" Classes="paletteOverlay" IsVisible="{Binding IsPaletteOpen}">
+            <Border Classes="paletteCard" Width="620" MaxHeight="440"
+                    VerticalAlignment="Top" Margin="0,110,0,0">
+                <Grid RowDefinitions="Auto,Auto,*,Auto">
+                    <TextBox Name="PaletteBox" Grid.Row="0"
+                             Classes="paletteInput"
+                             Text="{Binding PaletteQuery}"
+                             Watermark="輸入頁面或動作名稱，例如「文章」「發布」「主題」…"/>
+
+                    <Border Grid.Row="1" Height="1" Background="#243041" Margin="0,8"/>
+
+                    <ListBox Name="PaletteList" Grid.Row="2"
+                             Classes="paletteList"
+                             ItemsSource="{Binding PaletteResults}"
+                             SelectedItem="{Binding SelectedPaletteEntry}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             IsVisible="{Binding PaletteHasResults}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:CommandEntry">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,3">
+                                    <Border Classes="pill" Background="#1C2736" Padding="8,2"
+                                            VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Group}" FontSize="11" Opacity="0.8"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Spacing="1">
+                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding Subtitle}" Classes="caption"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                    <Border Grid.Column="2" Classes="kbd" Padding="6,1"
+                                            VerticalAlignment="Center"
+                                            IsVisible="{Binding HasShortcut}">
+                                        <TextBlock Text="{Binding Shortcut}" FontSize="11" Opacity="0.7"/>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <TextBlock Grid.Row="2" Text="找不到符合的功能。" Classes="muted"
+                               HorizontalAlignment="Center" Margin="0,24"
+                               IsVisible="{Binding !PaletteHasResults}"/>
+
+                    <TextBlock Grid.Row="3" Classes="caption" Margin="2,10,2,0"
+                               Text="↑↓ 選擇 · Enter 執行 · Esc 關閉"/>
+                </Grid>
+            </Border>
         </Border>
     </Grid>
 </Window>

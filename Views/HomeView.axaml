@@ -1,0 +1,211 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Hugoer.ViewModels"
+             xmlns:models="using:Hugoer.Models"
+             x:Class="Hugoer.Views.HomeView"
+             x:DataType="vm:HomeViewModel">
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="24">
+        <StackPanel Spacing="16" MaxWidth="1040">
+
+            <!-- ============================================================
+                 下一步：畫面上唯一的主要動作。使用者不必先讀懂分頁，
+                 只要按這一顆按鈕就會往前推進一站。
+                 ============================================================ -->
+            <Border Classes="hero">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="24">
+                    <StackPanel Spacing="10">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Border Classes="pill" Background="#123D49" Padding="10,4">
+                                <TextBlock Text="{Binding NextStepBadge}" FontSize="12"
+                                           FontWeight="SemiBold" Foreground="#7CDAF9"/>
+                            </Border>
+                            <Border Classes="pill" Background="#1C2736" Padding="10,4"
+                                    IsVisible="{Binding IsReady}">
+                                <TextBlock Text="日常模式" FontSize="12" Foreground="#9EDFF2"/>
+                            </Border>
+                        </StackPanel>
+
+                        <TextBlock Text="{Binding NextStepTitle}" FontSize="24" FontWeight="Bold"
+                                   TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding NextStepDescription}" Classes="muted"
+                                   TextWrapping="Wrap" MaxWidth="560" LineHeight="21"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Center"
+                                HorizontalAlignment="Right" MinWidth="240">
+                        <Button Classes="hero"
+                                Content="{Binding PrimaryActionText}"
+                                Command="{Binding PrimaryActionCommand}"
+                                IsEnabled="{Binding !IsBusy}"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"/>
+                        <TextBlock Text="{Binding PrimaryActionHint}" Classes="caption"
+                                   TextWrapping="Wrap" TextAlignment="Center"
+                                   IsVisible="{Binding HasPrimaryActionHint}"/>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8"
+                                    HorizontalAlignment="Center" Margin="0,4,0,0">
+                            <Button Content="開啟現有資料夾…"
+                                    Command="{Binding OpenFolderCommand}"
+                                    IsVisible="{Binding ShowOpenFolderAction}"/>
+                            <Button Content="從 Git 複製"
+                                    Command="{Binding GoCloneCommand}"
+                                    IsVisible="{Binding ShowCloneAction}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ============================================================
+                 五站進度：讓「還差什麼」一眼看完，不用逐頁點開確認。
+                 ============================================================ -->
+            <Border Classes="card" Padding="14,12">
+                <ItemsControl ItemsSource="{Binding Steps}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Columns="5"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:HomeStep">
+                            <StackPanel Spacing="4" Margin="6,2">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <TextBlock Text="✓" FontSize="14" FontWeight="Bold"
+                                               Foreground="#4ADE80" IsVisible="{Binding IsDone}"/>
+                                    <TextBlock Text="▶" FontSize="14" FontWeight="Bold"
+                                               Foreground="#7CDAF9" IsVisible="{Binding IsCurrent}"/>
+                                    <TextBlock Text="○" FontSize="14"
+                                               Foreground="#4C5A6B" IsVisible="{Binding IsPending}"/>
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding Description}" Classes="caption"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding StateText}" FontSize="11" Opacity="0.45"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
+
+            <!-- ============================================================
+                 網站現況 + 最近文章。點文章直接進編輯器，省掉「切分頁 → 找檔案」。
+                 ============================================================ -->
+            <Grid ColumnDefinitions="*,320" ColumnSpacing="16">
+
+                <Border Classes="card">
+                    <StackPanel Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="最近文章" Classes="sectionTitle" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Content="全部文章 →" Classes="linkish"
+                                    Command="{Binding GoContentCommand}"/>
+                        </Grid>
+
+                        <ItemsControl ItemsSource="{Binding RecentArticles}"
+                                      IsVisible="{Binding HasRecentArticles}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:ContentItem">
+                                    <Button Classes="rowItem"
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Stretch"
+                                            Command="{Binding $parent[ItemsControl].DataContext.OpenArticleCommand}"
+                                            CommandParameter="{Binding}">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Text="{Binding DisplayTitle}"
+                                                           FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding TimelineText}" Classes="caption"/>
+                                            </StackPanel>
+                                            <Border Grid.Column="1" Classes="pill" Padding="8,2"
+                                                    Background="#563E20" VerticalAlignment="Center"
+                                                    IsVisible="{Binding IsDraft}">
+                                                <TextBlock Text="草稿" FontSize="11" Foreground="#F4C77B"/>
+                                            </Border>
+                                            <Border Grid.Column="1" Classes="pill" Padding="8,2"
+                                                    Background="#123D49" VerticalAlignment="Center"
+                                                    IsVisible="{Binding IsPublished}">
+                                                <TextBlock Text="已發布" FontSize="11" Foreground="#7CDAF9"/>
+                                            </Border>
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <StackPanel Spacing="6" Margin="0,8"
+                                    IsVisible="{Binding !HasRecentArticles}">
+                            <TextBlock Text="還沒有文章" FontWeight="SemiBold"/>
+                            <TextBlock Text="按上方主要按鈕即可建立第一篇；Hugoer 會自動填好編號、日期與 front matter。"
+                                       Classes="caption" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Grid.Column="1" Spacing="16">
+                    <Border Classes="card">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="網站現況" Classes="sectionTitle"/>
+
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding SiteTitle}" FontWeight="SemiBold" FontSize="15"/>
+                                <TextBlock Text="{Binding SitePathText}" Classes="mono muted"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto"
+                                  ColumnSpacing="12" RowSpacing="6">
+                                <TextBlock Text="Hugo" Classes="caption"/>
+                                <TextBlock Grid.Column="1" Text="{Binding HugoSummary}" FontSize="12"
+                                           TextWrapping="Wrap"/>
+
+                                <TextBlock Grid.Row="1" Text="主題" Classes="caption"/>
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ThemeSummary}"
+                                           FontSize="12" TextWrapping="Wrap"/>
+
+                                <TextBlock Grid.Row="2" Text="內容" Classes="caption"/>
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ArticleSummary}"
+                                           FontSize="12"/>
+
+                                <TextBlock Grid.Row="3" Text="線上" Classes="caption"/>
+                                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding OnlineSummary}"
+                                           FontSize="12"/>
+                            </Grid>
+
+                            <Button Content="開啟線上網站" Classes="linkish"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding OpenPagesUrlCommand}"
+                                    IsVisible="{Binding HasPagesUrl}"
+                                    ToolTip.Tip="{Binding PagesUrlText}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="快捷動作" Classes="sectionTitle"/>
+                            <Button Content="＋  新增文章" Classes="quickAction"
+                                    Command="{Binding NewPostCommand}"
+                                    IsEnabled="{Binding HasSite}"/>
+                            <Button Content="▶  本機預覽網站" Classes="quickAction"
+                                    Command="{Binding PreviewCommand}"
+                                    IsEnabled="{Binding HasSite}"/>
+                            <Button Content="▲  發布上線" Classes="quickAction"
+                                    Command="{Binding GoPublishCommand}"
+                                    IsEnabled="{Binding HasSite}"/>
+                            <Button Content="⌘  網站設定檔" Classes="quickAction"
+                                    Command="{Binding GoConfigCommand}"
+                                    IsEnabled="{Binding HasSite}"/>
+                            <Button Content="📁  開啟網站資料夾" Classes="quickAction"
+                                    Command="{Binding OpenSiteFolderCommand}"
+                                    IsEnabled="{Binding HasSite}"/>
+                            <TextBlock Text="任何功能都可以按 Ctrl+K 直接搜尋。"
+                                       Classes="caption" TextWrapping="Wrap" Margin="2,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+
+            <TextBlock Text="{Binding StatusMessage}" Classes="muted" TextWrapping="Wrap"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

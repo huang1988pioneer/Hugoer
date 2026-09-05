@@ -75,18 +75,40 @@ dotnet tool install -g vpk
 vpk pack --packId Hugoer --packVersion 1.8.0 --packDir .\dist\publish\win-x64 --mainExe Hugoer.exe --outputDir .\dist\releases\velopack
 ```
 
+## 介面：一次只做一個決定
+
+桌面版導覽分成三層，設計說明見
+[`docs/navigation-redesign.md`](docs/navigation-redesign.md)。
+
+- **首頁**：依現況只顯示一個「下一步」大按鈕（安裝 Hugo → 建立網站 → 套用主題 →
+  寫第一篇 → 發布上線），旁邊是五站進度、最近文章與快捷動作。
+- **文章 / 發布**：兩個高頻工作區，永遠一鍵可達。
+- **更多 ▾**：環境、設定檔、主題、選單、遷移等進階頁。
+
+| 快捷鍵 | 動作 |
+|--------|------|
+| `Ctrl+K` | 命令面板：輸入關鍵字直接跳頁或執行動作 |
+| `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | 首頁／文章／發布 |
+| `Ctrl+N` | 新增文章並進入編輯器 |
+| `Ctrl+S` | 儲存目前文章 |
+| `Ctrl+P` | 本機預覽（自動開瀏覽器） |
+| `Ctrl+Shift+P` | 前往發布 |
+
 ## 建議使用流程
 
-1. **環境** → 一鍵安裝 Hugo Extended  
-2. **環境** → 建立新網站（或開啟既有資料夾）  
-3. **主題** → 一鍵安裝 Stack  
-4. **設定檔** →「網站基本」改 baseURL / title；「Params 表單」調描述、色系、widgets 等  
-5. **文章** → 新增／編輯部落格文章，右側即時預覽；可把單篇或全部文章匯出成 Hexo／Jekyll 相容的 `_posts` Markdown  
-   **選單** → 編輯 Home／Archives／Search 等導覽，與文章分開  
-6. **遷移** → 從 Hexo 或 Jekyll 匯入成 Hugo，或把目前 Hugo 網站輸出成 Hexo／Jekyll  
-7. **Git 部署** → 從下拉選單選擇 GitHub／GitLab／Codeberg／Bitbucket；各平台設定分開保存，再連結或推送 repository。主要路徑預設為「GitHub Pages（遠端優先）」。
-8. 遠端模式會直接讀取／合併並提交 repository，由 GitHub Actions／平台工作流程建置 Pages，不要求本機 Hugo；GitHub 可使用 `gh` 或 Git Credential Manager／SSH；遠端失敗時可自動或手動執行「本機部署備援」產生 `public/`。
-9. **Git 部署** → 查看「線上版本監控」；Hugoer 每 5 分鐘確認 Pages／靜態網站是否已更新至本次推送版本
+1. 打開 Hugoer，一直按**首頁**中央那顆按鈕，直到進度列五站都變成 ✓：
+   安裝 Hugo → 建立網站 → 安裝並啟用 Stack 主題 → 新增第一篇文章 → 前往發布。
+2. **文章**（`Ctrl+2`）→ 撰寫／編輯，右側即時預覽；可把單篇或全部文章匯出成
+   Hexo／Jekyll 相容的 `_posts` Markdown。
+3. **更多 → 設定檔** → 「網站基本」改 baseURL / title；「Params 表單」調描述、色系、widgets。
+   **更多 → 選單** → 編輯 Home／Archives／Search 等導覽，與文章分開。
+4. **更多 → 遷移** → 從 Hexo 或 Jekyll 匯入成 Hugo，或把目前 Hugo 網站輸出成 Hexo／Jekyll。
+5. **發布**（`Ctrl+Shift+P`）→ 從下拉選單選擇 GitHub／GitLab／Codeberg／Bitbucket；各平台
+   設定分開保存，再連結或推送 repository。主要路徑預設為「GitHub Pages（遠端優先）」。
+6. 遠端模式會直接讀取／合併並提交 repository，由 GitHub Actions／平台工作流程建置 Pages，
+   不要求本機 Hugo；GitHub 可使用 `gh` 或 Git Credential Manager／SSH；遠端失敗時可自動或
+   手動執行「本機部署備援」產生 `public/`。
+7. **發布** → 查看「線上版本監控」；Hugoer 每 5 分鐘確認 Pages／靜態網站是否已更新至本次推送版本。
 
 ## GitHub Pages 工作流程與權限
 
