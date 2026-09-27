@@ -9,7 +9,9 @@ using Hugoer.Services;
 namespace Hugoer.Controls;
 
 /// <summary>
-/// CKEditor 5-style Markdown WYSIWYG surface: markdown in, markdown out, edited as rich text.
+/// Quill-based Markdown WYSIWYG surface: markdown in, markdown out, edited as rich text.
+/// The page lives in <c>Assets/editor/wysiwyg.html</c>; Quill itself is vendored under
+/// <c>Assets/editor/quill/</c> and inlined at load time (the page CSP blocks external scripts).
 /// </summary>
 public sealed class MarkdownWysiwygEditor : UserControl
 {
@@ -244,6 +246,9 @@ public sealed class MarkdownWysiwygEditor : UserControl
                 ApplyHtml(message.Html, notify: true);
                 ToggleModeRequested?.Invoke(this, EventArgs.Empty);
                 break;
+            case "pastemarkdown":
+                _ = PasteMarkdownAsync(message.Text ?? string.Empty);
+                break;
         }
     }
 
@@ -266,6 +271,26 @@ public sealed class MarkdownWysiwygEditor : UserControl
 
         if (notify)
             MarkdownChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Renders pasted Markdown text with the same pipeline as the editor and inserts it at the caret.</summary>
+    private async Task PasteMarkdownAsync(string markdown)
+    {
+        string html;
+        Dictionary<string, string> media;
+        try
+        {
+            html = MarkdownWysiwygConverter.ToEditableHtml(markdown);
+            media = MediaAssetService.BuildPreviewMediaMap(html, SitePath);
+        }
+        catch
+        {
+            html = string.Empty;
+            media = new Dictionary<string, string>();
+        }
+
+        await TryInvokeScriptAsync(
+            $"window.hugoerPasteHtml({JsonSerializer.Serialize(html)}, {JsonSerializer.Serialize(media)})");
     }
 
     private void PushMarkdownToWebView() => _ = PushMarkdownToWebViewAsync();
@@ -325,9 +350,14 @@ public sealed class MarkdownWysiwygEditor : UserControl
         EditorFailed?.Invoke(this, detail);
     }
 
-    private static string LoadEditorHtml()
+    private static string LoadEditorHtml() =>
+        ReadAsset("wysiwyg.html")
+            .Replace("/*__QUILL_CORE_CSS__*/", ReadAsset("quill/quill.core.css"), StringComparison.Ordinal)
+            .Replace("/*__QUILL_JS__*/", ReadAsset("quill/quill.js"), StringComparison.Ordinal);
+
+    private static string ReadAsset(string relativePath)
     {
-        using var stream = AssetLoader.Open(new Uri("avares://Hugoer/Assets/editor/wysiwyg.html"));
+        using var stream = AssetLoader.Open(new Uri("avares://Hugoer/Assets/editor/" + relativePath));
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
     }
@@ -336,5 +366,6 @@ public sealed class MarkdownWysiwygEditor : UserControl
     {
         public string Type { get; set; } = string.Empty;
         public string? Html { get; set; }
+        public string? Text { get; set; }
     }
 }

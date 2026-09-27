@@ -137,6 +137,31 @@ AssertContains(wrap, "data-hugoer-align=\"wrap-left\"");
 AssertContains(wrap, "float:left");
 AssertContains(wrap, "width=\"240\"");
 
+// HTML dialect emitted by the Quill editor's Delta serializer (Assets/editor/wysiwyg.html).
+var quillHtml = "<h2>標題</h2><p>一行<br>換行 <strong>粗<em>斜</em></strong> <del>刪</del> <code>c</code> <a href=\"/post/x/\">連結</a></p>"
+    + "<ul><li>甲<ul><li>乙</li></ul></li></ul><ol><li>一</li></ol>"
+    + "<ul><li><input type=\"checkbox\"> 待辦</li><li><input type=\"checkbox\" checked> 完成</li></ul>"
+    + "<blockquote><p>引一</p><p>引二</p></blockquote>"
+    + "<pre><code class=\"language-go\">fmt.Println(\"&lt;x&gt;\")\nreturn</code></pre>"
+    + "<table><tbody><tr><td>H1</td><td>H2</td></tr><tr><td>a</td><td>b</td></tr></tbody></table>"
+    + "<hr><p><img src=\"/image/a.png\" alt=\"a\" width=\"240\" data-hugoer-align=\"center\"></p>"
+    + "<audio controls src=\"/music/a.mp3\"></audio><p>{{&lt; ref &quot;x&quot; &gt;}}</p>";
+var fromQuill = MarkdownWysiwygConverter.FromEditableHtml(quillHtml);
+AssertContains(fromQuill, "## 標題");
+AssertContains(fromQuill, "一行  \n換行");
+AssertContains(fromQuill, "**粗*斜***");
+AssertContains(fromQuill, "~~刪~~");
+AssertContains(fromQuill, "[連結](/post/x/)");
+AssertContains(fromQuill, "- 甲\n  - 乙");
+AssertContains(fromQuill, "- [ ] 待辦\n- [x] 完成");
+AssertContains(fromQuill, "> 引一");
+AssertContains(fromQuill, "```go\nfmt.Println(\"<x>\")\nreturn\n```");
+AssertContains(fromQuill, "| H1 | H2 |\n| --- | --- |\n| a | b |");
+AssertContains(fromQuill, "---");
+AssertContains(fromQuill, "data-hugoer-align=\"center\"");
+AssertContains(fromQuill, "<audio controls src=\"/music/a.mp3\"></audio>");
+AssertContains(fromQuill, "{{< ref \"x\" >}}");
+
 Console.WriteLine("MARKDOWN_WYSIWYG_HARNESS_OK");
 Console.WriteLine(heading);
 Console.WriteLine("---");
