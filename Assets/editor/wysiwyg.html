@@ -1240,26 +1240,31 @@
 
     let suppress = false;
     let changeTimer = 0;
+    // True while the document has edits the host has not received yet. Messages carry it so
+    // the host never rewrites (normalises) an article that was only opened, not edited.
+    let dirty = false;
 
     function notifyChange() {
       if (suppress) return;
       clearTimeout(changeTimer);
-      changeTimer = setTimeout(() => post({ type: 'change', html: snapshotHtml() }), 140);
+      changeTimer = setTimeout(() => flushChange('change'), 140);
     }
 
     function flushChange(type) {
       clearTimeout(changeTimer);
-      post({ type: type || 'change', html: snapshotHtml() });
+      post({ type: type || 'change', html: snapshotHtml(), dirty });
+      dirty = false;
     }
 
     quill.on('text-change', (delta, oldDelta, source) => {
       if (source === 'silent') return;
+      if (!suppress) dirty = true;
       notifyChange();
       if (selectedImg) requestAnimationFrame(layoutImageChrome);
     });
     quill.on('selection-change', (range, oldRange, source) => {
       updateTableBar(range);
-      if (range == null && oldRange != null && !suppress) flushChange('change');
+      if (range == null && oldRange != null && !suppress && dirty) flushChange('change');
     });
 
     // ----- Image chrome: select / resize / align / move -------------------
@@ -1775,6 +1780,8 @@
     window.hugoerSetHtml = function (html, media) {
       mergeMedia(media);
       suppress = true;
+      clearTimeout(changeTimer);
+      dirty = false;
       try {
         clearImageSelection();
         const delta = convertHtml(html || '', true);

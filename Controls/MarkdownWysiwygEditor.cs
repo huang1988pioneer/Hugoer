@@ -33,7 +33,7 @@ public sealed class MarkdownWysiwygEditor : UserControl
     private bool _updatingFromHtml;
     private bool _loadedHtml;
     private string? _initError;
-    private TaskCompletionSource<string>? _flushWaiter;
+    private TaskCompletionSource<string?>? _flushWaiter;
     private readonly SemaphoreSlim _flushGate = new(1, 1);
     private readonly SemaphoreSlim _pushGate = new(1, 1);
 
@@ -128,14 +128,14 @@ public sealed class MarkdownWysiwygEditor : UserControl
             if (!_ready || _webView is null)
                 return;
 
-            var waiter = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var waiter = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
             _flushWaiter = waiter;
             try
             {
                 await _webView.InvokeScript("window.hugoerFlush()");
                 var completed = await Task.WhenAny(waiter.Task, Task.Delay(750));
-                if (completed == waiter.Task)
-                    ApplyHtml(await waiter.Task.ConfigureAwait(true), notify: true);
+                if (completed == waiter.Task && await waiter.Task.ConfigureAwait(true) is { } html)
+                    ApplyHtml(html, notify: true);
             }
             catch (Exception ex)
             {
@@ -232,24 +232,31 @@ public sealed class MarkdownWysiwygEditor : UserControl
                 PushMarkdownToWebView();
                 break;
             case "change":
-                ApplyHtml(message.Html, notify: true);
+                ApplyEditedHtml(message);
                 break;
             case "flush":
-                _flushWaiter?.TrySetResult(message.Html ?? string.Empty);
-                ApplyHtml(message.Html, notify: true);
+                _flushWaiter?.TrySetResult(message.Dirty == false ? null : message.Html ?? string.Empty);
+                ApplyEditedHtml(message);
                 break;
             case "save":
-                ApplyHtml(message.Html, notify: true);
+                ApplyEditedHtml(message);
                 SaveRequested?.Invoke(this, EventArgs.Empty);
                 break;
             case "toggleMode":
-                ApplyHtml(message.Html, notify: true);
+                ApplyEditedHtml(message);
                 ToggleModeRequested?.Invoke(this, EventArgs.Empty);
                 break;
             case "pastemarkdown":
                 _ = PasteMarkdownAsync(message.Text ?? string.Empty);
                 break;
         }
+    }
+
+    /// <summary>Only edited documents flow back; an untouched article is never re-normalised.</summary>
+    private void ApplyEditedHtml(WysiwygMessage message)
+    {
+        if (message.Dirty != false)
+            ApplyHtml(message.Html, notify: true);
     }
 
     private void ApplyHtml(string? html, bool notify)
@@ -367,5 +374,6 @@ public sealed class MarkdownWysiwygEditor : UserControl
         public string Type { get; set; } = string.Empty;
         public string? Html { get; set; }
         public string? Text { get; set; }
+        public bool? Dirty { get; set; }
     }
 }
