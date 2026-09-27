@@ -14,7 +14,7 @@
 | **環境** | 偵測／一鍵安裝 Hugo Extended、建立新站、開啟既有站、本機預覽、`hugo build`（離線備援） |
 | **設定檔** | 網站基本欄位、**圖形化 params 表單**（Hugo / Stack 常用參數）、原始 TOML |
 | **主題** | 一鍵安裝 **Stack** 及其他熱門主題、切換 theme、編輯主題設定 |
-| **文章** | 只管理 `content/post` 等部落格文章、新增文章、**Markdown 即時預覽**、匯出 **Hexo／Jekyll 相容** Markdown |
+| **文章** | 只管理 `content/post` 等部落格文章、新增文章、[Quill](https://quilljs.com/) 驅動的 **Markdown 視覺編輯器**（支援 `#`、`-`、`>`、```` ``` ````、`**粗體**` 等快捷輸入與貼上 Markdown）、**Markdown 即時預覽**、匯出 **Hexo／Jekyll 相容** Markdown |
 | **遷移** | **Hexo／Jekyll → Hugo**、**Hugo → Hexo／Jekyll** 網站遷移（文章、頁面、靜態檔與基本設定） |
 | **選單** | 與文章分開：圖形化編輯 `menu.main` / `menu.social`、網站頁面（關於／歸檔／搜尋） |
 | **Git 部署** | 預設直接推送 GitHub Pages／遠端 Pages 工作流程；遠端失敗時可自動或手動本機備援；GitHub、GitLab、Codeberg、Bitbucket 分別保存設定；每 5 分鐘監控線上部署版本 |
@@ -128,7 +128,8 @@ GitHub Pages 的 `source[branch]` 會以 repository 預設分支（若 API 回�
 
 ```
 Hugoer/
-  Controls/     Markdown 即時預覽控制項
+  Assets/editor/ WYSIWYG 編輯頁（Quill 2，已內嵌於 quill/，BSD-3-Clause）
+  Controls/     Markdown 即時預覽與 WYSIWYG 編輯控制項
   Services/     Hugo、主題、內容、GitHub、Markdown、TOML params
   ViewModels/   MVVM
   Views/        Avalonia XAML

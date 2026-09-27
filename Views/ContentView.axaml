@@ -162,7 +162,7 @@
                                             <Button Classes="modeBtn" Content="WYSIWYG"
                                                     Classes.selected="{Binding IsWysiwygMode}"
                                                     Command="{Binding SetWysiwygModeCommand}"
-                                                    ToolTip.Tip="所見即所得。像 CKEditor 一樣直接編排內容"/>
+                                                    ToolTip.Tip="所見即所得（Quill）。直接編排內容，也可輸入 Markdown 語法自動轉換"/>
                                             <Button Classes="modeBtn" Content="原始碼"
                                                     Classes.selected="{Binding IsSourceMode}"
                                                     Command="{Binding SetSourceModeCommand}"

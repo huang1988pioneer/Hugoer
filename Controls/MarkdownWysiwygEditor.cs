@@ -9,7 +9,9 @@ using Hugoer.Services;
 namespace Hugoer.Controls;
 
 /// <summary>
-/// CKEditor 5-style Markdown WYSIWYG surface: markdown in, markdown out, edited as rich text.
+/// Quill-based Markdown WYSIWYG surface: markdown in, markdown out, edited as rich text.
+/// The page lives in <c>Assets/editor/wysiwyg.html</c>; Quill itself is vendored under
+/// <c>Assets/editor/quill/</c> and inlined at load time (the page CSP blocks external scripts).
 /// </summary>
 public sealed class MarkdownWysiwygEditor : UserControl
 {
@@ -31,7 +33,7 @@ public sealed class MarkdownWysiwygEditor : UserControl
     private bool _updatingFromHtml;
     private bool _loadedHtml;
     private string? _initError;
-    private TaskCompletionSource<string>? _flushWaiter;
+    private TaskCompletionSource<string?>? _flushWaiter;
     private readonly SemaphoreSlim _flushGate = new(1, 1);
     private readonly SemaphoreSlim _pushGate = new(1, 1);
 
@@ -126,14 +128,14 @@ public sealed class MarkdownWysiwygEditor : UserControl
             if (!_ready || _webView is null)
                 return;
 
-            var waiter = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var waiter = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
             _flushWaiter = waiter;
             try
             {
                 await _webView.InvokeScript("window.hugoerFlush()");
                 var completed = await Task.WhenAny(waiter.Task, Task.Delay(750));
-                if (completed == waiter.Task)
-                    ApplyHtml(await waiter.Task.ConfigureAwait(true), notify: true);
+                if (completed == waiter.Task && await waiter.Task.ConfigureAwait(true) is { } html)
+                    ApplyHtml(html, notify: true);
             }
             catch (Exception ex)
             {
@@ -230,21 +232,31 @@ public sealed class MarkdownWysiwygEditor : UserControl
                 PushMarkdownToWebView();
                 break;
             case "change":
-                ApplyHtml(message.Html, notify: true);
+                ApplyEditedHtml(message);
                 break;
             case "flush":
-                _flushWaiter?.TrySetResult(message.Html ?? string.Empty);
-                ApplyHtml(message.Html, notify: true);
+                _flushWaiter?.TrySetResult(message.Dirty == false ? null : message.Html ?? string.Empty);
+                ApplyEditedHtml(message);
                 break;
             case "save":
-                ApplyHtml(message.Html, notify: true);
+                ApplyEditedHtml(message);
                 SaveRequested?.Invoke(this, EventArgs.Empty);
                 break;
             case "toggleMode":
-                ApplyHtml(message.Html, notify: true);
+                ApplyEditedHtml(message);
                 ToggleModeRequested?.Invoke(this, EventArgs.Empty);
                 break;
+            case "pastemarkdown":
+                _ = PasteMarkdownAsync(message.Text ?? string.Empty);
+                break;
         }
+    }
+
+    /// <summary>Only edited documents flow back; an untouched article is never re-normalised.</summary>
+    private void ApplyEditedHtml(WysiwygMessage message)
+    {
+        if (message.Dirty != false)
+            ApplyHtml(message.Html, notify: true);
     }
 
     private void ApplyHtml(string? html, bool notify)
@@ -266,6 +278,26 @@ public sealed class MarkdownWysiwygEditor : UserControl
 
         if (notify)
             MarkdownChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Renders pasted Markdown text with the same pipeline as the editor and inserts it at the caret.</summary>
+    private async Task PasteMarkdownAsync(string markdown)
+    {
+        string html;
+        Dictionary<string, string> media;
+        try
+        {
+            html = MarkdownWysiwygConverter.ToEditableHtml(markdown);
+            media = MediaAssetService.BuildPreviewMediaMap(html, SitePath);
+        }
+        catch
+        {
+            html = string.Empty;
+            media = new Dictionary<string, string>();
+        }
+
+        await TryInvokeScriptAsync(
+            $"window.hugoerPasteHtml({JsonSerializer.Serialize(html)}, {JsonSerializer.Serialize(media)})");
     }
 
     private void PushMarkdownToWebView() => _ = PushMarkdownToWebViewAsync();
@@ -325,9 +357,14 @@ public sealed class MarkdownWysiwygEditor : UserControl
         EditorFailed?.Invoke(this, detail);
     }
 
-    private static string LoadEditorHtml()
+    private static string LoadEditorHtml() =>
+        ReadAsset("wysiwyg.html")
+            .Replace("/*__QUILL_CORE_CSS__*/", ReadAsset("quill/quill.core.css"), StringComparison.Ordinal)
+            .Replace("/*__QUILL_JS__*/", ReadAsset("quill/quill.js"), StringComparison.Ordinal);
+
+    private static string ReadAsset(string relativePath)
     {
-        using var stream = AssetLoader.Open(new Uri("avares://Hugoer/Assets/editor/wysiwyg.html"));
+        using var stream = AssetLoader.Open(new Uri("avares://Hugoer/Assets/editor/" + relativePath));
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
     }
@@ -336,5 +373,7 @@ public sealed class MarkdownWysiwygEditor : UserControl
     {
         public string Type { get; set; } = string.Empty;
         public string? Html { get; set; }
+        public string? Text { get; set; }
+        public bool? Dirty { get; set; }
     }
 }

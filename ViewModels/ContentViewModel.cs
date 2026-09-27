@@ -166,7 +166,7 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
     public partial string EditorModeTitle { get; set; } = "WYSIWYG 視覺編輯";
 
     [ObservableProperty]
-    public partial string EditorModeHint { get; set; } = "像 CKEditor 一樣直接編排內容；右側可查看產生的 Markdown。";
+    public partial string EditorModeHint { get; set; } = "以 Quill 直接編排內容，支援 Markdown 快捷輸入（# 標題、- 清單、**粗體**）；右側可查看產生的 Markdown。";
 
     [ObservableProperty]
     public partial MarkdownPreviewKind PreviewKind { get; set; } = MarkdownPreviewKind.MarkdownOutput;
@@ -303,7 +303,7 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
         IsSourceMode = EditorMode == MarkdownEditorMode.Source;
         EditorModeTitle = IsWysiwygMode ? "WYSIWYG 視覺編輯" : "Markdown 原始碼";
         EditorModeHint = IsWysiwygMode
-            ? "像 CKEditor 一樣直接編排內容；右側可查看產生的 Markdown。"
+            ? "以 Quill 直接編排內容，支援 Markdown 快捷輸入（# 標題、- 清單、**粗體**）；右側可查看產生的 Markdown。"
             : "直接編輯 Markdown 原文；右側可查看即時渲染。";
         RefreshPreviewPresentation();
     }

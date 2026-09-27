@@ -6,7 +6,7 @@ using HtmlAgilityPack;
 namespace Hugoer.Services;
 
 /// <summary>
-/// Converts Markdown body ↔ contenteditable HTML for the WYSIWYG editor.
+/// Converts Markdown body ↔ editable HTML for the Quill WYSIWYG editor.
 /// Front matter is stripped on the way in; callers rejoin it on the way out.
 /// </summary>
 public static partial class MarkdownWysiwygConverter

@@ -3,7 +3,11 @@
 <head>
   <meta charset="utf-8"/>
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: https: http: file: blob:; media-src data: https: http: file: blob:;"/>
-  <title>Hugoer WYSIWYG</title>
+  <title>Hugoer Markdown Editor</title>
+  <!-- Quill (https://quilljs.com, BSD-3-Clause) is vendored under Assets/editor/quill/.
+       MarkdownWysiwygEditor.LoadEditorHtml inlines it at the markers below because the
+       page is loaded with NavigateToString and the CSP forbids external resources. -->
+  <style>/*__QUILL_CORE_CSS__*/</style>
   <style>
     :root { color-scheme: dark; }
     html, body {
@@ -11,73 +15,149 @@
       background: #0d1218;
       color: #e6edf3;
       font-family: "Segoe UI", "Microsoft JhengHei", sans-serif;
+      overflow: hidden;
     }
-    #editor {
-      box-sizing: border-box;
-      min-height: 100%;
-      padding: 28px 36px 96px;
-      max-width: 860px;
-      margin: 0 auto;
-      outline: none;
+    #editor.ql-container {
+      height: 100%;
+      font-family: inherit;
       font-size: 16.5px;
+      border: 0;
+    }
+    #editor .ql-editor {
+      padding: 28px max(36px, calc((100% - 860px) / 2)) 96px;
       line-height: 1.7;
       caret-color: #7cdaf9;
+      tab-size: 4;
     }
-    #editor::after {
+    #editor .ql-editor::after {
       content: "";
       display: table;
       clear: both;
     }
-    #editor.is-empty::before {
-      content: attr(data-placeholder);
+    #editor .ql-editor.ql-blank::before {
       color: #6b7785;
       font-style: italic;
-      pointer-events: none;
-      float: left;
-      height: 0;
+      left: max(36px, calc((100% - 860px) / 2));
+      right: max(36px, calc((100% - 860px) / 2));
     }
-    h1, h2, h3, h4, h5, h6 {
+    #editor .ql-editor h1, #editor .ql-editor h2, #editor .ql-editor h3,
+    #editor .ql-editor h4, #editor .ql-editor h5, #editor .ql-editor h6 {
       color: #7cdaf9;
       margin: 1.25em 0 0.45em;
       font-weight: 650;
       line-height: 1.3;
     }
-    h1 { font-size: 2em; border-bottom: 1px solid #2a3648; padding-bottom: 0.2em; }
-    h2 { font-size: 1.55em; border-bottom: 1px solid #243041; padding-bottom: 0.15em; }
-    h3 { font-size: 1.28em; }
-    p { margin: 0.7em 0; }
-    a { color: #5ec8f0; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    code {
-      font-family: Consolas, "Cascadia Mono", monospace;
+    #editor .ql-editor h1 { font-size: 2em; border-bottom: 1px solid #2a3648; padding-bottom: 0.2em; }
+    #editor .ql-editor h2 { font-size: 1.55em; border-bottom: 1px solid #243041; padding-bottom: 0.15em; }
+    #editor .ql-editor h3 { font-size: 1.28em; }
+    #editor .ql-editor h4 { font-size: 1.1em; }
+    #editor .ql-editor h5, #editor .ql-editor h6 { font-size: 1em; }
+    #editor .ql-editor p { margin: 0.7em 0; }
+    #editor .ql-editor a { color: #5ec8f0; text-decoration: none; cursor: text; }
+    #editor .ql-editor a:hover { text-decoration: underline; }
+    #editor .ql-editor code, #editor .ql-editor kbd {
+      font-family: Consolas, "Cascadia Mono", Menlo, monospace;
       background: #1a2330;
+      color: #e6edf3;
       padding: 0.12em 0.38em;
       border-radius: 4px;
       font-size: 0.92em;
     }
-    pre {
+    #editor .ql-editor kbd { border: 1px solid #2a3648; border-bottom-width: 2px; }
+    #editor .ql-editor mark { background: #6b5a14; color: #fff3c4; padding: 0 0.15em; border-radius: 3px; }
+    #editor .ql-editor ins { text-decoration: underline; text-decoration-color: #7cdaf9; }
+    #editor .ql-editor strong { color: #fff; }
+    #editor .ql-editor .ql-code-block-container {
+      font-family: Consolas, "Cascadia Mono", Menlo, monospace;
+      font-size: 0.92em;
       background: #121a24;
       border: 1px solid #2a3648;
       border-radius: 8px;
       padding: 12px 14px;
-      overflow: auto;
-      white-space: pre-wrap;
+      margin: 0.9em 0;
+      color: #d7e0ea;
+      position: relative;
     }
-    pre code { background: transparent; padding: 0; }
-    blockquote {
-      margin: 1em 0;
-      padding: 0.35em 1em;
+    #editor .ql-editor .ql-code-block-container .ql-code-block:first-child[data-language]::after {
+      content: attr(data-language);
+      position: absolute;
+      top: 6px;
+      right: 10px;
+      font-size: 11px;
+      color: #6b7785;
+      pointer-events: none;
+    }
+    #editor .ql-editor blockquote {
+      margin: 0;
+      padding: 0.2em 1em;
       border-left: 2px solid #0e7490;
       background: #151c26;
       color: #c5d0dc;
     }
-    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-    th, td { border: 1px solid #2a3648; padding: 8px 10px; min-width: 4em; }
-    th { background: #1a2330; }
-    img { max-width: 100%; height: auto; border-radius: 6px; cursor: pointer; }
-    img.hugoer-img-selected { outline: 2px solid #7cdaf9; outline-offset: 3px; cursor: grab; }
-    img.hugoer-img-moving { opacity: 0.38; cursor: grabbing; }
-    audio, video { width: 100%; max-width: 640px; margin: 1em 0; display: block; }
+    #editor .ql-editor ol { padding-left: 0.4em; margin: 0.6em 0; }
+    #editor .ql-editor li { margin: 0.2em 0; }
+    #editor .ql-editor li > .ql-ui:before { color: #7cdaf9; }
+    #editor .ql-editor li[data-list=checked] > .ql-ui:before,
+    #editor .ql-editor li[data-list=unchecked] > .ql-ui:before { font-size: 1.1em; }
+    #editor .ql-editor li[data-list=checked] { color: #9aa8b8; }
+    #editor .ql-editor table { border-collapse: collapse; width: 100%; margin: 1em 0; table-layout: fixed; }
+    #editor .ql-editor td { border: 1px solid #2a3648; padding: 8px 10px; min-width: 4em; }
+    #editor .ql-editor tr:first-child td { background: #1a2330; font-weight: 650; }
+    #editor .ql-editor hr {
+      border: none;
+      border-top: 1px solid #2a3648;
+      margin: 1.5em 0;
+      cursor: default;
+    }
+    #editor .ql-editor img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #editor .ql-editor img[data-hugoer-align] { display: block; }
+    #editor .ql-editor img[data-hugoer-align="left"] { margin: 0.5em auto 0.5em 0; }
+    #editor .ql-editor img[data-hugoer-align="center"] { margin: 0.5em auto; }
+    #editor .ql-editor img[data-hugoer-align="right"] { margin: 0.5em 0 0.5em auto; }
+    #editor .ql-editor img[data-hugoer-align="wrap-left"] { float: left; margin: 0.25em 1em 0.8em 0; }
+    #editor .ql-editor img[data-hugoer-align="wrap-right"] { float: right; margin: 0.25em 0 0.8em 1em; }
+    #editor .ql-editor img.hugoer-img-selected { outline: 2px solid #7cdaf9; outline-offset: 3px; cursor: grab; }
+    #editor .ql-editor img.hugoer-img-moving { opacity: 0.38; cursor: grabbing; }
+    #editor .ql-editor .hugoer-media { margin: 1em 0; cursor: default; }
+    #editor .ql-editor .hugoer-media audio,
+    #editor .ql-editor .hugoer-media video { width: 100%; max-width: 640px; display: block; }
+    #editor .ql-editor .hugoer-raw {
+      position: relative;
+      margin: 0.9em 0;
+      padding: 10px 14px;
+      border: 1px dashed #2f4257;
+      border-radius: 8px;
+      background: #111820;
+      color: #c5d0dc;
+      white-space: normal;
+      cursor: default;
+      user-select: none;
+    }
+    #editor .ql-editor .hugoer-raw-label {
+      position: absolute;
+      top: -9px;
+      right: 10px;
+      padding: 0 6px;
+      font-size: 11px;
+      line-height: 16px;
+      color: #7cdaf9;
+      background: #0d1218;
+      border-radius: 4px;
+    }
+    #editor .ql-editor .hugoer-raw-body > :first-child { margin-top: 0; }
+    #editor .ql-editor .hugoer-raw-body > :last-child { margin-bottom: 0; }
+    #editor .ql-editor .hugoer-raw-inline > span {
+      background: #1a2330;
+      border: 1px dashed #2f4257;
+      border-radius: 4px;
+      padding: 0 0.3em;
+      color: #c5d0dc;
+    }
     #imgChrome {
       position: fixed;
       display: none;
@@ -106,10 +186,7 @@
       pointer-events: none;
     }
     #imgDrop.open { display: block; }
-    #imgToolbar {
-      position: absolute;
-      left: 0;
-      bottom: calc(100% + 8px);
+    .float-bar {
       display: flex;
       align-items: center;
       gap: 4px;
@@ -120,17 +197,8 @@
       box-shadow: 0 10px 28px rgba(0,0,0,0.38);
       pointer-events: auto;
       white-space: nowrap;
-      z-index: 3;
     }
-    #imgChrome.toolbar-below #imgToolbar {
-      bottom: auto;
-      top: calc(100% + 8px);
-    }
-    #imgChrome.toolbar-end #imgToolbar {
-      left: auto;
-      right: 0;
-    }
-    #imgToolbar button {
+    .float-bar button {
       background: #1c2736;
       color: #d7e0ea;
       border: 0;
@@ -141,13 +209,28 @@
       font-weight: 650;
       line-height: 1;
     }
-    #imgToolbar button:hover { background: #243140; }
-    #imgToolbar button.on { background: #0e7490; color: #fff; }
-    #imgToolbar .sep {
+    .float-bar button:hover { background: #243140; }
+    .float-bar button.on { background: #0e7490; color: #fff; }
+    .float-bar button.danger:hover { background: #5b2330; }
+    .float-bar .sep {
       width: 1px;
       height: 16px;
       background: #2a3648;
       margin: 0 2px;
+    }
+    #imgToolbar {
+      position: absolute;
+      left: 0;
+      bottom: calc(100% + 8px);
+      z-index: 3;
+    }
+    #imgChrome.toolbar-below #imgToolbar {
+      bottom: auto;
+      top: calc(100% + 8px);
+    }
+    #imgChrome.toolbar-end #imgToolbar {
+      left: auto;
+      right: 0;
     }
     #imgSize {
       color: #9aa8b8;
@@ -171,11 +254,12 @@
     .img-handle.ne { right: -7px; top: -7px; cursor: nesw-resize; }
     .img-handle.sw { left: -7px; bottom: -7px; cursor: nesw-resize; }
     .img-handle.se { right: -7px; bottom: -7px; cursor: nwse-resize; }
-    hr { border: none; border-top: 1px solid #2a3648; margin: 1.5em 0; }
-    ul, ol { padding-left: 1.45em; }
-    li { margin: 0.2em 0; }
-    li > input[type="checkbox"] { margin-right: 0.45em; }
-    strong { color: #fff; }
+    #tableBar {
+      position: fixed;
+      display: none;
+      z-index: 17;
+    }
+    #tableBar.open { display: flex; }
     #mask {
       display: none;
       position: fixed; inset: 0;
@@ -209,9 +293,9 @@
   </style>
 </head>
 <body>
-  <div id="editor" contenteditable="true" spellcheck="true" data-placeholder="開始撰寫文章…"></div>
+  <div id="editor" spellcheck="true"></div>
   <div id="imgChrome">
-    <div id="imgToolbar">
+    <div id="imgToolbar" class="float-bar">
       <button type="button" data-move="-1" title="上移">上</button>
       <button type="button" data-move="1" title="下移">下</button>
       <span class="sep"></span>
@@ -232,6 +316,16 @@
     <span class="img-handle se" data-handle="se"></span>
   </div>
   <div id="imgDrop"></div>
+  <div id="tableBar" class="float-bar">
+    <button type="button" data-table="insertRowAbove" title="在上方插入列">↑ 列</button>
+    <button type="button" data-table="insertRowBelow" title="在下方插入列">↓ 列</button>
+    <button type="button" data-table="insertColumnLeft" title="在左側插入欄">← 欄</button>
+    <button type="button" data-table="insertColumnRight" title="在右側插入欄">→ 欄</button>
+    <span class="sep"></span>
+    <button type="button" data-table="deleteRow" class="danger" title="刪除目前列">刪列</button>
+    <button type="button" data-table="deleteColumn" class="danger" title="刪除目前欄">刪欄</button>
+    <button type="button" data-table="deleteTable" class="danger" title="刪除整個表格">刪表格</button>
+  </div>
   <div id="mask">
     <div id="dialog">
       <h2 id="dlgTitle">插入連結</h2>
@@ -245,493 +339,34 @@
       </div>
     </div>
   </div>
+  <script>/*__QUILL_JS__*/</script>
   <script>
-    const editor = document.getElementById('editor');
-    const mask = document.getElementById('mask');
-    let suppress = false;
-    let changeTimer = 0;
-    let dialogKind = 'link';
-    let savedRange = null;
+    // ---------------------------------------------------------------------
+    // Hugoer Markdown editor built on Quill 2.
+    //
+    // Contract with MarkdownWysiwygEditor.cs (unchanged from the previous
+    // contenteditable surface): C# pushes Markdig HTML through hugoerSetHtml,
+    // the page posts canonical HTML back ({type: change|flush|save|toggleMode})
+    // and MarkdownWysiwygConverter.FromEditableHtml turns it into Markdown.
+    // Anything Quill cannot model is kept verbatim as a read-only raw block.
+    // ---------------------------------------------------------------------
+    const Delta = Quill.import('delta');
+    const Parchment = Quill.import('parchment');
+    const Inline = Quill.import('blots/inline');
+    const BlockEmbed = Quill.import('blots/block/embed');
+    const Embed = Quill.import('blots/embed');
+    const BaseLink = Quill.import('formats/link');
+    const BaseImage = Quill.import('formats/image');
+    const BaseCodeBlock = Quill.import('formats/code-block');
+    const BaseClipboard = Quill.import('modules/clipboard');
+
     const mediaMap = Object.create(null);
-
-    function lookupMedia(src) {
-      if (!src) return null;
-      if (mediaMap[src]) return mediaMap[src];
-      try {
-        const decoded = decodeURI(src);
-        if (decoded !== src && mediaMap[decoded]) return mediaMap[decoded];
-      } catch {}
-      return null;
-    }
-
-    function applyMedia(root) {
-      const scope = root || editor;
-      scope.querySelectorAll('img[src], audio[src], video[src], source[src]').forEach((el) => {
-        const src = el.getAttribute('src');
-        if (!src || /^(data:|blob:|https?:|file:)/i.test(src)) return;
-        const mapped = lookupMedia(src);
-        if (!mapped) return;
-        if (!el.getAttribute('data-hugoer-src'))
-          el.setAttribute('data-hugoer-src', src);
-        el.setAttribute('src', mapped);
-      });
-      scope.querySelectorAll('img[data-hugoer-align]').forEach((img) => {
-        applyImageAlign(img, img.getAttribute('data-hugoer-align'));
-      });
-      if (selectedImg) layoutImageChrome();
-    }
-
-    function mergeMedia(media) {
-      if (!media) return;
-      Object.assign(mediaMap, media);
-    }
-
-    function snapshotHtml() {
-      const selected = [];
-      editor.querySelectorAll('.hugoer-img-selected').forEach((el) => {
-        el.classList.remove('hugoer-img-selected');
-        selected.push(el);
-      });
-      const nodes = editor.querySelectorAll('[data-hugoer-src]');
-      const restored = [];
-      nodes.forEach((el) => {
-        restored.push([el, el.getAttribute('src')]);
-        el.setAttribute('src', el.getAttribute('data-hugoer-src'));
-      });
-      const html = editor.innerHTML;
-      restored.forEach(([el, src]) => {
-        if (src) el.setAttribute('src', src);
-      });
-      selected.forEach((el) => el.classList.add('hugoer-img-selected'));
-      return html;
-    }
-
-    const imgChrome = document.getElementById('imgChrome');
-    const imgSizeLabel = document.getElementById('imgSize');
-    const imgDrop = document.getElementById('imgDrop');
-    let selectedImg = null;
-    let resizeState = null;
-    let moveState = null;
-
-    function editorMaxImageWidth() {
-      const style = window.getComputedStyle(editor);
-      const pad = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
-      return Math.max(120, Math.floor(editor.clientWidth - pad));
-    }
-
-    function currentImageWidth(img) {
-      const attr = parseInt(img.getAttribute('width') || '', 10);
-      if (attr > 0) return attr;
-      const styled = parseInt(img.style.width || '', 10);
-      if (styled > 0) return styled;
-      return Math.round(img.getBoundingClientRect().width);
-    }
-
-    function applyImageWidth(img, width) {
-      const max = editorMaxImageWidth();
-      const next = Math.max(64, Math.min(max, Math.round(width)));
-      img.style.maxWidth = '100%';
-      img.style.height = 'auto';
-      img.style.width = next + 'px';
-      img.setAttribute('width', String(next));
-      return next;
-    }
-
-    function applyImageAlign(img, align) {
-      if (!align) {
-        img.removeAttribute('data-hugoer-align');
-        img.style.display = '';
-        img.style.cssFloat = '';
-        img.style.margin = '';
-        return;
-      }
-      img.setAttribute('data-hugoer-align', align);
-      img.style.maxWidth = '100%';
-      img.style.height = 'auto';
-      img.style.display = 'block';
-      if (align === 'wrap-left') {
-        img.style.cssFloat = 'left';
-        img.style.margin = '0.25em 1em 0.8em 0';
-      } else if (align === 'wrap-right') {
-        img.style.cssFloat = 'right';
-        img.style.margin = '0.25em 0 0.8em 1em';
-      } else {
-        img.style.cssFloat = 'none';
-        if (align === 'center') img.style.margin = '0.5em auto';
-        else if (align === 'right') img.style.margin = '0.5em 0 0.5em auto';
-        else img.style.margin = '0.5em auto 0.5em 0';
-      }
-    }
-
-    function layoutImageChrome() {
-      if (!selectedImg || !selectedImg.isConnected) {
-        clearImageSelection();
-        return;
-      }
-      const rect = selectedImg.getBoundingClientRect();
-      if (rect.width < 2 || rect.height < 2) {
-        imgChrome.classList.remove('open');
-        return;
-      }
-      imgChrome.style.left = (rect.left - 2) + 'px';
-      imgChrome.style.top = (rect.top - 2) + 'px';
-      imgChrome.style.width = rect.width + 'px';
-      imgChrome.style.height = rect.height + 'px';
-      imgChrome.classList.toggle('toolbar-below', rect.top < 52);
-      imgChrome.classList.toggle('toolbar-end', rect.left + 280 > window.innerWidth);
-      imgChrome.classList.add('open');
-      imgSizeLabel.textContent = Math.round(rect.width) + ' px';
-      const align = selectedImg.getAttribute('data-hugoer-align') || '';
-      imgChrome.querySelectorAll('#imgToolbar [data-align]').forEach((btn) => {
-        btn.classList.toggle('on', btn.getAttribute('data-align') === align);
-      });
-    }
-
-    function selectImage(img) {
-      const sel = window.getSelection();
-      if (sel) sel.removeAllRanges();
-      if (selectedImg && selectedImg !== img)
-        selectedImg.classList.remove('hugoer-img-selected');
-      selectedImg = img;
-      img.classList.add('hugoer-img-selected');
-      if (!img.complete)
-        img.addEventListener('load', layoutImageChrome, { once: true });
-      layoutImageChrome();
-    }
-
-    function clearImageSelection() {
-      if (selectedImg) {
-        selectedImg.classList.remove('hugoer-img-selected');
-        selectedImg.classList.remove('hugoer-img-moving');
-      }
-      selectedImg = null;
-      resizeState = null;
-      moveState = null;
-      imgChrome.classList.remove('open', 'moving');
-      imgDrop.classList.remove('open');
-    }
-
-    function isImageOnlyBlock(node, img) {
-      if (!node || node === editor) return false;
-      return [...node.childNodes].every((child) =>
-        child === img
-        || child.nodeName === 'BR'
-        || (child.nodeType === 3 && !String(child.textContent || '').trim()));
-    }
-
-    function ensureImageBlock(img) {
-      const parent = img.parentElement;
-      if (!parent) return img;
-      if (parent === editor) {
-        const wrap = document.createElement('p');
-        editor.insertBefore(wrap, img);
-        wrap.appendChild(img);
-        return wrap;
-      }
-      if (isImageOnlyBlock(parent, img))
-        return parent;
-      const wrap = document.createElement('p');
-      parent.insertBefore(wrap, img);
-      wrap.appendChild(img);
-      return wrap;
-    }
-
-    function dropSiblingAt(x, y, unit) {
-      const scope = unit.parentElement || editor;
-      const stack = document.elementsFromPoint(x, y);
-      for (const el of stack) {
-        if (el === imgDrop || (el.closest && el.closest('#imgChrome')))
-          continue;
-        if (el === unit || unit.contains(el))
-          continue;
-        let cur = el;
-        while (cur && cur.parentElement !== scope)
-          cur = cur.parentElement;
-        if (cur && cur.parentElement === scope && cur !== unit)
-          return cur;
-      }
-      return null;
-    }
-
-    function dropBeforeTarget(target, y) {
-      if (!target) return false;
-      const rect = target.getBoundingClientRect();
-      return y < rect.top + rect.height / 2;
-    }
-
-    function showDropMarker(unit, target, before) {
-      const editorRect = editor.getBoundingClientRect();
-      let top;
-      let left;
-      let width;
-      if (target) {
-        const rect = target.getBoundingClientRect();
-        top = (before ? rect.top : rect.bottom) - 1;
-        left = rect.left;
-        width = rect.width;
-      } else {
-        const last = [...(unit.parentElement || editor).children].filter((el) => el !== unit).pop();
-        const rect = last ? last.getBoundingClientRect() : editorRect;
-        top = last ? rect.bottom : editorRect.top + 24;
-        left = last ? rect.left : editorRect.left + 36;
-        width = last ? rect.width : Math.max(80, editorRect.width - 72);
-      }
-      imgDrop.style.top = top + 'px';
-      imgDrop.style.left = left + 'px';
-      imgDrop.style.width = Math.max(24, width) + 'px';
-      imgDrop.classList.add('open');
-    }
-
-    function moveImageBy(dir) {
-      if (!selectedImg) return;
-      const unit = ensureImageBlock(selectedImg);
-      const parent = unit.parentElement;
-      if (!parent) return;
-      if (dir < 0) {
-        const prev = unit.previousElementSibling;
-        if (!prev) return;
-        parent.insertBefore(unit, prev);
-      } else {
-        const next = unit.nextElementSibling;
-        if (!next) return;
-        parent.insertBefore(unit, next.nextSibling);
-      }
-      selectedImg.scrollIntoView({ block: 'nearest' });
-      layoutImageChrome();
-      notifyChange();
-    }
-
-    function startImageMove(event) {
-      if (!selectedImg || resizeState) return;
-      moveState = {
-        startX: event.clientX,
-        startY: event.clientY,
-        active: false,
-        hovered: false
-      };
-      try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
-    }
-
-    function onImageMoveMove(event) {
-      if (!moveState || !selectedImg) return;
-      const dx = event.clientX - moveState.startX;
-      const dy = event.clientY - moveState.startY;
-      if (!moveState.active) {
-        if (dx * dx + dy * dy < 36) return;
-        moveState.active = true;
-        selectedImg.classList.add('hugoer-img-moving');
-        imgChrome.classList.add('moving');
-      }
-      event.preventDefault();
-      const unit = ensureImageBlock(selectedImg);
-      const target = dropSiblingAt(event.clientX, event.clientY, unit);
-      const before = dropBeforeTarget(target, event.clientY);
-      if (target || event.clientY > unit.getBoundingClientRect().bottom + 8
-          || event.clientY < unit.getBoundingClientRect().top - 8) {
-        moveState.hovered = true;
-        moveState.target = target;
-        moveState.before = before;
-        showDropMarker(unit, target, before);
-      }
-    }
-
-    function endImageMove() {
-      if (!moveState) return;
-      const active = moveState.active;
-      const hovered = moveState.hovered;
-      const target = moveState.target;
-      const before = moveState.before;
-      moveState = null;
-      imgDrop.classList.remove('open');
-      imgChrome.classList.remove('moving');
-      if (selectedImg)
-        selectedImg.classList.remove('hugoer-img-moving');
-      if (!active || !hovered || !selectedImg) {
-        layoutImageChrome();
-        return;
-      }
-      const unit = ensureImageBlock(selectedImg);
-      const parent = unit.parentElement;
-      if (!parent) return;
-      if (!target)
-        parent.appendChild(unit);
-      else if (before)
-        parent.insertBefore(unit, target);
-      else
-        parent.insertBefore(unit, target.nextSibling);
-      selectedImg.scrollIntoView({ block: 'nearest' });
-      layoutImageChrome();
-      notifyChange();
-    }
-
-    function startImageResize(event, handle) {
-      if (!selectedImg) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const rect = selectedImg.getBoundingClientRect();
-      resizeState = {
-        handle: handle,
-        startX: event.clientX,
-        startWidth: rect.width
-      };
-      try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
-    }
-
-    function onImageResizeMove(event) {
-      if (!resizeState || !selectedImg) return;
-      event.preventDefault();
-      const dx = event.clientX - resizeState.startX;
-      const sign = (resizeState.handle === 'nw' || resizeState.handle === 'sw') ? -1 : 1;
-      applyImageWidth(selectedImg, resizeState.startWidth + dx * sign);
-      layoutImageChrome();
-    }
-
-    function endImageResize() {
-      if (!resizeState) return;
-      resizeState = null;
-      notifyChange();
-    }
-
-    document.getElementById('imgToolbar').addEventListener('mousedown', (event) => {
-      event.preventDefault();
-    });
-    document.getElementById('imgToolbar').addEventListener('click', (event) => {
-      const btn = event.target.closest('button');
-      if (!btn || !selectedImg) return;
-      if (btn.id === 'imgReset') {
-        selectedImg.removeAttribute('width');
-        selectedImg.style.width = '';
-        applyImageAlign(selectedImg, null);
-      } else if (btn.hasAttribute('data-move')) {
-        moveImageBy(parseInt(btn.getAttribute('data-move'), 10) || 0);
-        return;
-      } else if (btn.hasAttribute('data-align')) {
-        const align = btn.getAttribute('data-align');
-        const current = selectedImg.getAttribute('data-hugoer-align');
-        applyImageAlign(selectedImg, current === align ? null : align);
-      }
-      layoutImageChrome();
-      notifyChange();
-    });
-    imgChrome.querySelectorAll('.img-handle').forEach((handle) => {
-      handle.addEventListener('pointerdown', (event) => startImageResize(event, handle.getAttribute('data-handle')));
-      handle.addEventListener('pointermove', onImageResizeMove);
-      handle.addEventListener('pointerup', endImageResize);
-      handle.addEventListener('pointercancel', endImageResize);
-    });
-    document.getElementById('imgMoveHit').addEventListener('pointerdown', (event) => {
-      startImageMove(event);
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    window.addEventListener('pointermove', (event) => {
-      if (resizeState) onImageResizeMove(event);
-      else if (moveState) onImageMoveMove(event);
-    });
-    window.addEventListener('pointerup', (event) => {
-      if (resizeState) endImageResize();
-      else if (moveState) endImageMove(event);
-    });
-    window.addEventListener('pointercancel', () => {
-      if (resizeState) endImageResize();
-      else if (moveState) endImageMove();
-    });
-    window.addEventListener('scroll', layoutImageChrome, true);
-    window.addEventListener('resize', layoutImageChrome);
-
-    document.execCommand('defaultParagraphSeparator', false, 'p');
+    const BLOCK_FORMATS = ['header', 'blockquote', 'list', 'indent', 'code-block', 'table'];
 
     function post(payload) {
       if (typeof invokeCSharpAction === 'function') {
         invokeCSharpAction(JSON.stringify(payload));
       }
-    }
-
-    function isEmpty() {
-      const text = (editor.innerText || '').replace(/\u200B/g, '').trim();
-      return text.length === 0;
-    }
-
-    function updatePlaceholder() {
-      editor.classList.toggle('is-empty', isEmpty());
-    }
-
-    function currentBlock() {
-      const sel = window.getSelection();
-      if (!sel.rangeCount) return null;
-      let node = sel.anchorNode;
-      if (node && node.nodeType === 3) node = node.parentElement;
-      while (node && node !== editor) {
-        const tag = node.tagName;
-        if (tag && /^(P|DIV|H1|H2|H3|H4|H5|H6|LI|BLOCKQUOTE|PRE)$/.test(tag))
-          return node;
-        node = node.parentElement;
-      }
-      return editor;
-    }
-
-    function textBeforeCaret(block) {
-      const sel = window.getSelection();
-      if (!sel.rangeCount || !block) return '';
-      const range = sel.getRangeAt(0);
-      const pre = document.createRange();
-      try {
-        pre.selectNodeContents(block);
-        pre.setEnd(range.startContainer, range.startOffset);
-        return pre.toString();
-      } catch {
-        return '';
-      }
-    }
-
-    function clearPrefix(block, count) {
-      const sel = window.getSelection();
-      if (!sel.rangeCount || !block || count <= 0) return;
-      const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
-      let remaining = count;
-      const parts = [];
-      while (remaining > 0) {
-        const node = walker.nextNode();
-        if (!node) break;
-        const take = Math.min(node.length, remaining);
-        parts.push([node, take]);
-        remaining -= take;
-      }
-      for (let i = parts.length - 1; i >= 0; i--) {
-        const [node, take] = parts[i];
-        node.deleteData(0, take);
-      }
-    }
-
-    function notifyChange() {
-      updatePlaceholder();
-      if (suppress) return;
-      clearTimeout(changeTimer);
-      changeTimer = setTimeout(() => {
-        post({ type: 'change', html: snapshotHtml() });
-      }, 140);
-    }
-
-    function insertHtml(html) {
-      editor.focus();
-      document.execCommand('insertHTML', false, html);
-      applyMedia();
-      if (/<img\b/i.test(html || '')) {
-        const imgs = editor.querySelectorAll('img');
-        if (imgs.length) selectImage(imgs[imgs.length - 1]);
-      }
-      notifyChange();
-    }
-
-    function wrapInline(tag, fallback) {
-      const sel = window.getSelection();
-      const text = sel && sel.toString();
-      if (text) {
-        document.execCommand('insertHTML', false, '<' + tag + '>' + escapeHtml(text) + '</' + tag + '>');
-      } else {
-        insertHtml('<' + tag + '>' + fallback + '</' + tag + '>');
-      }
-      notifyChange();
     }
 
     function escapeHtml(value) {
@@ -750,304 +385,1479 @@
       return true;
     }
 
-    function toggleHeading(level) {
-      const block = currentBlock();
-      const tag = 'h' + level;
-      if (block && block.tagName && block.tagName.toLowerCase() === tag) {
-        document.execCommand('formatBlock', false, 'p');
-      } else {
-        document.execCommand('formatBlock', false, tag);
+    function lookupMedia(src) {
+      if (!src) return null;
+      if (mediaMap[src]) return mediaMap[src];
+      try {
+        const decoded = decodeURI(src);
+        if (decoded !== src && mediaMap[decoded]) return mediaMap[decoded];
+      } catch {}
+      return null;
+    }
+
+    function previewSrc(src) {
+      if (!src) return '';
+      if (/^(data:|blob:|https?:)/i.test(src)) return src;
+      return lookupMedia(src) || src;
+    }
+
+    function mergeMedia(media) {
+      if (media) Object.assign(mediaMap, media);
+    }
+
+    // Raw HTML is shown inside the editor only as an inert preview; the
+    // original markup travels untouched in data-raw.
+    function sanitizeForDisplay(html) {
+      const template = document.createElement('template');
+      template.innerHTML = html || '';
+      template.content.querySelectorAll('script,iframe,object,embed,style,link,meta,base,form').forEach((el) => el.remove());
+      template.content.querySelectorAll('*').forEach((el) => {
+        [...el.attributes].forEach((attr) => {
+          const name = attr.name.toLowerCase();
+          if (name.startsWith('on') || name === 'contenteditable'
+              || ((name === 'href' || name === 'src') && !isSafeUrl(attr.value, name === 'src' ? 'image' : 'link')))
+            el.removeAttribute(attr.name);
+        });
+        if (el.hasAttribute('src')) el.setAttribute('src', previewSrc(el.getAttribute('src')));
+      });
+      return template.innerHTML;
+    }
+
+    // ----- Blots ----------------------------------------------------------
+
+    class HugoerLink extends BaseLink {
+      static sanitize(url) {
+        return isSafeUrl(url, 'link') ? url : '#';
       }
-      notifyChange();
-    }
-
-    function toggleInlineCode() {
-      const sel = window.getSelection();
-      if (!sel.rangeCount) return;
-      let node = sel.anchorNode;
-      if (node && node.nodeType === 3) node = node.parentElement;
-      if (node && node.closest && node.closest('code') && !node.closest('pre')) {
-        const code = node.closest('code');
-        const text = document.createTextNode(code.textContent);
-        code.replaceWith(text);
-        notifyChange();
-        return;
+      static create(value) {
+        const node = super.create(value);
+        node.removeAttribute('target');
+        node.removeAttribute('rel');
+        return node;
       }
-      wrapInline('code', '程式碼');
     }
 
-    function insertCodeBlock() {
-      insertHtml('<pre><code class="language-text">程式碼</code></pre><p><br></p>');
-    }
+    const IMAGE_ATTRIBUTES = { alt: 'alt', width: 'width', hugoerAlign: 'data-hugoer-align' };
+    const IMAGE_ALIGNS = ['left', 'center', 'right', 'wrap-left', 'wrap-right'];
 
-    function insertTaskList() {
-      insertHtml('<ul><li><input type="checkbox"> 待辦項目</li></ul><p><br></p>');
-    }
-
-    function insertTable() {
-      insertHtml('<table><thead><tr><th>欄位一</th><th>欄位二</th></tr></thead><tbody><tr><td>內容</td><td>內容</td></tr></tbody></table><p><br></p>');
-    }
-
-    function saveSelection() {
-      const sel = window.getSelection();
-      savedRange = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-    }
-
-    function restoreSelection() {
-      if (!savedRange) return;
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(savedRange);
-    }
-
-    function openDialog(kind) {
-      dialogKind = kind;
-      saveSelection();
-      const selected = window.getSelection() ? window.getSelection().toString() : '';
-      document.getElementById('dlgTitle').textContent = kind === 'image' ? '插入圖片' : '插入連結';
-      document.getElementById('dlgTextLabel').textContent = kind === 'image' ? '替代文字' : '顯示文字';
-      document.getElementById('dlgHrefLabel').textContent = kind === 'image' ? '圖片路徑或網址' : '網址';
-      document.getElementById('dlgText').value = selected || (kind === 'image' ? '圖片說明' : '連結文字');
-      document.getElementById('dlgHref').value = kind === 'image' ? 'image.jpg' : 'https://';
-      mask.classList.add('open');
-      setTimeout(() => document.getElementById('dlgHref').focus(), 20);
-    }
-
-    function closeDialog() {
-      mask.classList.remove('open');
-      editor.focus();
-      restoreSelection();
-    }
-
-    document.getElementById('dlgCancel').addEventListener('click', closeDialog);
-    document.getElementById('dlgOk').addEventListener('click', () => {
-      const text = document.getElementById('dlgText').value || '';
-      const href = document.getElementById('dlgHref').value || '';
-      closeDialog();
-      if (!isSafeUrl(href, dialogKind)) return;
-      if (dialogKind === 'image') {
-        insertHtml('<img src="' + escapeHtml(href) + '" alt="' + escapeHtml(text) + '"/>');
-      } else {
-        insertHtml('<a href="' + escapeHtml(href) + '">' + escapeHtml(text) + '</a>');
+    class HugoerImage extends BaseImage {
+      static create(value) {
+        const node = Parchment.EmbedBlot.create.call(this, value);
+        const src = typeof value === 'string' ? value : '';
+        node.setAttribute('data-hugoer-src', src);
+        if (isSafeUrl(src, 'image')) node.setAttribute('src', previewSrc(src));
+        node.setAttribute('draggable', 'false');
+        return node;
       }
-    });
-    mask.addEventListener('click', (event) => {
-      if (event.target === mask) closeDialog();
-    });
+      static value(node) {
+        return node.getAttribute('data-hugoer-src') || node.getAttribute('src') || '';
+      }
+      static formats(node) {
+        const formats = {};
+        if (node.hasAttribute('alt')) formats.alt = node.getAttribute('alt');
+        let width = parseInt(node.getAttribute('width') || '', 10);
+        if (!(width > 0)) {
+          const match = /(?:^|;)\s*width\s*:\s*(\d+)px/i.exec(node.getAttribute('style') || '');
+          if (match) width = parseInt(match[1], 10);
+        }
+        if (width > 0) formats.width = String(width);
+        let align = node.getAttribute('data-hugoer-align') || '';
+        if (!IMAGE_ALIGNS.includes(align)) align = alignFromStyle(node.getAttribute('style') || '');
+        if (align) formats.hugoerAlign = align;
+        return formats;
+      }
+      format(name, value) {
+        const attribute = IMAGE_ATTRIBUTES[name];
+        if (!attribute) {
+          super.format(name, value);
+          return;
+        }
+        if (value) this.domNode.setAttribute(attribute, value);
+        else this.domNode.removeAttribute(attribute);
+      }
+    }
 
-    function handleMarkdownShortcut(event) {
-      if (event.key !== ' ') return false;
-      const block = currentBlock();
-      if (!block || block.tagName === 'PRE') return false;
-      const before = textBeforeCaret(block);
-      const heading = /^(#{1,6})$/.exec(before);
-      if (heading) {
-        event.preventDefault();
-        clearPrefix(block, heading[1].length);
-        document.execCommand('formatBlock', false, 'h' + heading[1].length);
-        notifyChange();
+    function alignFromStyle(style) {
+      const css = style.toLowerCase().replace(/\s+/g, '');
+      if (css.includes('float:left')) return 'wrap-left';
+      if (css.includes('float:right')) return 'wrap-right';
+      if (css.includes('margin:0.5emauto0.5em0')) return 'left';
+      if (css.includes('margin:0.5em00.5emauto')) return 'right';
+      if (css.includes('margin:0.5emauto') || css.includes('margin:0auto')) return 'center';
+      return '';
+    }
+
+    class LanguageCodeBlock extends BaseCodeBlock {
+      static create(value) {
+        const node = super.create(value);
+        if (typeof value === 'string' && value && value !== 'plain') node.setAttribute('data-language', value);
+        return node;
+      }
+      static formats(node) {
+        return node.getAttribute('data-language') || true;
+      }
+      format(name, value) {
+        if (name === this.statics.blotName && value) {
+          if (typeof value === 'string' && value !== 'plain') this.domNode.setAttribute('data-language', value);
+          else this.domNode.removeAttribute('data-language');
+          return;
+        }
+        super.format(name, value);
+      }
+    }
+
+    class Divider extends BlockEmbed {}
+    Divider.blotName = 'divider';
+    Divider.tagName = 'HR';
+
+    class HugoerMedia extends BlockEmbed {
+      static create(value) {
+        const node = super.create(value);
+        const tag = value && value.tag === 'video' ? 'video' : 'audio';
+        const src = (value && value.src) || '';
+        node.setAttribute('contenteditable', 'false');
+        node.setAttribute('data-tag', tag);
+        node.setAttribute('data-src', src);
+        const media = document.createElement(tag);
+        media.controls = true;
+        if (isSafeUrl(src, 'image')) media.setAttribute('src', previewSrc(src));
+        node.appendChild(media);
+        return node;
+      }
+      static value(node) {
+        return { tag: node.getAttribute('data-tag') || 'audio', src: node.getAttribute('data-src') || '' };
+      }
+    }
+    HugoerMedia.blotName = 'hugoerMedia';
+    HugoerMedia.tagName = 'DIV';
+    HugoerMedia.className = 'hugoer-media';
+
+    class HugoerRaw extends BlockEmbed {
+      static create(value) {
+        const node = super.create(value);
+        node.setAttribute('contenteditable', 'false');
+        node.setAttribute('data-raw', value || '');
+        node.setAttribute('title', '此區塊請在「原始碼」模式編輯（Ctrl+Shift+M）');
+        const label = document.createElement('span');
+        label.className = 'hugoer-raw-label';
+        label.textContent = describeRaw(value || '');
+        const body = document.createElement('div');
+        body.className = 'hugoer-raw-body';
+        body.innerHTML = sanitizeForDisplay(value);
+        node.append(label, body);
+        return node;
+      }
+      static value(node) {
+        return node.getAttribute('data-raw') || '';
+      }
+    }
+    HugoerRaw.blotName = 'hugoerRaw';
+    HugoerRaw.tagName = 'DIV';
+    HugoerRaw.className = 'hugoer-raw';
+
+    function describeRaw(html) {
+      if (/markdown-alert/i.test(html)) return '提示框';
+      if (/^<div[^>]*class="[^"]*math/i.test(html)) return '數學公式';
+      if (/class="[^"]*footnotes/i.test(html)) return '註腳';
+      if (/^<details/i.test(html)) return '摺疊區塊';
+      if (/^<dl/i.test(html)) return '定義清單';
+      if (/^<figure/i.test(html)) return '圖說';
+      return 'HTML 區塊';
+    }
+
+    class HugoerRawInline extends Embed {
+      static create(value) {
+        const node = super.create(value);
+        node.setAttribute('data-raw', value || '');
+        const inner = document.createElement('span');
+        inner.innerHTML = sanitizeForDisplay(value);
+        node.appendChild(inner);
+        return node;
+      }
+      static value(node) {
+        return node.getAttribute('data-raw') || '';
+      }
+    }
+    HugoerRawInline.blotName = 'hugoerRawInline';
+    HugoerRawInline.tagName = 'SPAN';
+    HugoerRawInline.className = 'hugoer-raw-inline';
+
+    // Markdown hard line break ("two trailing spaces") inside one paragraph.
+    class SoftBreak extends Parchment.EmbedBlot {
+      static value() {
         return true;
       }
-      if (before === '>' ) {
-        event.preventDefault();
-        clearPrefix(block, 1);
-        document.execCommand('formatBlock', false, 'blockquote');
-        notifyChange();
-        return true;
+    }
+    SoftBreak.blotName = 'softbreak';
+    SoftBreak.tagName = 'BR';
+    SoftBreak.className = 'hugoer-br';
+
+    class Ins extends Inline {}
+    Ins.blotName = 'ins';
+    Ins.tagName = 'INS';
+    class Mark extends Inline {}
+    Mark.blotName = 'mark';
+    Mark.tagName = 'MARK';
+    class Kbd extends Inline {}
+    Kbd.blotName = 'kbd';
+    Kbd.tagName = 'KBD';
+    Inline.order.splice(Inline.order.indexOf('code'), 0, 'ins', 'mark', 'kbd');
+
+    // ----- HTML preparation (Markdig HTML -> HTML Quill can model) --------
+
+    const INLINE_TAGS = new Set(['a', 'abbr', 'b', 'br', 'cite', 'code', 'del', 'em', 'i', 'img', 'ins', 'kbd',
+      'mark', 's', 'small', 'span', 'strike', 'strong', 'sub', 'sup', 'u', 'q', 'time', 'input']);
+
+    function isInlineOnly(el) {
+      for (const child of el.children) {
+        const tag = child.tagName.toLowerCase();
+        if (!INLINE_TAGS.has(tag)) return false;
+        if (!isInlineOnly(child)) return false;
       }
-      if (before === '-' || before === '*') {
-        event.preventDefault();
-        clearPrefix(block, 1);
-        document.execCommand('insertUnorderedList');
-        notifyChange();
-        return true;
-      }
-      if (/^\d+\.$/.test(before)) {
-        event.preventDefault();
-        clearPrefix(block, before.length);
-        document.execCommand('insertOrderedList');
-        notifyChange();
-        return true;
-      }
-      if (before === '---' || before === '***') {
-        event.preventDefault();
-        clearPrefix(block, before.length);
-        document.execCommand('insertHorizontalRule');
-        notifyChange();
-        return true;
-      }
-      if (before === '```' || before === '``') {
-        event.preventDefault();
-        clearPrefix(block, before.length);
-        insertCodeBlock();
-        return true;
-      }
-      return false;
+      return true;
     }
 
-    editor.addEventListener('input', notifyChange);
-    editor.addEventListener('keyup', updatePlaceholder);
-    editor.addEventListener('blur', () => {
-      clearTimeout(changeTimer);
-      if (!suppress) post({ type: 'change', html: snapshotHtml() });
-      updatePlaceholder();
-    });
-    editor.addEventListener('keydown', (event) => {
-      if (event.ctrlKey || event.metaKey) {
-        const key = event.key.toLowerCase();
-        if (key === 'b') { event.preventDefault(); document.execCommand('bold'); notifyChange(); return; }
-        if (key === 'i') { event.preventDefault(); document.execCommand('italic'); notifyChange(); return; }
-        if (key === 'k') { event.preventDefault(); openDialog('link'); return; }
-        if (key === 's') { event.preventDefault(); post({ type: 'save', html: snapshotHtml() }); return; }
-        if (event.shiftKey && key === 'm') { event.preventDefault(); post({ type: 'toggleMode', html: snapshotHtml() }); return; }
+    function makeRaw(doc, el) {
+      const raw = doc.createElement('div');
+      raw.className = 'hugoer-raw';
+      raw.setAttribute('data-raw', el.outerHTML);
+      return raw;
+    }
+
+    function makeMedia(doc, el) {
+      const media = doc.createElement('div');
+      media.className = 'hugoer-media';
+      media.setAttribute('data-tag', el.tagName.toLowerCase());
+      media.setAttribute('data-src', el.getAttribute('data-hugoer-src') || el.getAttribute('src')
+        || (el.querySelector('source[src]') || { getAttribute: () => '' }).getAttribute('src'));
+      return media;
+    }
+
+    function isMediaOnlyParagraph(el) {
+      const media = el.querySelectorAll('audio, video');
+      if (media.length !== 1) return false;
+      return el.textContent.trim() === '' && el.querySelectorAll('img').length === 0;
+    }
+
+    function prepareInlines(root, keepRaw) {
+      root.querySelectorAll('script, style, iframe, object, embed').forEach((el) => el.remove());
+      // Hard breaks become the softbreak embed; a <span> keeps Quill's own <br> matcher
+      // from also splitting the paragraph.
+      root.querySelectorAll('br').forEach((br) => {
+        if (br.closest('pre')) return;
+        const next = br.nextSibling;
+        const trailing = !next || (next.nodeType === 3 && !next.nextSibling && !next.data.trim());
+        if (trailing || !br.parentElement || br.parentElement === root) return;
+        if (next.nodeType === 3) next.data = next.data.replace(/^[ \t\r\n]+/, '');
+        const soft = br.ownerDocument.createElement('span');
+        soft.className = 'hugoer-br';
+        br.replaceWith(soft);
+      });
+      // Formatting whitespace between structural elements must not become text.
+      root.querySelectorAll('table, thead, tbody, tfoot, tr, ul, ol').forEach((el) => {
+        [...el.childNodes].forEach((node) => {
+          if (node.nodeType === 3 && !node.data.trim()) node.remove();
+        });
+      });
+      if (keepRaw) {
+        root.querySelectorAll('span.math, span.math-inline, a.footnote-ref, sup.footnote-ref').forEach((el) => {
+          if (el.parentElement && el.parentElement.closest('.footnote-ref, .math, .math-inline')) return;
+          const raw = el.ownerDocument.createElement('span');
+          raw.className = 'hugoer-raw-inline';
+          raw.setAttribute('data-raw', el.outerHTML);
+          el.replaceWith(raw);
+        });
       }
-      if (handleMarkdownShortcut(event)) return;
-      if (event.key === 'Tab') {
-        const block = currentBlock();
-        if (block && block.tagName === 'LI') {
-          event.preventDefault();
-          document.execCommand(event.shiftKey ? 'outdent' : 'indent');
-          notifyChange();
+    }
+
+    function prepareList(list) {
+      const ordered = list.tagName === 'OL';
+      for (const li of [...list.children]) {
+        if (li.tagName !== 'LI') continue;
+        const box = [...li.querySelectorAll(':scope > input[type="checkbox"], :scope > p > input[type="checkbox"]')][0];
+        if (box) {
+          li.setAttribute('data-list', box.hasAttribute('checked') || box.checked ? 'checked' : 'unchecked');
+          box.remove();
+        } else {
+          li.setAttribute('data-list', ordered ? 'ordered' : 'bullet');
+        }
+        const paragraphs = li.querySelectorAll(':scope > p');
+        paragraphs.forEach((p, index) => {
+          const frag = li.ownerDocument.createDocumentFragment();
+          if (index > 0) frag.appendChild(li.ownerDocument.createTextNode(' '));
+          frag.append(...p.childNodes);
+          p.replaceWith(frag);
+        });
+        li.querySelectorAll(':scope > ul, :scope > ol').forEach(prepareList);
+      }
+    }
+
+    function listIsSimple(list) {
+      for (const li of list.children) {
+        if (li.tagName !== 'LI') return false;
+        for (const child of li.children) {
+          const tag = child.tagName.toLowerCase();
+          if (tag === 'ul' || tag === 'ol') {
+            if (!listIsSimple(child)) return false;
+          } else if (tag === 'p') {
+            if (!isInlineOnly(child)) return false;
+          } else if (!INLINE_TAGS.has(tag) || !isInlineOnly(child)) {
+            return false;
+          }
         }
       }
-      if (event.key === 'Enter' && currentBlock() && currentBlock().tagName === 'PRE') {
-        event.preventDefault();
-        document.execCommand('insertText', false, '\n');
-        notifyChange();
-      }
-    });
+      return true;
+    }
 
-    editor.addEventListener('paste', (event) => {
-      event.preventDefault();
-      const html = event.clipboardData.getData('text/html');
-      const text = event.clipboardData.getData('text/plain');
-      if (html && !/class=["']?Mso|xmlns:o=|office:office/i.test(html)) {
-        const template = document.createElement('template');
-        template.innerHTML = html;
-        template.content.querySelectorAll('script,iframe,object,embed,style').forEach((el) => el.remove());
-        template.content.querySelectorAll('*').forEach((el) => {
-          [...el.attributes].forEach((attr) => {
-            if (attr.name.startsWith('on')
-              || ((attr.name === 'href' || attr.name === 'src') && !isSafeUrl(attr.value, attr.name === 'src' ? 'image' : 'link')))
-              el.removeAttribute(attr.name);
-          });
+    let tableSerial = 0;
+
+    function prepareTable(table) {
+      tableSerial += 1;
+      const rows = [...table.querySelectorAll('tr')];
+      rows.forEach((tr, rowIndex) => {
+        [...tr.children].forEach((cell) => {
+          let td = cell;
+          if (cell.tagName === 'TH') {
+            td = cell.ownerDocument.createElement('td');
+            td.append(...cell.childNodes);
+            cell.replaceWith(td);
+          }
+          td.setAttribute('data-row', 't' + tableSerial + '-r' + (rowIndex + 1));
+          td.querySelectorAll(':scope > p').forEach((p) => p.replaceWith(...p.childNodes));
         });
-        document.execCommand('insertHTML', false, template.innerHTML);
-      } else {
-        document.execCommand('insertText', false, text);
+      });
+    }
+
+    function tableIsSimple(table) {
+      return [...table.querySelectorAll('td, th')].every((cell) =>
+        [...cell.children].every((child) =>
+          (child.tagName === 'P' || INLINE_TAGS.has(child.tagName.toLowerCase())) && isInlineOnly(child)));
+    }
+
+    function prepareCodeBlock(pre) {
+      const code = pre.querySelector(':scope > code');
+      const classes = ((code && code.getAttribute('class')) || '') + ' ' + (pre.getAttribute('class') || '');
+      const match = /(?:language-|lang-)([A-Za-z0-9_+#.-]+)/.exec(classes);
+      const text = (code || pre).textContent.replace(/\n$/, '');
+      const clean = pre.ownerDocument.createElement('pre');
+      if (match) clean.setAttribute('data-language', match[1]);
+      clean.textContent = text;
+      pre.replaceWith(clean);
+    }
+
+    function prepareBlocks(container, keepRaw) {
+      const doc = container.ownerDocument;
+      for (const el of [...container.children]) {
+        const tag = el.tagName.toLowerCase();
+        if (el.classList.contains('hugoer-pdf-embed')) {
+          el.remove();
+          continue;
+        }
+        if (tag === 'audio' || tag === 'video') {
+          el.replaceWith(makeMedia(doc, el));
+          continue;
+        }
+        if (INLINE_TAGS.has(tag) && isInlineOnly(el)) continue;
+        if (tag === 'p' || /^h[1-6]$/.test(tag)) {
+          if (tag === 'p' && isMediaOnlyParagraph(el)) {
+            el.replaceWith(makeMedia(doc, el.querySelector('audio, video')));
+            continue;
+          }
+          if (isInlineOnly(el)) continue;
+          if (keepRaw) el.replaceWith(makeRaw(doc, el));
+          continue;
+        }
+        if (tag === 'pre') {
+          prepareCodeBlock(el);
+          continue;
+        }
+        if (tag === 'hr') continue;
+        if (tag === 'ul' || tag === 'ol') {
+          if (listIsSimple(el) || !keepRaw) prepareList(el);
+          else el.replaceWith(makeRaw(doc, el));
+          continue;
+        }
+        if (tag === 'table') {
+          if (tableIsSimple(el) || !keepRaw) prepareTable(el);
+          else el.replaceWith(makeRaw(doc, el));
+          continue;
+        }
+        if (tag === 'blockquote') {
+          const simple = [...el.children].every((child) => child.tagName === 'P' && isInlineOnly(child));
+          if (simple) continue;
+          if (keepRaw) el.replaceWith(makeRaw(doc, el));
+          else prepareBlocks(el, false);
+          continue;
+        }
+        if (keepRaw) {
+          el.replaceWith(makeRaw(doc, el));
+        } else if (tag === 'div' || tag === 'section' || tag === 'article' || tag === 'figure' || tag === 'details') {
+          prepareBlocks(el, false);
+        }
       }
+
+      // Quill merges adjacent tables / code blocks / quotes; keep them apart.
+      const separated = new Set(['TABLE', 'PRE', 'BLOCKQUOTE']);
+      for (const el of [...container.children]) {
+        const next = el.nextElementSibling;
+        if (next && separated.has(el.tagName) && el.tagName === next.tagName)
+          el.after(doc.createElement('p'));
+      }
+    }
+
+    // Markdig emits raw inline HTML (e.g. a sized <img>) at the top level; gather each
+    // run of top-level inline nodes into one paragraph so it is not treated as a block.
+    function wrapTopLevelInlines(body) {
+      let run = null;
+      [...body.childNodes].forEach((node) => {
+        const inline = node.nodeType === 3
+          || (node.nodeType === 1 && INLINE_TAGS.has(node.tagName.toLowerCase()) && isInlineOnly(node));
+        if (!inline) {
+          run = null;
+          return;
+        }
+        if (!run) {
+          if (node.nodeType === 3 && !node.data.trim()) {
+            node.remove();
+            return;
+          }
+          run = body.ownerDocument.createElement('p');
+          node.before(run);
+        }
+        run.appendChild(node);
+      });
+    }
+
+    function prepareHtml(html, keepRaw) {
+      const doc = new DOMParser().parseFromString('<body>' + (html || '') + '</body>', 'text/html');
+      prepareInlines(doc.body, keepRaw);
+      wrapTopLevelInlines(doc.body);
+      prepareBlocks(doc.body, keepRaw);
+      [...doc.body.childNodes].forEach((node) => {
+        if (node.nodeType === 3 && !node.data.trim()) node.remove();
+      });
+      return doc.body.innerHTML;
+    }
+
+    // ----- Clipboard: Markdown-aware paste --------------------------------
+
+    function looksLikeMarkdown(text) {
+      if (!text || text.length > 400000) return false;
+      return /(^|\n)[ \t]{0,3}(#{1,6}[ \t]|[-*+][ \t]|\d{1,9}[.)][ \t]|>|```|~~~|\|.*\|[ \t]*$)/m.test(text)
+        || /\*\*[^*\n]+\*\*|__[^_\n]+__|`[^`\n]+`|!?\[[^\]\n]*\]\([^)\s]+\)|~~[^~\n]+~~/.test(text);
+    }
+
+    let pendingMarkdownPaste = null;
+    let prepareKeepsRaw = false;
+
+    class HugoerClipboard extends BaseClipboard {
+      onCapturePaste(event) {
+        if (event.defaultPrevented || !this.quill.isEnabled()) return;
+        const data = event.clipboardData;
+        const html = data ? data.getData('text/html') : '';
+        const text = data ? data.getData('text/plain') : '';
+        const range = this.quill.getSelection(true);
+        const formats = range ? this.quill.getFormat(range) : {};
+        if (!html && range && !formats['code-block'] && !formats.code
+            && typeof invokeCSharpAction === 'function' && looksLikeMarkdown(text)) {
+          event.preventDefault();
+          if (range.length) this.quill.deleteText(range.index, range.length, 'user');
+          pendingMarkdownPaste = { index: range.index, text };
+          post({ type: 'pasteMarkdown', text });
+          setTimeout(() => {
+            if (pendingMarkdownPaste && pendingMarkdownPaste.text === text) {
+              pendingMarkdownPaste = null;
+              this.quill.insertText(range.index, text, 'user');
+            }
+          }, 1500);
+          return;
+        }
+        super.onCapturePaste(event);
+      }
+      convert(input, formats) {
+        const html = input && input.html ? prepareHtml(input.html, prepareKeepsRaw) : input && input.html;
+        return super.convert({ html, text: input ? input.text : '' }, formats || {});
+      }
+    }
+
+    function markStrike(node, delta) {
+      return delta.compose(new Delta().retain(delta.length(), { strike: true }));
+    }
+
+    function convertHtml(html, keepRaw) {
+      prepareKeepsRaw = keepRaw;
+      try {
+        return quill.clipboard.convert({ html: html || '', text: '' });
+      } finally {
+        prepareKeepsRaw = false;
+      }
+    }
+
+    // ----- Keyboard: Markdown input rules ---------------------------------
+
+    function lineStartRule(prefix, apply) {
+      return {
+        key: ' ',
+        shiftKey: null,
+        collapsed: true,
+        format: { 'code-block': false, list: false, blockquote: false, header: false, table: false },
+        prefix,
+        handler(range, context) {
+          if (context.offset !== context.prefix.length) return true;
+          const start = range.index - context.prefix.length;
+          this.quill.insertText(range.index, ' ', 'user');
+          this.quill.history.cutoff();
+          this.quill.deleteText(start, context.prefix.length + 1, 'user');
+          apply(this.quill, start, context.prefix);
+          this.quill.history.cutoff();
+          return false;
+        }
+      };
+    }
+
+    function inlineFormats(index) {
+      const formats = Object.assign({}, quill.getFormat(index, 0));
+      BLOCK_FORMATS.forEach((name) => delete formats[name]);
+      return formats;
+    }
+
+    function inlineRule(key, pattern, apply) {
+      return {
+        key,
+        shiftKey: null,
+        collapsed: true,
+        format: { 'code-block': false, code: false },
+        prefix: pattern,
+        handler(range, context) {
+          const match = pattern.exec(context.prefix);
+          if (!match) return true;
+          const consumed = match[0].length - match[1].length;
+          const start = range.index - consumed;
+          const base = inlineFormats(start);
+          this.quill.insertText(range.index, key, 'user');
+          this.quill.history.cutoff();
+          this.quill.deleteText(start, consumed + 1, 'user');
+          apply(this.quill, start, match, base);
+          this.quill.history.cutoff();
+          return false;
+        }
+      };
+    }
+
+    function wrapWith(format, value) {
+      return (q, start, match, base) => {
+        const text = match[2];
+        q.insertText(start, text, Object.assign({}, base, { [format]: value === undefined ? true : value }), 'user');
+        q.setSelection(start + text.length, 0, 'silent');
+        q.format(format, false, 'user');
+        return text.length;
+      };
+    }
+
+    const markdownBindings = {
+      'md header': lineStartRule(/^#{1,6}$/, (q, start, prefix) => q.formatLine(start, 1, 'header', prefix.length, 'user')),
+      'md quote': lineStartRule(/^>$/, (q, start) => q.formatLine(start, 1, 'blockquote', true, 'user')),
+      'md code': lineStartRule(/^(```|~~~)[A-Za-z0-9_+#.-]*$/, (q, start, prefix) =>
+        q.formatLine(start, 1, 'code-block', prefix.slice(3) || true, 'user')),
+      'md hr': lineStartRule(/^(---|\*\*\*|___)$/, (q, start) => {
+        q.insertEmbed(start, 'divider', true, 'user');
+        q.setSelection(start + 1, 0, 'silent');
+      }),
+      'md code enter': {
+        key: 'Enter',
+        collapsed: true,
+        format: { 'code-block': false, list: false, table: false },
+        prefix: /^(```|~~~)[A-Za-z0-9_+#.-]*$/,
+        handler(range, context) {
+          if (context.offset !== context.prefix.length) return true;
+          const start = range.index - context.prefix.length;
+          this.quill.deleteText(start, context.prefix.length, 'user');
+          this.quill.formatLine(start, 1, 'code-block', context.prefix.slice(3) || true, 'user');
+          this.quill.setSelection(start, 0, 'silent');
+          return false;
+        }
+      },
+      'md bold star': inlineRule('*', /(^|[^*\\])\*\*([^*\s](?:[^*]*[^*\s])?)\*$/, wrapWith('bold')),
+      'md italic star': inlineRule('*', /(^|[^*\\])\*([^*\s](?:[^*]*[^*\s])?)$/, wrapWith('italic')),
+      'md bold underscore': inlineRule('_', /(^|[^\w\\])__([^_\s](?:[^_]*[^_\s])?)_$/, wrapWith('bold')),
+      'md italic underscore': inlineRule('_', /(^|[^\w_\\])_([^_\s](?:[^_]*[^_\s])?)$/, wrapWith('italic')),
+      'md strike': inlineRule('~', /(^|[^~\\])~~([^~\s](?:[^~]*[^~\s])?)~$/, wrapWith('strike')),
+      'md code inline': inlineRule('`', /(^|[^`\\])`([^`]+)$/, wrapWith('code')),
+      'md image': inlineRule(')', /(^|[^\\])!\[([^\]]*)\]\(([^()\s]+)$/, (q, start, match) => {
+        if (!isSafeUrl(match[3], 'image')) return;
+        q.insertEmbed(start, 'image', match[3], 'user');
+        if (match[2]) q.formatText(start, 1, 'alt', match[2], 'user');
+        q.setSelection(start + 1, 0, 'silent');
+      }),
+      'md link': inlineRule(')', /(^|[^!\\])\[([^\]]+)\]\(([^()\s]+)$/, (q, start, match, base) => {
+        const text = match[2];
+        q.insertText(start, text, Object.assign({}, base, { link: HugoerLink.sanitize(match[3]) }), 'user');
+        q.setSelection(start + text.length, 0, 'silent');
+        q.format('link', false, 'user');
+        return text.length;
+      }),
+      indent: {
+        key: 'Tab',
+        format: ['blockquote', 'indent', 'list'],
+        handler(range, context) {
+          if (context.collapsed && context.offset !== 0 && context.format.list == null) return true;
+          this.quill.format('indent', '+1', 'user');
+          return false;
+        }
+      },
+      'soft break': {
+        key: 'Enter',
+        shiftKey: true,
+        format: { 'code-block': false, table: false },
+        handler(range) {
+          this.quill.deleteText(range.index, range.length, 'user');
+          const [line, offset] = this.quill.getLine(range.index);
+          const atLineEnd = !line || offset >= line.length() - 1;
+          this.quill.insertEmbed(range.index, 'softbreak', true, 'user');
+          // A <br> that ends a block does not render a new line; add a second one as the
+          // caret's landing spot (trailing breaks are dropped again on serialisation).
+          if (atLineEnd) this.quill.insertEmbed(range.index + 1, 'softbreak', true, 'user');
+          this.quill.setSelection(range.index + 1, 0, 'silent');
+          return false;
+        }
+      }
+    };
+
+    // ----- Quill instance -------------------------------------------------
+
+    Quill.register({
+      'formats/link': HugoerLink,
+      'formats/image': HugoerImage,
+      'formats/code-block': LanguageCodeBlock,
+      'formats/divider': Divider,
+      'formats/hugoerMedia': HugoerMedia,
+      'formats/hugoerRaw': HugoerRaw,
+      'formats/hugoerRawInline': HugoerRawInline,
+      'formats/softbreak': SoftBreak,
+      'formats/ins': Ins,
+      'formats/mark': Mark,
+      'formats/kbd': Kbd,
+      'modules/clipboard': HugoerClipboard
+    }, true);
+
+    const quill = new Quill('#editor', {
+      placeholder: '開始撰寫文章…（支援 Markdown 語法：# 標題、- 清單、> 引用、``` 程式碼、**粗體**）',
+      formats: [
+        'bold', 'italic', 'strike', 'code', 'link', 'script', 'ins', 'mark', 'kbd',
+        'header', 'blockquote', 'list', 'indent', 'code-block', 'table',
+        'image', 'divider', 'hugoerMedia', 'hugoerRaw', 'hugoerRawInline', 'softbreak'
+      ],
+      modules: {
+        table: true,
+        history: { delay: 700, maxStack: 300, userOnly: true },
+        uploader: { handler() {} },
+        clipboard: { matchers: [['del', markStrike]] },
+        keyboard: { bindings: markdownBindings }
+      }
+    });
+    const tableModule = quill.getModule('table');
+    const editorRoot = quill.root;
+    editorRoot.setAttribute('spellcheck', 'true');
+
+    // ----- Delta -> canonical HTML for MarkdownWysiwygConverter -----------
+
+    const INLINE_WRAPPERS = [
+      ['link', (value, inner) => '<a href="' + escapeHtml(value) + '">' + inner + '</a>'],
+      ['bold', (value, inner) => '<strong>' + inner + '</strong>'],
+      ['italic', (value, inner) => '<em>' + inner + '</em>'],
+      ['strike', (value, inner) => '<del>' + inner + '</del>'],
+      ['ins', (value, inner) => '<ins>' + inner + '</ins>'],
+      ['mark', (value, inner) => '<mark>' + inner + '</mark>'],
+      ['script', (value, inner) => value === 'super' ? '<sup>' + inner + '</sup>' : '<sub>' + inner + '</sub>'],
+      ['kbd', (value, inner) => '<kbd>' + inner + '</kbd>'],
+      ['code', (value, inner) => '<code>' + inner + '</code>']
+    ];
+
+    function renderLeaf(op) {
+      if (typeof op.insert === 'string') return escapeHtml(op.insert);
+      const embed = op.insert || {};
+      const attrs = op.attributes || {};
+      if (embed.image != null) {
+        let html = '<img src="' + escapeHtml(embed.image) + '" alt="' + escapeHtml(attrs.alt || '') + '"';
+        if (attrs.width) html += ' width="' + escapeHtml(attrs.width) + '"';
+        if (attrs.hugoerAlign) html += ' data-hugoer-align="' + escapeHtml(attrs.hugoerAlign) + '"';
+        return html + '>';
+      }
+      if (embed.softbreak) return '<br>';
+      if (embed.hugoerRawInline != null) return embed.hugoerRawInline;
+      return '';
+    }
+
+    function renderInline(ops, depth) {
+      if (depth >= INLINE_WRAPPERS.length) return ops.map(renderLeaf).join('');
+      const [name, wrap] = INLINE_WRAPPERS[depth];
+      let html = '';
+      let index = 0;
+      while (index < ops.length) {
+        const value = ops[index].attributes && ops[index].attributes[name];
+        let end = index + 1;
+        while (end < ops.length && ((ops[end].attributes && ops[end].attributes[name]) || null) === (value || null))
+          end += 1;
+        const inner = renderInline(ops.slice(index, end), depth + 1);
+        html += value ? wrap(value, inner) : inner;
+        index = end;
+      }
+      return html;
+    }
+
+    function isBlockEmbed(op) {
+      return op.insert && typeof op.insert === 'object'
+        && (op.insert.divider != null || op.insert.hugoerMedia != null || op.insert.hugoerRaw != null);
+    }
+
+    function isSoftBreak(op) {
+      return op.insert && typeof op.insert === 'object' && op.insert.softbreak != null;
+    }
+
+    function splitLines(delta) {
+      const blocks = [];
+      let current = [];
+      const push = (ops, attrs) => {
+        while (ops.length && isSoftBreak(ops[ops.length - 1])) ops.pop();
+        blocks.push({ ops, attrs });
+      };
+      delta.ops.forEach((op) => {
+        if (isBlockEmbed(op)) {
+          if (current.length) push(current, {});
+          current = [];
+          blocks.push({ embed: op.insert });
+          return;
+        }
+        if (typeof op.insert !== 'string') {
+          current.push(op);
+          return;
+        }
+        const parts = op.insert.split('\n');
+        parts.forEach((part, i) => {
+          if (part) current.push({ insert: part, attributes: op.attributes });
+          if (i < parts.length - 1) {
+            push(current, op.attributes || {});
+            current = [];
+          }
+        });
+      });
+      if (current.length) push(current, {});
+      return blocks;
+    }
+
+    function renderList(items) {
+      let html = '';
+      const stack = [];
+      items.forEach((item) => {
+        const tag = item.attrs.list === 'ordered' ? 'ol' : 'ul';
+        const depth = Math.min(item.attrs.indent || 0, stack.length);
+        while (stack.length > depth + 1) html += '</li></' + stack.pop() + '>';
+        if (stack.length === depth + 1) {
+          if (stack[depth] !== tag) html += '</li></' + stack.pop() + '>';
+          else html += '</li>';
+        }
+        if (stack.length === depth) {
+          html += '<' + tag + '>';
+          stack.push(tag);
+        }
+        let box = '';
+        if (item.attrs.list === 'checked') box = '<input type="checkbox" checked> ';
+        else if (item.attrs.list === 'unchecked') box = '<input type="checkbox"> ';
+        html += '<li>' + box + renderInline(item.ops, 0);
+      });
+      while (stack.length) html += '</li></' + stack.pop() + '>';
+      return html;
+    }
+
+    function renderEmbedBlock(embed) {
+      if (embed.divider != null) return '<hr>';
+      if (embed.hugoerRaw != null) return embed.hugoerRaw;
+      if (embed.hugoerMedia != null) {
+        const tag = embed.hugoerMedia.tag === 'video' ? 'video' : 'audio';
+        return '<' + tag + ' controls src="' + escapeHtml(embed.hugoerMedia.src || '') + '"></' + tag + '>';
+      }
+      return '';
+    }
+
+    function deltaToHtml(delta) {
+      const blocks = splitLines(delta);
+      let html = '';
+      let i = 0;
+      while (i < blocks.length) {
+        const block = blocks[i];
+        if (block.embed) {
+          html += renderEmbedBlock(block.embed);
+          i += 1;
+          continue;
+        }
+        const attrs = block.attrs;
+        const run = (predicate) => {
+          const items = [];
+          while (i < blocks.length && !blocks[i].embed && predicate(blocks[i].attrs)) items.push(blocks[i++]);
+          return items;
+        };
+        if (attrs.list) {
+          html += renderList(run((a) => !!a.list));
+        } else if (attrs['code-block']) {
+          const lines = run((a) => !!a['code-block']);
+          const language = typeof lines[0].attrs['code-block'] === 'string' && lines[0].attrs['code-block'] !== 'plain'
+            ? lines[0].attrs['code-block'] : '';
+          const code = lines.map((line) => line.ops.map((op) => typeof op.insert === 'string' ? op.insert : '').join('')).join('\n');
+          html += '<pre><code' + (language ? ' class="language-' + escapeHtml(language) + '"' : '') + '>'
+            + escapeHtml(code) + '</code></pre>';
+        } else if (attrs.table) {
+          const cells = run((a) => !!a.table);
+          html += '<table><tbody>';
+          let row = null;
+          cells.forEach((cell) => {
+            if (cell.attrs.table !== row) {
+              if (row !== null) html += '</tr>';
+              html += '<tr>';
+              row = cell.attrs.table;
+            }
+            html += '<td>' + renderInline(cell.ops, 0) + '</td>';
+          });
+          html += '</tr></tbody></table>';
+        } else if (attrs.blockquote) {
+          const lines = run((a) => !!a.blockquote);
+          html += '<blockquote>' + lines.map((line) => '<p>' + renderInline(line.ops, 0) + '</p>').join('') + '</blockquote>';
+        } else if (attrs.header) {
+          html += '<h' + attrs.header + '>' + renderInline(block.ops, 0) + '</h' + attrs.header + '>';
+          i += 1;
+        } else {
+          if (block.ops.length) html += '<p>' + renderInline(block.ops, 0) + '</p>';
+          i += 1;
+        }
+      }
+      return html;
+    }
+
+    function snapshotHtml() {
+      return deltaToHtml(quill.getContents());
+    }
+
+    // ----- Change notifications -------------------------------------------
+
+    let suppress = false;
+    let changeTimer = 0;
+    // True while the document has edits the host has not received yet. Messages carry it so
+    // the host never rewrites (normalises) an article that was only opened, not edited.
+    let dirty = false;
+
+    function notifyChange() {
+      if (suppress) return;
+      clearTimeout(changeTimer);
+      changeTimer = setTimeout(() => flushChange('change'), 140);
+    }
+
+    function flushChange(type) {
+      clearTimeout(changeTimer);
+      post({ type: type || 'change', html: snapshotHtml(), dirty });
+      dirty = false;
+    }
+
+    quill.on('text-change', (delta, oldDelta, source) => {
+      if (source === 'silent') return;
+      if (!suppress) dirty = true;
       notifyChange();
+      if (selectedImg) requestAnimationFrame(layoutImageChrome);
+    });
+    quill.on('selection-change', (range, oldRange, source) => {
+      updateTableBar(range);
+      if (range == null && oldRange != null && !suppress && dirty) flushChange('change');
     });
 
-    editor.addEventListener('click', (event) => {
-      if (event.target && event.target.matches && event.target.matches('input[type="checkbox"]')) {
-        notifyChange();
+    // ----- Image chrome: select / resize / align / move -------------------
+
+    const imgChrome = document.getElementById('imgChrome');
+    const imgSizeLabel = document.getElementById('imgSize');
+    const imgDrop = document.getElementById('imgDrop');
+    let selectedImg = null;
+    let resizeState = null;
+    let moveState = null;
+
+    function imageIndex(img) {
+      const blot = img && Quill.find(img);
+      return blot && blot.scroll === quill.scroll ? quill.getIndex(blot) : -1;
+    }
+
+    function imageAt(index) {
+      for (const img of editorRoot.querySelectorAll('img')) {
+        if (imageIndex(img) === index) return img;
+      }
+      return null;
+    }
+
+    function topLevelBlot(blot) {
+      let current = blot;
+      while (current && current.parent && current.parent !== quill.scroll) current = current.parent;
+      return current && current.parent === quill.scroll ? current : null;
+    }
+
+    function editorMaxImageWidth() {
+      const style = window.getComputedStyle(editorRoot);
+      const pad = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+      return Math.max(120, Math.floor(editorRoot.clientWidth - pad));
+    }
+
+    function layoutImageChrome() {
+      if (!selectedImg || !selectedImg.isConnected) {
+        clearImageSelection();
+        return;
+      }
+      const rect = selectedImg.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) {
+        imgChrome.classList.remove('open');
+        return;
+      }
+      imgChrome.style.left = (rect.left - 2) + 'px';
+      imgChrome.style.top = (rect.top - 2) + 'px';
+      imgChrome.style.width = rect.width + 'px';
+      imgChrome.style.height = rect.height + 'px';
+      imgChrome.classList.toggle('toolbar-below', rect.top < 52);
+      imgChrome.classList.toggle('toolbar-end', rect.left + 320 > window.innerWidth);
+      imgChrome.classList.add('open');
+      imgSizeLabel.textContent = Math.round(rect.width) + ' px';
+      const align = selectedImg.getAttribute('data-hugoer-align') || '';
+      imgChrome.querySelectorAll('#imgToolbar [data-align]').forEach((btn) => {
+        btn.classList.toggle('on', btn.getAttribute('data-align') === align);
+      });
+    }
+
+    function selectImage(img) {
+      if (selectedImg && selectedImg !== img) selectedImg.classList.remove('hugoer-img-selected');
+      if (quill.hasFocus()) quill.blur();
+      const sel = window.getSelection();
+      if (sel) sel.removeAllRanges();
+      selectedImg = img;
+      img.classList.add('hugoer-img-selected');
+      if (!img.complete) img.addEventListener('load', layoutImageChrome, { once: true });
+      layoutImageChrome();
+    }
+
+    function clearImageSelection() {
+      if (selectedImg) selectedImg.classList.remove('hugoer-img-selected', 'hugoer-img-moving');
+      selectedImg = null;
+      resizeState = null;
+      moveState = null;
+      imgChrome.classList.remove('open', 'moving');
+      imgDrop.classList.remove('open');
+    }
+
+    function formatSelectedImage(formats) {
+      const index = imageIndex(selectedImg);
+      if (index < 0) return;
+      quill.formatText(index, 1, formats, 'user');
+      layoutImageChrome();
+    }
+
+    function blockFormatsOff() {
+      const off = {};
+      BLOCK_FORMATS.forEach((name) => { off[name] = false; });
+      return off;
+    }
+
+    // Moves the selected image so it becomes its own paragraph before/after `target`
+    // (a direct child of the Quill scroll).
+    function moveImageTo(target, before) {
+      const index = imageIndex(selectedImg);
+      if (index < 0 || !target) return;
+      const op = quill.getContents(index, 1).ops[0];
+      const [line] = quill.getLine(index);
+      const unit = topLevelBlot(line);
+      if (target === unit) return;
+
+      const lineIndex = quill.getIndex(line);
+      const soleOnLine = line.length() === 2 && line.parent === quill.scroll;
+      if (soleOnLine) quill.deleteText(lineIndex, 2, 'user');
+      else quill.deleteText(index, 1, 'user');
+
+      let at;
+      if (!target.scroll || !target.domNode.isConnected) return;
+      if (before) at = quill.getIndex(target);
+      else at = target.next ? quill.getIndex(target.next) : null;
+
+      if (at === null) {
+        const end = quill.getLength() - 1;
+        const [lastLine] = quill.getLine(end);
+        const lastFormats = lastLine && lastLine.formats ? lastLine.formats() : {};
+        quill.updateContents(new Delta().retain(end).insert('\n', lastFormats).insert(op.insert, op.attributes), 'user');
+        quill.formatLine(end + 1, 1, blockFormatsOff(), 'user');
+        at = end + 1;
+      } else {
+        quill.updateContents(new Delta().retain(at).insert(op.insert, op.attributes).insert('\n'), 'user');
+      }
+      const moved = imageAt(at);
+      if (moved) {
+        selectImage(moved);
+        moved.scrollIntoView({ block: 'nearest' });
+      } else {
+        clearImageSelection();
+      }
+    }
+
+    function moveImageBy(dir) {
+      const index = imageIndex(selectedImg);
+      if (index < 0) return;
+      const [line] = quill.getLine(index);
+      const unit = topLevelBlot(line);
+      if (!unit) return;
+      const target = dir < 0 ? unit.prev : unit.next;
+      if (target) moveImageTo(target, dir < 0);
+    }
+
+    function dropTargetAt(y) {
+      const selectedUnit = topLevelBlot(quill.getLine(imageIndex(selectedImg))[0]);
+      let best = null;
+      let bestDistance = Infinity;
+      quill.scroll.children.forEach((child) => {
+        if (child === selectedUnit) return;
+        const rect = child.domNode.getBoundingClientRect();
+        const distance = y < rect.top ? rect.top - y : (y > rect.bottom ? y - rect.bottom : 0);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = { blot: child, rect, before: y < rect.top + rect.height / 2 };
+        }
+      });
+      return best;
+    }
+
+    function startImageMove(event) {
+      if (!selectedImg || resizeState) return;
+      moveState = { startX: event.clientX, startY: event.clientY, active: false, target: null };
+      try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
+    }
+
+    function onImageMoveMove(event) {
+      if (!moveState || !selectedImg) return;
+      const dx = event.clientX - moveState.startX;
+      const dy = event.clientY - moveState.startY;
+      if (!moveState.active) {
+        if (dx * dx + dy * dy < 36) return;
+        moveState.active = true;
+        selectedImg.classList.add('hugoer-img-moving');
+        imgChrome.classList.add('moving');
+      }
+      event.preventDefault();
+      const target = dropTargetAt(event.clientY);
+      moveState.target = target;
+      if (!target) return;
+      imgDrop.style.top = ((target.before ? target.rect.top : target.rect.bottom) - 1) + 'px';
+      imgDrop.style.left = target.rect.left + 'px';
+      imgDrop.style.width = Math.max(24, target.rect.width) + 'px';
+      imgDrop.classList.add('open');
+    }
+
+    function endImageMove() {
+      if (!moveState) return;
+      const { active, target } = moveState;
+      moveState = null;
+      imgDrop.classList.remove('open');
+      imgChrome.classList.remove('moving');
+      if (selectedImg) selectedImg.classList.remove('hugoer-img-moving');
+      if (active && target && selectedImg) moveImageTo(target.blot, target.before);
+      else layoutImageChrome();
+    }
+
+    function startImageResize(event, handle) {
+      if (!selectedImg) return;
+      event.preventDefault();
+      event.stopPropagation();
+      resizeState = { handle, startX: event.clientX, startWidth: selectedImg.getBoundingClientRect().width, width: 0 };
+      try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
+    }
+
+    function onImageResizeMove(event) {
+      if (!resizeState || !selectedImg) return;
+      event.preventDefault();
+      const dx = event.clientX - resizeState.startX;
+      const sign = (resizeState.handle === 'nw' || resizeState.handle === 'sw') ? -1 : 1;
+      const width = Math.max(64, Math.min(editorMaxImageWidth(), Math.round(resizeState.startWidth + dx * sign)));
+      resizeState.width = width;
+      selectedImg.style.width = width + 'px';
+      layoutImageChrome();
+    }
+
+    function endImageResize() {
+      if (!resizeState) return;
+      const width = resizeState.width;
+      resizeState = null;
+      if (!selectedImg) return;
+      selectedImg.style.width = '';
+      if (width > 0) formatSelectedImage({ width: String(width) });
+    }
+
+    document.getElementById('imgToolbar').addEventListener('mousedown', (event) => event.preventDefault());
+    document.getElementById('imgToolbar').addEventListener('click', (event) => {
+      const btn = event.target.closest('button');
+      if (!btn || !selectedImg) return;
+      if (btn.id === 'imgReset') {
+        formatSelectedImage({ width: false, hugoerAlign: false });
+      } else if (btn.hasAttribute('data-move')) {
+        moveImageBy(parseInt(btn.getAttribute('data-move'), 10) || 0);
+      } else if (btn.hasAttribute('data-align')) {
+        const align = btn.getAttribute('data-align');
+        const current = selectedImg.getAttribute('data-hugoer-align');
+        formatSelectedImage({ hugoerAlign: current === align ? false : align });
       }
     });
-    editor.addEventListener('pointerdown', (event) => {
+    imgChrome.querySelectorAll('.img-handle').forEach((handle) => {
+      handle.addEventListener('pointerdown', (event) => startImageResize(event, handle.getAttribute('data-handle')));
+    });
+    document.getElementById('imgMoveHit').addEventListener('pointerdown', (event) => {
+      startImageMove(event);
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    window.addEventListener('pointermove', (event) => {
+      if (resizeState) onImageResizeMove(event);
+      else if (moveState) onImageMoveMove(event);
+    });
+    window.addEventListener('pointerup', () => {
+      if (resizeState) endImageResize();
+      else if (moveState) endImageMove();
+    });
+    window.addEventListener('pointercancel', () => {
+      if (resizeState) endImageResize();
+      else if (moveState) endImageMove();
+    });
+    window.addEventListener('scroll', () => { layoutImageChrome(); updateTableBar(); }, true);
+    window.addEventListener('resize', () => { layoutImageChrome(); updateTableBar(); });
+
+    editorRoot.addEventListener('pointerdown', (event) => {
       const img = event.target && event.target.closest ? event.target.closest('img') : null;
-      if (img && editor.contains(img)) {
+      if (img && editorRoot.contains(img)) {
         selectImage(img);
         startImageMove(event);
         event.preventDefault();
       }
     });
-    editor.addEventListener('dragstart', (event) => {
-      if (event.target && event.target.tagName === 'IMG')
-        event.preventDefault();
+    editorRoot.addEventListener('dragstart', (event) => {
+      if (event.target && event.target.tagName === 'IMG') event.preventDefault();
+    });
+    editorRoot.addEventListener('click', (event) => {
+      // Never let a link click navigate the WebView away from the editor.
+      if (event.target && event.target.closest && event.target.closest('a')) event.preventDefault();
     });
     document.addEventListener('mousedown', (event) => {
-      if (event.target.closest('#imgChrome') || event.target.closest('#mask'))
-        return;
-      if (event.target.closest('#editor') && event.target.closest('img'))
-        return;
+      if (event.target.closest('#imgChrome') || event.target.closest('#mask') || event.target.closest('#tableBar')) return;
+      if (event.target.closest('.ql-editor') && event.target.closest('img')) return;
       clearImageSelection();
     });
-    document.addEventListener('keydown', (event) => {
-      if (!selectedImg) return;
+
+    // ----- Table contextual bar -------------------------------------------
+
+    const tableBar = document.getElementById('tableBar');
+
+    function currentTableNode(range) {
+      const current = range === undefined ? quill.getSelection() : range;
+      if (!current) return null;
+      const [line] = quill.getLine(current.index);
+      if (!line || !line.domNode || !line.domNode.closest) return null;
+      return line.domNode.closest('table');
+    }
+
+    function updateTableBar(range) {
+      const table = currentTableNode(range);
+      if (!table) {
+        tableBar.classList.remove('open');
+        return;
+      }
+      const rect = table.getBoundingClientRect();
+      tableBar.classList.add('open');
+      const top = rect.top - tableBar.offsetHeight - 8;
+      tableBar.style.top = Math.max(4, top < 4 ? rect.bottom + 8 : top) + 'px';
+      tableBar.style.left = Math.max(4, rect.left) + 'px';
+    }
+
+    tableBar.addEventListener('mousedown', (event) => event.preventDefault());
+    tableBar.addEventListener('click', (event) => {
+      const btn = event.target.closest('button[data-table]');
+      if (!btn) return;
+      const action = btn.getAttribute('data-table');
+      if (typeof tableModule[action] === 'function') tableModule[action]();
+      requestAnimationFrame(() => updateTableBar());
+    });
+
+    // ----- Link / image dialog --------------------------------------------
+
+    const mask = document.getElementById('mask');
+    let dialogKind = 'link';
+    let dialogRange = null;
+
+    function linkRangeAt(index) {
+      const [leaf, offset] = quill.getLeaf(index);
+      let blot = leaf;
+      while (blot && blot !== quill.scroll && !(blot instanceof HugoerLink)) blot = blot.parent;
+      if (!(blot instanceof HugoerLink)) return null;
+      const start = quill.getIndex(blot);
+      return { index: start, length: blot.length() };
+    }
+
+    function openDialog(kind) {
+      dialogKind = kind;
+      dialogRange = quill.getSelection(true) || { index: quill.getLength() - 1, length: 0 };
+      let text = dialogRange.length ? quill.getText(dialogRange.index, dialogRange.length) : '';
+      let href = kind === 'image' ? 'image.jpg' : 'https://';
+      if (kind === 'link') {
+        const existing = quill.getFormat(dialogRange).link;
+        if (existing) {
+          href = existing;
+          const linkRange = dialogRange.length ? null : linkRangeAt(dialogRange.index);
+          if (linkRange) {
+            dialogRange = linkRange;
+            text = quill.getText(linkRange.index, linkRange.length);
+          }
+        }
+      }
+      document.getElementById('dlgTitle').textContent = kind === 'image' ? '插入圖片' : '插入連結';
+      document.getElementById('dlgTextLabel').textContent = kind === 'image' ? '替代文字' : '顯示文字';
+      document.getElementById('dlgHrefLabel').textContent = kind === 'image' ? '圖片路徑或網址' : '網址';
+      document.getElementById('dlgText').value = text || (kind === 'image' ? '圖片說明' : '連結文字');
+      document.getElementById('dlgHref').value = href;
+      mask.classList.add('open');
+      setTimeout(() => {
+        const input = document.getElementById('dlgHref');
+        input.focus();
+        input.select();
+      }, 20);
+    }
+
+    function closeDialog() {
+      mask.classList.remove('open');
+      quill.focus();
+      if (dialogRange) quill.setSelection(dialogRange.index, dialogRange.length, 'silent');
+    }
+
+    function confirmDialog() {
+      const text = document.getElementById('dlgText').value || '';
+      const href = (document.getElementById('dlgHref').value || '').trim();
+      const range = dialogRange;
+      closeDialog();
+      if (!range || !isSafeUrl(href, dialogKind)) return;
+      if (dialogKind === 'image') {
+        quill.deleteText(range.index, range.length, 'user');
+        quill.insertEmbed(range.index, 'image', href, 'user');
+        if (text) quill.formatText(range.index, 1, 'alt', text, 'user');
+        quill.setSelection(range.index + 1, 0, 'silent');
+        return;
+      }
+      const label = text || href;
+      const current = range.length ? quill.getText(range.index, range.length) : '';
+      if (range.length && current === label) {
+        quill.formatText(range.index, range.length, 'link', href, 'user');
+        quill.setSelection(range.index + range.length, 0, 'silent');
+      } else {
+        const base = inlineFormats(range.index);
+        quill.deleteText(range.index, range.length, 'user');
+        quill.insertText(range.index, label, Object.assign(base, { link: href }), 'user');
+        quill.setSelection(range.index + label.length, 0, 'silent');
+      }
+    }
+
+    document.getElementById('dlgCancel').addEventListener('click', closeDialog);
+    document.getElementById('dlgOk').addEventListener('click', confirmDialog);
+    mask.addEventListener('click', (event) => {
+      if (event.target === mask) closeDialog();
+    });
+    mask.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); confirmDialog(); }
+      else if (event.key === 'Escape') { event.preventDefault(); closeDialog(); }
+    });
+
+    // ----- Commands -------------------------------------------------------
+
+    function toggleFormat(name, value) {
+      const range = quill.getSelection(true);
+      if (!range) return;
+      const current = quill.getFormat(range)[name];
+      const on = value === undefined ? !current : current !== value;
+      quill.format(name, on ? (value === undefined ? true : value) : false, 'user');
+    }
+
+    function toggleInlineCode() {
+      const range = quill.getSelection(true);
+      if (!range) return;
+      if (range.length === 0 && !quill.getFormat(range).code) {
+        const placeholder = '程式碼';
+        quill.insertText(range.index, placeholder, Object.assign(inlineFormats(range.index), { code: true }), 'user');
+        quill.setSelection(range.index, placeholder.length, 'silent');
+        return;
+      }
+      toggleFormat('code');
+    }
+
+    // Keep a plain paragraph after a trailing table / code block / embed so the caret
+    // can always get below it. Empty paragraphs never reach the Markdown output.
+    function ensureTrailingParagraph(source) {
+      const last = quill.scroll.children.tail;
+      if (last && last.statics.blotName !== 'block') quill.insertText(quill.getLength(), '\n', source || 'user');
+    }
+
+    function insertBlockHtml(html) {
+      const range = quill.getSelection(true) || { index: quill.getLength() - 1, length: 0 };
+      const delta = convertHtml(html, true);
+      const [line, offset] = quill.getLine(range.index);
+      let at = range.index;
+      const change = new Delta().retain(at).delete(range.length);
+      // Block content (tables, media, several paragraphs) starts on its own line
+      // instead of merging into the paragraph the caret is in.
+      const blockish = delta.ops.some((op) => isBlockEmbed(op) || (typeof op.insert === 'string' && op.insert.includes('\n')));
+      if (blockish && offset > 0 && line) {
+        change.insert('\n', line.formats ? line.formats() : {});
+        at += 1;
+      }
+      quill.updateContents(change.concat(delta), 'user');
+      ensureTrailingParagraph('user');
+      const end = at + delta.length();
+      quill.setSelection(Math.min(end, quill.getLength() - 1), 0, 'silent');
+      return { index: at, length: delta.length() };
+    }
+
+    function insertHtml(html) {
+      const inserted = insertBlockHtml(html || '');
+      if (/<img\b/i.test(html || '')) {
+        for (let i = inserted.index + inserted.length - 1; i >= inserted.index; i--) {
+          const img = imageAt(i);
+          if (img) {
+            selectImage(img);
+            break;
+          }
+        }
+      }
+    }
+
+    function refreshMediaPreviews() {
+      editorRoot.querySelectorAll('img[data-hugoer-src]').forEach((img) => {
+        const src = img.getAttribute('data-hugoer-src');
+        if (!isSafeUrl(src, 'image')) return;
+        const mapped = previewSrc(src);
+        if (img.getAttribute('src') !== mapped) img.setAttribute('src', mapped);
+      });
+      editorRoot.querySelectorAll('.hugoer-media').forEach((node) => {
+        const media = node.querySelector('audio, video');
+        const src = node.getAttribute('data-src');
+        if (media && isSafeUrl(src, 'image') && media.getAttribute('src') !== previewSrc(src))
+          media.setAttribute('src', previewSrc(src));
+      });
+      editorRoot.querySelectorAll('.hugoer-raw-body [src], .hugoer-raw-inline [src]').forEach((el) => {
+        const mapped = lookupMedia(el.getAttribute('src'));
+        if (mapped) el.setAttribute('src', mapped);
+      });
+      if (selectedImg) layoutImageChrome();
+    }
+
+    window.addEventListener('keydown', (event) => {
       if (mask.classList.contains('open')) return;
+      if (event.ctrlKey || event.metaKey) {
+        const key = event.key.toLowerCase();
+        if (key === 's') { event.preventDefault(); flushChange('save'); return; }
+        if (event.shiftKey && key === 'm') { event.preventDefault(); flushChange('toggleMode'); return; }
+        if (key === 'k' && !event.shiftKey) { event.preventDefault(); openDialog('link'); return; }
+      }
+      if (!selectedImg) return;
       const tag = event.target && event.target.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (event.key === 'Escape') {
+        event.preventDefault();
         clearImageSelection();
-        return;
-      }
-      if (event.key === 'ArrowUp') {
+      } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
         event.preventDefault();
-        moveImageBy(-1);
-        return;
-      }
-      if (event.key === 'ArrowDown') {
+        event.stopPropagation();
+        moveImageBy(event.key === 'ArrowUp' ? -1 : 1);
+      } else if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault();
-        moveImageBy(1);
-        return;
-      }
-      if (event.key === 'Delete' || event.key === 'Backspace') {
-        event.preventDefault();
-        const next = selectedImg;
+        event.stopPropagation();
+        const index = imageIndex(selectedImg);
         clearImageSelection();
-        next.remove();
-        notifyChange();
+        if (index >= 0) {
+          quill.deleteText(index, 1, 'user');
+          quill.setSelection(index, 0, 'silent');
+        }
       }
-    });
+    }, true);
 
     window.hugoerSetHtml = function (html, media) {
       mergeMedia(media);
       suppress = true;
-      clearImageSelection();
-      editor.innerHTML = html || '';
-      applyMedia();
-      updatePlaceholder();
-      suppress = false;
+      clearTimeout(changeTimer);
+      dirty = false;
+      try {
+        clearImageSelection();
+        const delta = convertHtml(html || '', true);
+        quill.setContents(delta, 'silent');
+        ensureTrailingParagraph('silent');
+        quill.history.clear();
+      } finally {
+        suppress = false;
+      }
     };
 
     window.hugoerAddMedia = function (media) {
       mergeMedia(media);
-      applyMedia();
+      refreshMediaPreviews();
     };
 
     window.hugoerFocus = function () {
-      editor.focus();
+      quill.focus();
     };
 
     window.hugoerFlush = function () {
-      post({ type: 'flush', html: snapshotHtml() });
+      flushChange('flush');
+    };
+
+    window.hugoerPasteHtml = function (html, media) {
+      mergeMedia(media);
+      const pending = pendingMarkdownPaste;
+      pendingMarkdownPaste = null;
+      if (!pending) return;
+      quill.setSelection(Math.min(pending.index, quill.getLength() - 1), 0, 'silent');
+      if (html) insertBlockHtml(html);
+      else quill.insertText(pending.index, pending.text, 'user');
+      quill.scrollSelectionIntoView();
     };
 
     window.hugoerCommand = function (name, argument) {
-      editor.focus();
+      if (name !== 'addMedia') quill.focus();
       switch (name) {
-        case 'undo': document.execCommand('undo'); break;
-        case 'redo': document.execCommand('redo'); break;
-        case 'bold': document.execCommand('bold'); break;
-        case 'italic': document.execCommand('italic'); break;
-        case 'strike': document.execCommand('strikeThrough'); break;
-        case 'heading': toggleHeading(parseInt(argument || '2', 10)); return;
+        case 'undo': quill.history.undo(); return;
+        case 'redo': quill.history.redo(); return;
+        case 'bold': toggleFormat('bold'); return;
+        case 'italic': toggleFormat('italic'); return;
+        case 'strike': toggleFormat('strike'); return;
+        case 'heading': toggleFormat('header', Math.max(1, Math.min(6, parseInt(argument || '2', 10) || 2))); return;
         case 'inlineCode': toggleInlineCode(); return;
-        case 'codeBlock': insertCodeBlock(); return;
+        case 'codeBlock': toggleFormat('code-block'); return;
         case 'link': openDialog('link'); return;
         case 'image': openDialog('image'); return;
-        case 'quote': document.execCommand('formatBlock', false, 'blockquote'); break;
-        case 'bulletList': document.execCommand('insertUnorderedList'); break;
-        case 'orderedList': document.execCommand('insertOrderedList'); break;
-        case 'taskList': insertTaskList(); return;
-        case 'table': insertTable(); return;
-        case 'hr': document.execCommand('insertHorizontalRule'); break;
+        case 'quote': toggleFormat('blockquote'); return;
+        case 'bulletList': toggleFormat('list', 'bullet'); return;
+        case 'orderedList': toggleFormat('list', 'ordered'); return;
+        case 'taskList': toggleFormat('list', 'unchecked'); return;
+        case 'table':
+          insertHtml('<table><tr><th>欄位一</th><th>欄位二</th></tr><tr><td>內容</td><td>內容</td></tr></table>');
+          return;
+        case 'hr': {
+          const range = quill.getSelection(true) || { index: quill.getLength() - 1, length: 0 };
+          quill.deleteText(range.index, range.length, 'user');
+          quill.insertEmbed(range.index, 'divider', true, 'user');
+          quill.setSelection(range.index + 1, 0, 'silent');
+          return;
+        }
         case 'addMedia':
           if (argument) {
             try { mergeMedia(JSON.parse(argument)); } catch {}
-            applyMedia();
+            refreshMediaPreviews();
           }
           return;
         case 'insertHtml':
           if (argument) insertHtml(argument);
           return;
-        default: return;
+        default:
+          return;
       }
-      notifyChange();
     };
 
-    updatePlaceholder();
     post({ type: 'ready' });
   </script>
 </body>
