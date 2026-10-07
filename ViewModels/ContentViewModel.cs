@@ -65,7 +65,7 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
     [ObservableProperty]
     public partial string PreviewMarkdown { get; set; } = string.Empty;
 
-    /// <summary>Markdown body shown in the CKEditor-style source output pane (front matter excluded).</summary>
+    /// <summary>Markdown body shown in the source output pane (front matter excluded).</summary>
     [ObservableProperty]
     public partial string PreviewBodyMarkdown { get; set; } = string.Empty;
 
@@ -166,7 +166,7 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
     public partial string EditorModeTitle { get; set; } = "WYSIWYG 視覺編輯";
 
     [ObservableProperty]
-    public partial string EditorModeHint { get; set; } = "像 CKEditor 一樣直接編排內容；右側可查看產生的 Markdown。";
+    public partial string EditorModeHint { get; set; } = "使用 Quill 直接編排內容；右側可查看產生的 Markdown。";
 
     [ObservableProperty]
     public partial MarkdownPreviewKind PreviewKind { get; set; } = MarkdownPreviewKind.MarkdownOutput;
@@ -303,13 +303,13 @@ public partial class ContentViewModel : PageViewModelBase, IDisposable
         IsSourceMode = EditorMode == MarkdownEditorMode.Source;
         EditorModeTitle = IsWysiwygMode ? "WYSIWYG 視覺編輯" : "Markdown 原始碼";
         EditorModeHint = IsWysiwygMode
-            ? "像 CKEditor 一樣直接編排內容；右側可查看產生的 Markdown。"
+            ? "使用 Quill 直接編排內容；右側可查看產生的 Markdown。"
             : "直接編輯 Markdown 原文；右側可查看即時渲染。";
         RefreshPreviewPresentation();
     }
 
     /// <summary>
-    /// CKEditor 5 markdown demo: WYSIWYG corresponds to Markdown output;
+    /// Quill editing corresponds to the Markdown output;
     /// source editing corresponds to the rendered preview.
     /// </summary>
     private void AlignCorrespondingPreview()

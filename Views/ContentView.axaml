@@ -162,7 +162,7 @@
                                             <Button Classes="modeBtn" Content="WYSIWYG"
                                                     Classes.selected="{Binding IsWysiwygMode}"
                                                     Command="{Binding SetWysiwygModeCommand}"
-                                                    ToolTip.Tip="所見即所得。像 CKEditor 一樣直接編排內容"/>
+                                                    ToolTip.Tip="所見即所得。使用 Quill 直接編排內容"/>
                                             <Button Classes="modeBtn" Content="原始碼"
                                                     Classes.selected="{Binding IsSourceMode}"
                                                     Command="{Binding SetSourceModeCommand}"
@@ -314,7 +314,7 @@
                                             <Button Classes="modeBtn" Content="Markdown"
                                                     Classes.selected="{Binding IsMarkdownOutputPreview}"
                                                     Command="{Binding SetMarkdownOutputPreviewCommand}"
-                                                    ToolTip.Tip="對應的 Markdown 原文輸出，參考 CKEditor 5 Markdown output"/>
+                                                    ToolTip.Tip="對應 Quill 編輯器產生的 Markdown 原文"/>
                                         </StackPanel>
                                     </Border>
                                 </Grid>

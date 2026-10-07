@@ -75,7 +75,7 @@ public sealed class DeploymentModeOption
 }
 
 /// <summary>
-/// CKEditor 5-style corresponding preview: rendered HTML, or the Markdown source output.
+/// Corresponding preview for the Quill editor: rendered HTML, or the Markdown source output.
 /// </summary>
 public enum MarkdownPreviewKind
 {

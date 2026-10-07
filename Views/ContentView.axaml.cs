@@ -592,7 +592,7 @@ public partial class ContentView : UserControl
     {
         if (DataContext is not ContentViewModel viewModel) return;
         viewModel.EditorMode = MarkdownEditorMode.Source;
-        viewModel.StatusMessage = "WYSIWYG 無法使用（需要 WebView2），已切換為原始碼模式。";
+        viewModel.StatusMessage = "Quill 編輯器無法使用（需要 WebView2），已切換為原始碼模式。";
     }
 
     private string GetText() => MarkdownEditor.Document.Text ?? string.Empty;

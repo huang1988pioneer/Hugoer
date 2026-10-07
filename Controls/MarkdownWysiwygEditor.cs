@@ -9,7 +9,7 @@ using Hugoer.Services;
 namespace Hugoer.Controls;
 
 /// <summary>
-/// CKEditor 5-style Markdown WYSIWYG surface: markdown in, markdown out, edited as rich text.
+/// Quill (https://quilljs.com/) Markdown surface: markdown in, markdown out, edited as rich text.
 /// </summary>
 public sealed class MarkdownWysiwygEditor : UserControl
 {
@@ -44,7 +44,7 @@ public sealed class MarkdownWysiwygEditor : UserControl
     {
         _placeholder = new TextBlock
         {
-            Text = "載入 WYSIWYG 編輯器…",
+            Text = "載入 Quill 編輯器…",
             Opacity = 0.55,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
@@ -67,7 +67,7 @@ public sealed class MarkdownWysiwygEditor : UserControl
         catch (Exception ex)
         {
             _initError = ex.Message;
-            _placeholder.Text = "無法啟動 WYSIWYG 編輯器（需要 WebView2）。請改用原始碼模式。";
+            _placeholder.Text = "無法啟動 Quill 編輯器（需要 WebView2）。請改用原始碼模式。";
         }
 
         Content = _root;
@@ -137,7 +137,7 @@ public sealed class MarkdownWysiwygEditor : UserControl
             }
             catch (Exception ex)
             {
-                ShowFailure("WYSIWYG 編輯器同步失敗。已可改用原始碼模式。", ex.Message);
+                ShowFailure("Quill 編輯器同步失敗。已可改用原始碼模式。", ex.Message);
             }
             finally
             {
@@ -159,7 +159,7 @@ public sealed class MarkdownWysiwygEditor : UserControl
 
         if (_webView is null)
         {
-            ShowFailure("無法啟動 WYSIWYG 編輯器（需要 WebView2）。已可改用原始碼模式。", _initError ?? "webview unavailable");
+            ShowFailure("無法啟動 Quill 編輯器（需要 WebView2）。已可改用原始碼模式。", _initError ?? "webview unavailable");
             return;
         }
 
@@ -169,7 +169,7 @@ public sealed class MarkdownWysiwygEditor : UserControl
         }
         catch (Exception ex)
         {
-            ShowFailure("無法啟動 WYSIWYG 編輯器（需要 WebView2）。已可改用原始碼模式。", ex.Message);
+            ShowFailure("無法啟動 Quill 編輯器（需要 WebView2）。已可改用原始碼模式。", ex.Message);
         }
     }
 
@@ -177,7 +177,7 @@ public sealed class MarkdownWysiwygEditor : UserControl
     {
         if (!e.IsSuccess)
         {
-            ShowFailure("WYSIWYG 編輯器載入失敗。已可改用原始碼模式。", "navigation failed");
+            ShowFailure("Quill 編輯器載入失敗。已可改用原始碼模式。", "navigation failed");
             return;
         }
 
@@ -193,7 +193,7 @@ public sealed class MarkdownWysiwygEditor : UserControl
         }
         catch (Exception ex)
         {
-            ShowFailure("WYSIWYG 編輯器初始化失敗。已可改用原始碼模式。", ex.Message);
+            ShowFailure("Quill 編輯器初始化失敗。已可改用原始碼模式。", ex.Message);
         }
     }
 
@@ -290,7 +290,7 @@ public sealed class MarkdownWysiwygEditor : UserControl
         }
         catch (Exception ex)
         {
-            ShowFailure("WYSIWYG 編輯器更新失敗。已可改用原始碼模式。", ex.Message);
+            ShowFailure("Quill 編輯器更新失敗。已可改用原始碼模式。", ex.Message);
         }
         finally
         {
@@ -310,7 +310,7 @@ public sealed class MarkdownWysiwygEditor : UserControl
         }
         catch (Exception ex)
         {
-            ShowFailure("WYSIWYG 編輯器操作失敗。已可改用原始碼模式。", ex.Message);
+            ShowFailure("Quill 編輯器操作失敗。已可改用原始碼模式。", ex.Message);
             return false;
         }
     }
@@ -327,7 +327,24 @@ public sealed class MarkdownWysiwygEditor : UserControl
 
     private static string LoadEditorHtml()
     {
-        using var stream = AssetLoader.Open(new Uri("avares://Hugoer/Assets/editor/wysiwyg.html"));
+        var html = ReadEditorAsset("avares://Hugoer/Assets/editor/wysiwyg.html");
+        html = InjectEditorAsset(html, "/*__QUILL_CSS__*/", "avares://Hugoer/Assets/editor/vendor/quill.core.css");
+        html = InjectEditorAsset(html, "/*__QUILL_JS__*/", "avares://Hugoer/Assets/editor/vendor/quill.js");
+        html = InjectEditorAsset(html, "/*__HUGOER_EDITOR_JS__*/", "avares://Hugoer/Assets/editor/hugoer-quill.js");
+        return html;
+    }
+
+    private static string InjectEditorAsset(string html, string token, string uri)
+    {
+        var asset = ReadEditorAsset(uri);
+        if (!html.Contains(token, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Editor shell is missing {token}.");
+        return html.Replace(token, asset, StringComparison.Ordinal);
+    }
+
+    private static string ReadEditorAsset(string uri)
+    {
+        using var stream = AssetLoader.Open(new Uri(uri));
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
     }
