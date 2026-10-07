@@ -100,7 +100,7 @@
                                     <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold"
                                                TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
                                     <Border Grid.Column="1" Classes="pill" Padding="7,2"
-                                            Background="#563E20"
+                                            Background="#3E2E18"
                                             IsVisible="{Binding CameFromFrontMatter}">
                                         <TextBlock Text="內容頁" FontSize="11" Foreground="#F4C77B"/>
                                     </Border>

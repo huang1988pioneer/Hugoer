@@ -41,9 +41,9 @@ dotnet run
 ```powershell
 .\scripts\publish.ps1
 # 或指定版本
-.\scripts\publish.ps1 -Version 1.8.0 -Runtime win-x64
+.\scripts\publish.ps1 -Version 1.9.0 -Runtime win-x64
 # 只產生免安裝單檔 EXE、ZIP 與校驗資訊
-.\scripts\publish.ps1 -Version 1.8.0 -SkipInstaller
+.\scripts\publish.ps1 -Version 1.9.0 -SkipInstaller
 ```
 
 產出位置：
@@ -72,8 +72,18 @@ Velopack CLI（可選，產生 Setup.exe）：
 
 ```powershell
 dotnet tool install -g vpk
-vpk pack --packId Hugoer --packVersion 1.8.0 --packDir .\dist\publish\win-x64 --mainExe Hugoer.exe --outputDir .\dist\releases\velopack
+vpk pack --packId Hugoer --packVersion 1.9.0 --packDir .\dist\publish\win-x64 --mainExe Hugoer.exe --outputDir .\dist\releases\velopack
 ```
+
+## 打包：macOS DMG
+
+在 Apple 晶片的 Mac 上：
+
+```bash
+./scripts/publish-mac.sh 1.9.0
+```
+
+產出 `dist/releases/Hugoer-1.9.0-osx-arm64.dmg`。磁碟映像裡是未簽名的 `Hugoer.app`，第一次開啟時要在 Finder 裡按住 Control 再選擇「打開」。
 
 ## 介面：一次只做一個決定
 

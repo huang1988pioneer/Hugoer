@@ -1,9 +1,9 @@
 ; Inno Setup 6 script for Hugoer
 ; Build via scripts/publish.ps1 (auto) or:
-;   ISCC installer\hugoer.iss /DMyAppVersion=1.8.0 /DMyPublishDir=..\dist\publish\win-x64
+;   ISCC installer\hugoer.iss /DMyAppVersion=1.9.0 /DMyPublishDir=..\dist\publish\win-x64
 
 #ifndef MyAppVersion
-  #define MyAppVersion "1.8.0"
+  #define MyAppVersion "1.9.0"
 #endif
 #ifndef MyPublishDir
   #define MyPublishDir "..\dist\publish\win-x64"
@@ -32,7 +32,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
-SetupIconFile=..\Assets\avalonia-logo.ico
+SetupIconFile=..\Assets\hugoer.ico
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

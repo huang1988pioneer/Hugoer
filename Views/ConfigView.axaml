@@ -85,15 +85,15 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="svc:ConfigFieldItem">
                                                 <Border Margin="0,0,0,10" Padding="12"
-                                                        Background="#121820" CornerRadius="8"
-                                                        BorderBrush="#2A3648" BorderThickness="1">
+                                                        Background="#141920" CornerRadius="8"
+                                                        BorderBrush="#2A3140" BorderThickness="1">
                                                     <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="*,Auto">
                                                         <StackPanel Orientation="Horizontal" Spacing="8">
                                                             <CheckBox Content="寫入設定" IsChecked="{Binding IsConfigured}"
                                                                       VerticalAlignment="Center"/>
                                                             <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
                                                                        FontSize="15" VerticalAlignment="Center"/>
-                                                            <Border Background="#1B2A3B" CornerRadius="10" Padding="8,2">
+                                                            <Border Background="#243646" CornerRadius="10" Padding="8,2">
                                                                 <TextBlock Text="{Binding Group}" Classes="caption"/>
                                                             </Border>
                                                         </StackPanel>
@@ -101,7 +101,7 @@
                                                                 Command="{Binding OpenDocumentationCommand}"/>
 
                                                         <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Path}"
-                                                                   Classes="mono" Foreground="#67D8FF" Margin="0,7,0,2"/>
+                                                                   Classes="mono" Foreground="#8FD4EA" Margin="0,7,0,2"/>
                                                         <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding Description}"
                                                                    Classes="caption" TextWrapping="Wrap" Margin="0,0,0,8"/>
 
@@ -160,8 +160,8 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="svc:ParamFieldItem">
                                                 <Border Margin="0,0,0,10" Padding="10"
-                                                        Background="#121820" CornerRadius="8"
-                                                        BorderBrush="#2A3648" BorderThickness="1">
+                                                        Background="#141920" CornerRadius="8"
+                                                        BorderBrush="#2A3140" BorderThickness="1">
                                                     <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto">
                                                         <StackPanel Orientation="Horizontal" Spacing="8">
                                                             <CheckBox Content="寫入" IsChecked="{Binding IsConfigured}"

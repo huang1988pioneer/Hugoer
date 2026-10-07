@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
-    [string]$Version = "1.8.0",
+    [string]$Version = "1.9.0",
     [string]$Runtime = "win-x64",
     [switch]$SkipInstaller,
     [switch]$InstallTools,

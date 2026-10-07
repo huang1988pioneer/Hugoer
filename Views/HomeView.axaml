@@ -16,18 +16,18 @@
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="24">
                     <StackPanel Spacing="10">
                         <StackPanel Orientation="Horizontal" Spacing="10">
-                            <Border Classes="pill" Background="#123D49" Padding="10,4">
+                            <Border Classes="pill" Background="#1A3C48" Padding="10,4">
                                 <TextBlock Text="{Binding NextStepBadge}" FontSize="12"
-                                           FontWeight="SemiBold" Foreground="#7CDAF9"/>
+                                           FontWeight="SemiBold" Foreground="#8FD4EA"/>
                             </Border>
-                            <Border Classes="pill" Background="#1C2736" Padding="10,4"
+                            <Border Classes="pill" Padding="10,4"
                                     IsVisible="{Binding IsReady}">
-                                <TextBlock Text="日常模式" FontSize="12" Foreground="#9EDFF2"/>
+                                <TextBlock Text="日常模式" FontSize="12" Foreground="#C5D0DC"/>
                             </Border>
                         </StackPanel>
 
-                        <TextBlock Text="{Binding NextStepTitle}" FontSize="24" FontWeight="Bold"
-                                   TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding NextStepTitle}" FontSize="26" FontWeight="SemiBold"
+                                   Foreground="#F4F7FB" TextWrapping="Wrap"/>
                         <TextBlock Text="{Binding NextStepDescription}" Classes="muted"
                                    TextWrapping="Wrap" MaxWidth="560" LineHeight="21"/>
                     </StackPanel>
@@ -69,19 +69,20 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:HomeStep">
-                            <StackPanel Spacing="4" Margin="6,2">
-                                <StackPanel Orientation="Horizontal" Spacing="7">
-                                    <TextBlock Text="✓" FontSize="14" FontWeight="Bold"
-                                               Foreground="#4ADE80" IsVisible="{Binding IsDone}"/>
-                                    <TextBlock Text="▶" FontSize="14" FontWeight="Bold"
-                                               Foreground="#7CDAF9" IsVisible="{Binding IsCurrent}"/>
-                                    <TextBlock Text="○" FontSize="14"
-                                               Foreground="#4C5A6B" IsVisible="{Binding IsPending}"/>
-                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"/>
-                                </StackPanel>
+                            <StackPanel Spacing="6" Margin="8,2">
+                                <Panel Height="3">
+                                    <Border Height="3" CornerRadius="2" Background="#3DDC84"
+                                            IsVisible="{Binding IsDone}"/>
+                                    <Border Height="3" CornerRadius="2" Background="#5ED0F0"
+                                            IsVisible="{Binding IsCurrent}"/>
+                                    <Border Height="3" CornerRadius="2" Background="#2A3140"
+                                            IsVisible="{Binding IsPending}"/>
+                                </Panel>
+                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
+                                           Foreground="#E7ECF2"/>
                                 <TextBlock Text="{Binding Description}" Classes="caption"
                                            TextWrapping="Wrap"/>
-                                <TextBlock Text="{Binding StateText}" FontSize="11" Opacity="0.45"/>
+                                <TextBlock Text="{Binding StateText}" FontSize="11" Foreground="#7C8694"/>
                             </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -118,14 +119,14 @@
                                                 <TextBlock Text="{Binding TimelineText}" Classes="caption"/>
                                             </StackPanel>
                                             <Border Grid.Column="1" Classes="pill" Padding="8,2"
-                                                    Background="#563E20" VerticalAlignment="Center"
+                                                    Background="#3E2E18" VerticalAlignment="Center"
                                                     IsVisible="{Binding IsDraft}">
                                                 <TextBlock Text="草稿" FontSize="11" Foreground="#F4C77B"/>
                                             </Border>
                                             <Border Grid.Column="1" Classes="pill" Padding="8,2"
-                                                    Background="#123D49" VerticalAlignment="Center"
+                                                    Background="#1A3C48" VerticalAlignment="Center"
                                                     IsVisible="{Binding IsPublished}">
-                                                <TextBlock Text="已發布" FontSize="11" Foreground="#7CDAF9"/>
+                                                <TextBlock Text="已發布" FontSize="11" Foreground="#8FD4EA"/>
                                             </Border>
                                         </Grid>
                                     </Button>
@@ -183,19 +184,19 @@
                     <Border Classes="card">
                         <StackPanel Spacing="8">
                             <TextBlock Text="快捷動作" Classes="sectionTitle"/>
-                            <Button Content="＋  新增文章" Classes="quickAction"
+                            <Button Content="新增文章" Classes="quickAction"
                                     Command="{Binding NewPostCommand}"
                                     IsEnabled="{Binding HasSite}"/>
-                            <Button Content="▶  本機預覽網站" Classes="quickAction"
+                            <Button Content="本機預覽" Classes="quickAction"
                                     Command="{Binding PreviewCommand}"
                                     IsEnabled="{Binding HasSite}"/>
-                            <Button Content="▲  發布上線" Classes="quickAction"
+                            <Button Content="發布上線" Classes="quickAction"
                                     Command="{Binding GoPublishCommand}"
                                     IsEnabled="{Binding HasSite}"/>
-                            <Button Content="⌘  網站設定檔" Classes="quickAction"
+                            <Button Content="網站設定" Classes="quickAction"
                                     Command="{Binding GoConfigCommand}"
                                     IsEnabled="{Binding HasSite}"/>
-                            <Button Content="📁  開啟網站資料夾" Classes="quickAction"
+                            <Button Content="開啟資料夾" Classes="quickAction"
                                     Command="{Binding OpenSiteFolderCommand}"
                                     IsEnabled="{Binding HasSite}"/>
                             <TextBlock Text="任何功能都可以按 Ctrl+K 直接搜尋。"

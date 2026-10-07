@@ -965,7 +965,7 @@ public sealed partial class HugoService
         }
 
         var version = assembly.GetName().Version;
-        return version is null ? "1.8.0" : version.ToString(3);
+        return version is null ? "1.9.0" : version.ToString(3);
     }
 
     public void StopServer(Process? process) => KillServer(process);

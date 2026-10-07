@@ -11,7 +11,7 @@
             <TextBlock Text="將 Hugo 網站推到 GitHub、GitLab、Codeberg 或 Bitbucket。貼上該平台網址會自動切換。GitHub 可自動啟用 Pages；GitLab 加入 CI；Codeberg 發布 pages 分支；Bitbucket 靜態網站發布到 workspace.bitbucket.io。"
                        Classes="muted" TextWrapping="Wrap"/>
 
-            <Border Classes="card" BorderBrush="#0E7490" BorderThickness="1">
+            <Border Classes="card" BorderBrush="#28677A" BorderThickness="1">
                 <StackPanel Spacing="10">
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                         <StackPanel Spacing="3">
@@ -20,7 +20,7 @@
                         </StackPanel>
                         <Border Grid.Column="1" Classes="pill" Padding="10,4" VerticalAlignment="Top">
                             <StackPanel>
-                                <TextBlock Text="預設遠端" Foreground="#67D8FF" FontWeight="SemiBold" FontSize="12"
+                                <TextBlock Text="預設遠端" Foreground="#8FD4EA" FontWeight="SemiBold" FontSize="12"
                                            IsVisible="{Binding IsRemoteDeploymentMode}"/>
                                 <TextBlock Text="本機備援" Foreground="#F6C85F" FontWeight="SemiBold" FontSize="12"
                                            IsVisible="{Binding IsLocalDeploymentMode}"/>
@@ -116,7 +116,7 @@
                 </StackPanel>
             </Border>
 
-            <Border Classes="card" BorderBrush="#0E7490" BorderThickness="1"
+            <Border Classes="card" BorderBrush="#28677A" BorderThickness="1"
                     IsVisible="{Binding !HasLocalSite}">
                 <StackPanel Spacing="12">
                     <Grid ColumnDefinitions="*,Auto">
@@ -126,7 +126,7 @@
                                        Classes="caption" TextWrapping="Wrap"/>
                         </StackPanel>
                         <Border Grid.Column="1" Classes="pill" Padding="10,4" VerticalAlignment="Top">
-                            <TextBlock Text="本機沒有網站" Foreground="#67D8FF" FontWeight="SemiBold" FontSize="12"/>
+                            <TextBlock Text="本機沒有網站" Foreground="#8FD4EA" FontWeight="SemiBold" FontSize="12"/>
                         </Border>
                     </Grid>
 
@@ -166,7 +166,7 @@
                         </ComboBox.ItemTemplate>
                     </ComboBox>
 
-                    <Border Background="#101720" BorderBrush="#2A3648" BorderThickness="1"
+                    <Border Background="#141920" BorderBrush="#2A3140" BorderThickness="1"
                             CornerRadius="8" Padding="12">
                         <TextBlock Text="{Binding RepositoryTargetSummary}" TextWrapping="Wrap"
                                    Classes="muted" LineHeight="20"/>
@@ -191,7 +191,7 @@
                 </StackPanel>
             </Border>
 
-            <Border Classes="card" BorderBrush="#0E7490" BorderThickness="1"
+            <Border Classes="card" BorderBrush="#28677A" BorderThickness="1"
                     IsVisible="{Binding HasLocalSite}">
                 <StackPanel Spacing="12">
                     <Grid ColumnDefinitions="*,Auto">
@@ -201,7 +201,7 @@
                                        Classes="caption" TextWrapping="Wrap"/>
                         </StackPanel>
                         <Border Grid.Column="1" Classes="pill" Padding="10,4" VerticalAlignment="Top">
-                            <TextBlock Text="推薦" Foreground="#67D8FF" FontWeight="SemiBold" FontSize="12"/>
+                            <TextBlock Text="推薦" Foreground="#8FD4EA" FontWeight="SemiBold" FontSize="12"/>
                         </Border>
                     </Grid>
 
@@ -229,7 +229,7 @@
                                 Command="{Binding ClearRecentRepositoriesCommand}"/>
                     </Grid>
 
-                    <Border Background="#101720" BorderBrush="#2A3648" BorderThickness="1"
+                    <Border Background="#141920" BorderBrush="#2A3140" BorderThickness="1"
                             CornerRadius="8" Padding="12">
                         <TextBlock Text="{Binding RepositoryTargetSummary}" TextWrapping="Wrap"
                                    Classes="muted" LineHeight="20"/>

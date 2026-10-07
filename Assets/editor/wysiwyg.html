@@ -9,8 +9,8 @@
     :root { color-scheme: dark; }
     html, body {
       margin: 0; padding: 0; height: 100%;
-      background: #0d1218;
-      color: #e6edf3;
+      background: #12161c;
+      color: #e7ecf1;
       font-family: "Segoe UI", "Microsoft JhengHei", sans-serif;
     }
     #editor.ql-container {
@@ -30,10 +30,10 @@
       font-size: 16.5px;
       line-height: 1.7;
       caret-color: #7cdaf9;
-      color: #e6edf3;
+      color: #e7ecf1;
     }
     .ql-editor.ql-blank::before {
-      color: #6b7785;
+      color: #7c8694;
       font-style: italic;
       left: 36px;
       right: 36px;
@@ -44,23 +44,23 @@
       font-weight: 650;
       line-height: 1.3;
     }
-    .ql-editor h1 { font-size: 2em; border-bottom: 1px solid #2a3648; padding-bottom: 0.2em; }
-    .ql-editor h2 { font-size: 1.55em; border-bottom: 1px solid #243041; padding-bottom: 0.15em; }
+    .ql-editor h1 { font-size: 2em; border-bottom: 1px solid #2a3140; padding-bottom: 0.2em; }
+    .ql-editor h2 { font-size: 1.55em; border-bottom: 1px solid #262c38; padding-bottom: 0.15em; }
     .ql-editor h3 { font-size: 1.28em; }
     .ql-editor p { margin: 0.7em 0; }
     .ql-editor a { color: #5ec8f0; text-decoration: none; }
     .ql-editor a:hover { text-decoration: underline; }
     .ql-editor code {
       font-family: Consolas, "Cascadia Mono", monospace;
-      background: #1a2330;
+      background: #1c242e;
       padding: 0.12em 0.38em;
       border-radius: 4px;
       font-size: 0.92em;
     }
     .ql-editor .ql-code-block-container,
     .ql-editor pre {
-      background: #121a24;
-      border: 1px solid #2a3648;
+      background: #171c24;
+      border: 1px solid #2a3140;
       border-radius: 8px;
       padding: 12px 14px;
       margin: 1em 0;
@@ -73,20 +73,20 @@
     .ql-editor blockquote {
       margin: 1em 0;
       padding: 0.35em 1em;
-      border-left: 2px solid #0e7490;
-      background: #151c26;
+      border-left: 2px solid #127e9a;
+      background: #171c24;
       color: #c5d0dc;
     }
     .ql-editor table { border-collapse: collapse; width: 100%; margin: 1em 0; table-layout: auto; }
-    .ql-editor th, .ql-editor td { border: 1px solid #2a3648; padding: 8px 10px; min-width: 4em; }
-    .ql-editor th { background: #1a2330; }
+    .ql-editor th, .ql-editor td { border: 1px solid #2a3140; padding: 8px 10px; min-width: 4em; }
+    .ql-editor th { background: #1c242e; }
     .ql-editor img { max-width: 100%; height: auto; border-radius: 6px; cursor: pointer; }
     .ql-editor img.hugoer-img-selected { outline: 2px solid #7cdaf9; outline-offset: 3px; cursor: grab; }
     .ql-editor img.hugoer-img-moving { opacity: 0.38; cursor: grabbing; }
     .ql-editor audio, .ql-editor video { width: 100%; max-width: 640px; margin: 1em 0; display: block; }
     .ql-editor .hugoer-raw { margin: 0.8em 0; }
     .ql-editor .hugoer-raw-body[contenteditable="true"] { outline: none; cursor: text; }
-    .ql-editor hr { border: none; border-top: 1px solid #2a3648; margin: 1.5em 0; }
+    .ql-editor hr { border: none; border-top: 1px solid #2a3140; margin: 1.5em 0; }
     .ql-editor ul, .ql-editor ol { padding-left: 1.45em; }
     .ql-editor li { margin: 0.2em 0; }
     .ql-editor strong { color: #fff; }
@@ -128,8 +128,8 @@
       align-items: center;
       gap: 4px;
       padding: 5px 6px;
-      background: #151c26;
-      border: 1px solid #2a3648;
+      background: #171c24;
+      border: 1px solid #2a3140;
       border-radius: 10px;
       box-shadow: 0 10px 28px rgba(0,0,0,0.38);
       pointer-events: auto;
@@ -139,7 +139,7 @@
     #imgChrome.toolbar-below #imgToolbar { bottom: auto; top: calc(100% + 8px); }
     #imgChrome.toolbar-end #imgToolbar { left: auto; right: 0; }
     #imgToolbar button {
-      background: #1c2736;
+      background: #222a34;
       color: #d7e0ea;
       border: 0;
       border-radius: 7px;
@@ -149,16 +149,16 @@
       font-weight: 650;
       line-height: 1;
     }
-    #imgToolbar button:hover { background: #243140; }
-    #imgToolbar button.on { background: #0e7490; color: #fff; }
-    #imgToolbar .sep { width: 1px; height: 16px; background: #2a3648; margin: 0 2px; }
-    #imgSize { color: #9aa8b8; font-size: 11px; padding: 0 6px 0 4px; min-width: 3.5em; }
+    #imgToolbar button:hover { background: #2a3140; }
+    #imgToolbar button.on { background: #127e9a; color: #fff; }
+    #imgToolbar .sep { width: 1px; height: 16px; background: #2a3140; margin: 0 2px; }
+    #imgSize { color: #9aa3b2; font-size: 11px; padding: 0 6px 0 4px; min-width: 3.5em; }
     .img-handle {
       position: absolute;
       width: 11px;
       height: 11px;
       background: #7cdaf9;
-      border: 2px solid #0d1218;
+      border: 2px solid #12161c;
       border-radius: 3px;
       pointer-events: auto;
       box-sizing: border-box;
@@ -179,26 +179,26 @@
     #mask.open { display: flex; }
     #dialog {
       width: min(420px, calc(100% - 32px));
-      background: #151c26;
-      border: 1px solid #2a3648;
+      background: #171c24;
+      border: 1px solid #2a3140;
       border-radius: 12px;
       padding: 18px;
       box-shadow: 0 16px 40px rgba(0,0,0,0.35);
     }
     #dialog h2 { margin: 0 0 12px; font-size: 15px; color: #7cdaf9; border: 0; }
-    #dialog label { display: block; font-size: 12px; color: #9aa8b8; margin: 8px 0 4px; }
+    #dialog label { display: block; font-size: 12px; color: #9aa3b2; margin: 8px 0 4px; }
     #dialog input {
       width: 100%; box-sizing: border-box;
-      background: #0d1218; color: #e6edf3;
-      border: 1px solid #2a3648; border-radius: 8px;
+      background: #12161c; color: #e7ecf1;
+      border: 1px solid #2a3140; border-radius: 8px;
       padding: 8px 10px; font-size: 14px;
     }
     #dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
     #dialog button {
-      background: #1c2736; color: #d7e0ea; border: 0;
+      background: #222a34; color: #d7e0ea; border: 0;
       border-radius: 8px; padding: 8px 12px; cursor: pointer; font-weight: 600;
     }
-    #dialog button.primary { background: #0e7490; color: #fff; }
+    #dialog button.primary { background: #127e9a; color: #fff; }
   </style>
 </head>
 <body>

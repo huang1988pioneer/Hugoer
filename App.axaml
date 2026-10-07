@@ -14,28 +14,31 @@
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
 
         <Style Selector="TextBlock.appTitle">
-            <Setter Property="FontSize" Value="20"/>
-            <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="Foreground" Value="#7CDAF9"/>
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#F4F7FB"/>
         </Style>
 
         <Style Selector="TextBlock.pageTitle">
-            <Setter Property="FontSize" Value="26"/>
-            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="22"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#F4F7FB"/>
         </Style>
 
         <Style Selector="TextBlock.sectionTitle">
-            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#E7ECF2"/>
         </Style>
 
         <Style Selector="TextBlock.muted">
-            <Setter Property="Opacity" Value="0.78"/>
+            <Setter Property="Foreground" Value="#9AA3B2"/>
             <Setter Property="FontSize" Value="13"/>
+            <Setter Property="LineHeight" Value="20"/>
         </Style>
 
         <Style Selector="TextBlock.caption">
-            <Setter Property="Opacity" Value="0.55"/>
+            <Setter Property="Foreground" Value="#7C8694"/>
             <Setter Property="FontSize" Value="12"/>
         </Style>
 
@@ -45,33 +48,53 @@
         </Style>
 
         <Style Selector="Border.topBar">
-            <Setter Property="Background" Value="#141A22"/>
-            <Setter Property="BorderBrush" Value="#243041"/>
+            <Setter Property="Background" Value="#12161C"/>
+            <Setter Property="BorderBrush" Value="#262C38"/>
             <Setter Property="BorderThickness" Value="0,0,0,1"/>
         </Style>
 
         <Style Selector="Border.navigationBar">
-            <Setter Property="Background" Value="#10151C"/>
-            <Setter Property="BorderBrush" Value="#243041"/>
+            <Setter Property="Background" Value="#12161C"/>
+            <Setter Property="BorderBrush" Value="#262C38"/>
             <Setter Property="BorderThickness" Value="0,0,0,1"/>
         </Style>
 
+        <Style Selector="Border.navTrack">
+            <Setter Property="Background" Value="#0C1016"/>
+            <Setter Property="BorderBrush" Value="#262C38"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="3"/>
+        </Style>
+
         <Style Selector="Border.sidebar">
-            <Setter Property="Background" Value="#10151C"/>
-            <Setter Property="BorderBrush" Value="#243041"/>
+            <Setter Property="Background" Value="#12161C"/>
+            <Setter Property="BorderBrush" Value="#262C38"/>
             <Setter Property="BorderThickness" Value="0,0,1,0"/>
         </Style>
 
         <Style Selector="Border.contentHost">
-            <Setter Property="Background" Value="#0B0F14"/>
+            <Setter Property="Background" Value="#0E1116"/>
         </Style>
 
         <Style Selector="Border.card">
-            <Setter Property="Background" Value="#151C26"/>
-            <Setter Property="BorderBrush" Value="#2A3648"/>
+            <Setter Property="Background" Value="#171C24"/>
+            <Setter Property="BorderBrush" Value="#2A3140"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="10"/>
-            <Setter Property="Padding" Value="16"/>
+            <Setter Property="CornerRadius" Value="16"/>
+            <Setter Property="Padding" Value="18"/>
+        </Style>
+
+        <Style Selector="Border.editorBar">
+            <Setter Property="Background" Value="#141920"/>
+            <Setter Property="BorderBrush" Value="#2A3140"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+        </Style>
+
+        <Style Selector="Border.editorTools">
+            <Setter Property="Background" Value="#10141A"/>
+            <Setter Property="BorderBrush" Value="#2A3140"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
         </Style>
 
         <Style Selector="Border.deploymentMonitor">
@@ -80,7 +103,7 @@
         </Style>
 
         <Style Selector="Border.pill">
-            <Setter Property="Background" Value="#1C2736"/>
+            <Setter Property="Background" Value="#222A34"/>
             <Setter Property="CornerRadius" Value="999"/>
         </Style>
 
@@ -109,17 +132,17 @@
 
         <Style Selector="Button">
             <Setter Property="Padding" Value="12,8"/>
-            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="CornerRadius" Value="10"/>
         </Style>
 
         <Style Selector="Button.accent">
-            <Setter Property="Background" Value="#0E7490"/>
+            <Setter Property="Background" Value="#127E9A"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
 
         <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#0891B2"/>
+            <Setter Property="Background" Value="#1593B2"/>
         </Style>
 
         <Style Selector="TextBox">
@@ -140,12 +163,12 @@
 
         <!-- Markdown editor toolbar -->
         <Style Selector="Border.toolGroup">
-            <Setter Property="Background" Value="#10161F"/>
-            <Setter Property="BorderBrush" Value="#263244"/>
-            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="#2A3140"/>
+            <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Padding" Value="4"/>
-            <Setter Property="Margin" Value="0,0,8,5"/>
+            <Setter Property="Padding" Value="2"/>
+            <Setter Property="Margin" Value="0,0,10,0"/>
         </Style>
 
         <Style Selector="Border.editorModePill">
@@ -160,10 +183,10 @@
         </Style>
 
         <Style Selector="Border.modeToggle">
-            <Setter Property="Background" Value="#10161F"/>
-            <Setter Property="BorderBrush" Value="#263244"/>
+            <Setter Property="Background" Value="#0C1016"/>
+            <Setter Property="BorderBrush" Value="#2A3140"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="Padding" Value="3"/>
         </Style>
 
@@ -183,12 +206,12 @@
         </Style>
 
         <Style Selector="Button.modeBtn.selected">
-            <Setter Property="Background" Value="#0E7490"/>
+            <Setter Property="Background" Value="#127E9A"/>
             <Setter Property="Foreground" Value="White"/>
         </Style>
 
         <Style Selector="Button.modeBtn.selected:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#0891B2"/>
+            <Setter Property="Background" Value="#1593B2"/>
         </Style>
 
         <Style Selector="Button.toolBtn">
@@ -217,7 +240,7 @@
         <Style Selector="ae|TextEditor.markdownEditor">
             <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, monospace"/>
             <Setter Property="FontSize" Value="13.5"/>
-            <Setter Property="Background" Value="#0D1218"/>
+            <Setter Property="Background" Value="#12161C"/>
             <Setter Property="Padding" Value="10,8"/>
         </Style>
 
@@ -236,93 +259,99 @@
 
         <!-- ================= 首頁「下一步」英雄卡 ================= -->
         <Style Selector="Border.hero">
-            <Setter Property="Background" Value="#122430"/>
-            <Setter Property="BorderBrush" Value="#1D6E86"/>
+            <Setter Property="BorderBrush" Value="#2C4A56"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="14"/>
-            <Setter Property="Padding" Value="24,22"/>
+            <Setter Property="CornerRadius" Value="18"/>
+            <Setter Property="Padding" Value="28,26"/>
+            <Setter Property="Background">
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+                    <GradientStop Offset="0" Color="#1C303A"/>
+                    <GradientStop Offset="0.42" Color="#171C24"/>
+                    <GradientStop Offset="1" Color="#171C24"/>
+                </LinearGradientBrush>
+            </Setter>
         </Style>
 
         <Style Selector="Button.hero">
-            <Setter Property="Background" Value="#0E7490"/>
+            <Setter Property="Background" Value="#127E9A"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="FontSize" Value="15"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Padding" Value="22,13"/>
-            <Setter Property="CornerRadius" Value="10"/>
-            <Setter Property="MinHeight" Value="48"/>
+            <Setter Property="Padding" Value="22,12"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="MinHeight" Value="46"/>
         </Style>
 
         <Style Selector="Button.hero:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#0891B2"/>
+            <Setter Property="Background" Value="#1593B2"/>
             <Setter Property="Foreground" Value="White"/>
         </Style>
 
         <Style Selector="Button.hero:pressed /template/ ContentPresenter">
-            <Setter Property="Background" Value="#0B627A"/>
+            <Setter Property="Background" Value="#0E6A84"/>
         </Style>
 
         <!-- ================= 頂列的發布按鈕（決策色，僅此一處） ================= -->
         <Style Selector="Button.publish">
-            <Setter Property="Background" Value="#8A5A14"/>
-            <Setter Property="Foreground" Value="#FFF3DC"/>
+            <Setter Property="Background" Value="#8C5E16"/>
+            <Setter Property="Foreground" Value="#FFF6E8"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
 
         <Style Selector="Button.publish:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#A86D18"/>
-            <Setter Property="Foreground" Value="#FFF3DC"/>
+            <Setter Property="Background" Value="#A87422"/>
+            <Setter Property="Foreground" Value="#FFF6E8"/>
         </Style>
 
         <!-- ================= 主要導覽分段 ================= -->
         <Style Selector="Button.navSeg">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Foreground" Value="#9AA8B8"/>
-            <Setter Property="Padding" Value="14,8"/>
-            <Setter Property="MinHeight" Value="38"/>
-            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Foreground" Value="#9AA3B2"/>
+            <Setter Property="Padding" Value="16,7"/>
+            <Setter Property="MinHeight" Value="34"/>
+            <Setter Property="CornerRadius" Value="9"/>
         </Style>
 
         <Style Selector="Button.navSeg:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#1A2838"/>
-            <Setter Property="Foreground" Value="#DCE7F2"/>
+            <Setter Property="Background" Value="#1C2632"/>
+            <Setter Property="Foreground" Value="#E7ECF2"/>
         </Style>
 
         <Style Selector="Button.navSeg.selected">
-            <Setter Property="Background" Value="#1E3A4F"/>
-            <Setter Property="Foreground" Value="#EAF6FD"/>
+            <Setter Property="Background" Value="#243646"/>
+            <Setter Property="Foreground" Value="#F7FBFF"/>
         </Style>
 
         <Style Selector="Button.navSeg.selected /template/ ContentPresenter">
-            <Setter Property="Background" Value="#1E3A4F"/>
-            <Setter Property="Foreground" Value="#EAF6FD"/>
+            <Setter Property="Background" Value="#243646"/>
+            <Setter Property="Foreground" Value="#F7FBFF"/>
         </Style>
 
         <Style Selector="Button.navSeg.selected:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#245068"/>
-            <Setter Property="Foreground" Value="#EAF6FD"/>
+            <Setter Property="Background" Value="#2C4254"/>
+            <Setter Property="Foreground" Value="#F7FBFF"/>
         </Style>
 
         <!-- ================= 頂列的命令搜尋列 ================= -->
         <Style Selector="Button.searchBar">
-            <Setter Property="Background" Value="#0E141C"/>
-            <Setter Property="BorderBrush" Value="#243041"/>
+            <Setter Property="Background" Value="#0C1016"/>
+            <Setter Property="BorderBrush" Value="#2A3140"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="999"/>
-            <Setter Property="Padding" Value="14,7"/>
-            <Setter Property="MinHeight" Value="34"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="MinHeight" Value="36"/>
         </Style>
 
         <Style Selector="Button.searchBar:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#151F2A"/>
+            <Setter Property="Background" Value="#171C24"/>
         </Style>
 
         <Style Selector="Border.kbd">
-            <Setter Property="Background" Value="#1C2736"/>
-            <Setter Property="BorderBrush" Value="#2F3D50"/>
+            <Setter Property="Background" Value="#222A34"/>
+            <Setter Property="BorderBrush" Value="#343E4E"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="5"/>
+            <Setter Property="CornerRadius" Value="6"/>
         </Style>
 
         <!-- ================= 清單型按鈕（最近文章、進階選單、快捷動作） ================= -->
@@ -339,19 +368,19 @@
         </Style>
 
         <Style Selector="Button.quickAction">
-            <Setter Property="Background" Value="#101720"/>
-            <Setter Property="BorderBrush" Value="#243041"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Padding" Value="12,9"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="10,8"/>
             <Setter Property="HorizontalAlignment" Value="Stretch"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="#E7ECF2"/>
         </Style>
 
         <Style Selector="Button.quickAction:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#18232F"/>
+            <Setter Property="Background" Value="#1C2632"/>
         </Style>
 
         <Style Selector="Button.linkish">
@@ -369,15 +398,15 @@
 
         <!-- ================= 命令面板 Ctrl+K ================= -->
         <Style Selector="Border.paletteOverlay">
-            <Setter Property="Background" Value="#C4060A0F"/>
+            <Setter Property="Background" Value="#D60E1116"/>
         </Style>
 
         <Style Selector="Border.paletteCard">
-            <Setter Property="Background" Value="#151C26"/>
-            <Setter Property="BorderBrush" Value="#31465C"/>
+            <Setter Property="Background" Value="#1A2028"/>
+            <Setter Property="BorderBrush" Value="#3A4658"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="12"/>
-            <Setter Property="Padding" Value="14"/>
+            <Setter Property="CornerRadius" Value="16"/>
+            <Setter Property="Padding" Value="16"/>
         </Style>
 
         <Style Selector="TextBox.paletteInput">
@@ -403,8 +432,8 @@
             <Setter Property="AcceptsTab" Value="True"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
             <Setter Property="Padding" Value="16,14"/>
-            <Setter Property="Background" Value="#0D1218"/>
-            <Setter Property="Foreground" Value="#E6EDF3"/>
+            <Setter Property="Background" Value="#12161C"/>
+            <Setter Property="Foreground" Value="#E7ECF1"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, monospace"/>
             <Setter Property="FontSize" Value="13.5"/>

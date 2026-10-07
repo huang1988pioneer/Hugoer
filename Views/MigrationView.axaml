@@ -10,7 +10,7 @@
             <TextBlock Text="把 Hexo 或 Jekyll 網站轉成 Hugo，或把目前的 Hugo 網站轉成 Hexo／Jekyll。文章會改寫成目標引擎的 YAML front matter 與資料夾結構；主題、佈局與外掛無法轉換。"
                        Classes="muted" TextWrapping="Wrap"/>
 
-            <Border Classes="card" BorderBrush="#0E7490" BorderThickness="1">
+            <Border Classes="card" BorderBrush="#28677A" BorderThickness="1">
                 <StackPanel Spacing="12">
                     <Grid ColumnDefinitions="*,Auto">
                         <StackPanel Spacing="3">
@@ -19,7 +19,7 @@
                                        Classes="caption" TextWrapping="Wrap"/>
                         </StackPanel>
                         <Border Grid.Column="1" Classes="pill" Padding="10,4" VerticalAlignment="Top">
-                            <TextBlock Text="{Binding DetectedKindLabel}" Foreground="#67D8FF"
+                            <TextBlock Text="{Binding DetectedKindLabel}" Foreground="#8FD4EA"
                                        FontWeight="SemiBold" FontSize="12"/>
                         </Border>
                     </Grid>
@@ -65,7 +65,7 @@
                     <TextBox Text="{Binding DestinationName}"
                              PlaceholderText="新資料夾名稱，例如 my-blog-hugo"/>
 
-                    <Border Background="#101720" BorderBrush="#2A3648" BorderThickness="1"
+                    <Border Background="#141920" BorderBrush="#2A3140" BorderThickness="1"
                             CornerRadius="8" Padding="12">
                         <TextBlock Text="{Binding MigrationPlanText}" TextWrapping="Wrap"
                                    Classes="muted" LineHeight="20"/>
